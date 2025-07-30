@@ -137,3 +137,6 @@ dist
 # Vite 日志文件
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# 我的测试文件
+my_local_test.js
