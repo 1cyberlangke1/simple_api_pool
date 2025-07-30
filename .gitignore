@@ -140,3 +140,4 @@ vite.config.ts.timestamp-*
 
 # 我的测试文件
 my_local_test.js
+setting.js

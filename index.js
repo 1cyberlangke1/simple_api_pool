@@ -156,25 +156,25 @@ class api_pool {
     for (let i = 0; i < this.limit_keys.length; ++i) {
       const now_alias = this.limit_keys[this.limit_keys_index];
       const now_true_key = api_source.get_api_key(now_alias);
+      this.limit_keys_index =
+        (this.limit_keys_index + 1) % this.limit_keys.length;
       if (now_true_key !== null) {
         alias = now_alias;
         true_key = now_true_key;
         break;
       }
-      this.limit_keys_index =
-        (this.limit_keys_index + 1) % this.limit_keys.length;
     }
     // 再拿无限的
     if (alias === null) {
       for (let i = 0; i < this.keys.length; ++i) {
         const now_alias = this.keys[this.keys_index];
         const now_true_key = api_source.get_api_key(now_alias);
+        this.keys_index = (this.keys_index + 1) % this.keys.length;
         if (now_true_key !== null) {
           alias = now_alias;
           true_key = now_true_key;
           break;
         }
-        this.keys_index = (this.keys_index + 1) % this.keys.length;
       }
     }
     if (alias === null) throw new Error("not available key");
@@ -272,7 +272,7 @@ class api_pool {
             };
             res.write(`data: ${JSON.stringify(chunk)}\n\n`);
             // 可选：加个小延迟，模拟真实流速
-            await new Promise((r) => setTimeout(r, 10));
+            await new Promise((r) => setTimeout(r, 1));
           }
 
           // 发送结束包
@@ -296,8 +296,9 @@ class api_pool {
           res.json(result);
         }
       } catch (error) {
-        // 统一错误，不暴露细节
-        res.status(500).json({ error: "fail" });
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: errorMessage });
       }
     });
 
