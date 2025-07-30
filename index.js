@@ -212,12 +212,12 @@ class api_pool {
     }
   }
 
-  //启动对外服务, qwen生成
+  // 启动对外服务, qwen生成
   start_server(port = 3000, host = "127.0.0.1") {
     const app = express();
 
-    // 最简中间件
-    app.use(express.json());
+    // 中间件
+    app.use(express.json({ limit: "50mb" }));
 
     // 健康检查：只返回是否存活 + key 数量
     app.get("/health", (req, res) => {
