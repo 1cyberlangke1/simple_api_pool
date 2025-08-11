@@ -1,6 +1,7 @@
 const OpenAI = require("openai");
 const fs = require("fs");
 const express = require("express");
+const { time } = require("console");
 class api_source {
   // 是否输出log到终端
   static is_output_log = true;
@@ -61,14 +62,14 @@ class api_source {
     ++obj.count;
 
     if (this.is_output_log)
-      this.output_method(`SUEECES GET KEY ${JSON.stringify(obj)}`);
+      this.output_method(`SUCCESS GET KEY ${JSON.stringify(obj)}`);
 
     return obj;
   }
 
   // 根据别名释放API Key
   static free_api_key(alias) {
-    if (this.is_output_log) this.output_method(`SUEECES FREE KEY ${alias}`);
+    if (this.is_output_log) this.output_method(`SUCCESS FREE KEY ${alias}`);
 
     return this.#is_key_using_set.delete(alias);
   }
@@ -118,16 +119,16 @@ class api_source {
 }
 
 class api_pool {
-  limit_keys = []; //有限调用key
+  limit_keys = []; // 有限调用key
   limit_keys_index = 0;
-  keys = []; //无限调用key
+  keys = []; // 无限调用key
   keys_index = 0;
-  name; //池子的名字, 没什么用
-  server = null; //外部服务提供
-
+  name; // 池子的名字, 同时也是服务传的模型名字
+  timeout = 0; // 超时时间默认30, 单位是毫秒
   // 构造函数
-  constructor(keys, name = "pool") {
+  constructor(keys, name = "pool", timeout = 30000) {
     this.name = name;
+    this.timeout = timeout;
     for (let it of keys) {
       let true_key = api_source.read_api_key(it);
       if (true_key == null) continue;
@@ -186,6 +187,7 @@ class api_pool {
     const openai = new OpenAI({
       baseURL: true_key.url,
       apiKey: true_key.key,
+      timeout: this.timeout,
     });
     try {
       const res = await openai.chat.completions.create({
@@ -211,31 +213,58 @@ class api_pool {
       api_source.free_api_key(alias);
     }
   }
+}
+
+class api_server {
+  default_pool = null; // 默认调用池子，如果没写或者模型名字不存在就调用它
+  port = 0; // 端口
+  host = ""; // 地址
+  pool_map = null; // 池子的集合
+  server = null; //外部服务提供
+
+  // 构造函数
+  constructor(pool_array, host = "127.0.0.1", port = 3000) {
+    this.default_pool = pool_array[0];
+    this.port = port;
+    this.host = host;
+    this.pool_map = new Map();
+    for (let it of pool_array) {
+      this.pool_map.set(it.name, it);
+    }
+  }
 
   // 启动对外服务, qwen生成
-  start_server(port = 3000, host = "127.0.0.1") {
+  start_server() {
     const app = express();
 
     // 中间件
     app.use(express.json({ limit: "50mb" }));
 
-    // 健康检查：只返回是否存活 + key 数量
+    // 健康
     app.get("/health", (req, res) => {
       res.json({
-        pool: this.name,
         status: "ok",
-        keys: this.limit_keys.length + this.keys.length,
+        timestamp: new Date().toISOString(),
+        pools: this.pool_map,
       });
     });
 
-    // OpenAI 兼容接口：完全代理，无需 model
+    // OpenAI 兼容接口
     app.post("/v1/chat/completions", async (req, res) => {
       if (!req.body?.messages?.length) {
         return res.status(400).json({ error: "bad" });
       }
       const isStream = !!req.body.stream;
       try {
-        const result = await this.call_openai_chat(
+        let call_pool = this.pool_map.get(req.body.model);
+        if (call_pool === undefined) {
+          call_pool = this.default_pool;
+          if (api_source.is_output_log)
+            console.log(
+              `SERVER @${this.host}:${this.port}: UNKNOW MODEL, USE DEFAULT POLL`
+            );
+        }
+        const result = await call_pool.call_openai_chat(
           req.body.messages,
           req.body.temperature ?? 0.7,
           req.body.max_tokens ?? 2000,
@@ -271,8 +300,6 @@ class api_pool {
               ],
             };
             res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            // 可选：加个小延迟，模拟真实流速
-            await new Promise((r) => setTimeout(r, 1));
           }
 
           // 发送结束包
@@ -302,15 +329,34 @@ class api_pool {
       }
     });
 
-    this.server = app.listen(port, host, () => {
-      if (api_source.is_output_log) {
-        api_source.output_method(
-          `START SERVER [${this.name}] @${host}:${port}`
-        );
+    // 可用模型兼容
+    app.get("/v1/models", async (req, res) => {
+      try {
+        const models = [];
+        for (const [modelId, pool] of this.pool_map) {
+          models.push({
+            id: pool.name,
+            object: "model",
+          });
+        }
+        res.json({
+          object: "list",
+          data: models,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: errorMessage });
       }
     });
 
-    process.on("SIGTERM", () => this.closeServer());
+    this.server = app.listen(this.port, this.host, () => {
+      if (api_source.is_output_log) {
+        api_source.output_method(`START SERVER @${this.host}:${this.port}`);
+      }
+    });
+
+    process.on("SIGTERM", () => this.close_server());
 
     return this.server;
   }
@@ -320,7 +366,7 @@ class api_pool {
     if (this.server) {
       this.server.close(() => {
         if (api_source.is_output_log) {
-          api_source.output_method(`CLOSE SERVER [${this.name}]`);
+          api_source.output_method(`CLOSE SERVER @${this.host}:${this.port}`);
         }
         this.server = null;
       });
@@ -328,4 +374,4 @@ class api_pool {
   }
 }
 
-module.exports = { api_source, api_pool };
+module.exports = { api_source, api_pool, api_server };

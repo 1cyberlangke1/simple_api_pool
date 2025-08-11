@@ -8,10 +8,11 @@ alias_array = [];
 for (let i = 1; i <= keys.setting.length; ++i) {
   alias_array.push("key_" + i);
 }
-const pool = new simple_api_pool.api_pool(alias_array);
+const pool = new simple_api_pool.api_pool(alias_array, "deepseek-v3");
+const server = new simple_api_pool.api_server([pool]);
 
 //启动服务
-pool.start_server();
+server.start_server();
 
 // 定时清理调用次数
 cron.schedule(
