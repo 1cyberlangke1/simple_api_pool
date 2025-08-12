@@ -1,7 +1,6 @@
 const OpenAI = require("openai");
 const fs = require("fs");
 const express = require("express");
-const { time } = require("console");
 class api_source {
   // 是否输出log到终端
   static is_output_log = true;
