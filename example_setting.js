@@ -14,4 +14,4 @@ const setting = [
   },
 ];
 
-module.exports = { setting };
+export default { setting };

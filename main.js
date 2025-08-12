@@ -1,6 +1,6 @@
-const simple_api_pool = require("./index");
-const keys = require("./setting");
-const cron = require("node-cron");
+import simple_api_pool from "./index.js";
+import keys from "./setting.js";
+import cron from "node-cron";
 
 // 初始化池子
 simple_api_pool.api_source.read_key_json(keys.setting);

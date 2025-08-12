@@ -1,6 +1,6 @@
-const OpenAI = require("openai");
-const fs = require("fs");
-const express = require("express");
+import OpenAI from "openai";
+import fs from "fs";
+import express from "express";
 class api_source {
   // 是否输出log到终端
   static is_output_log = true;
@@ -192,8 +192,8 @@ class api_pool {
     });
     try {
       config.model = true_key.model;
-      // 测试用, 记得注释掉
-      console.log(JSON.stringify(config.messages));
+      //! 测试用, 记得注释掉
+      // console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
         api_source.output_method(
@@ -212,7 +212,8 @@ class api_pool {
 
 /*
   config = {
-    add_timestamp: 是否在系统提示词注入时间戳
+    add_timestamp: boolean, // 是否在系统提示词注入时间戳,
+
   }
 */
 class api_server {
@@ -394,4 +395,4 @@ class api_server {
   }
 }
 
-module.exports = { api_source, api_pool, api_server };
+export default { api_source, api_pool, api_server };
