@@ -9,7 +9,7 @@ for (let i = 1; i <= keys.setting.length; ++i) {
   alias_array.push("key_" + i);
 }
 const pool = new simple_api_pool.api_pool(alias_array, "deepseek-v3");
-const server = new simple_api_pool.api_server([pool]);
+const server = new simple_api_pool.api_server([pool], { add_timestamp: true });
 
 //启动服务
 server.start_server();

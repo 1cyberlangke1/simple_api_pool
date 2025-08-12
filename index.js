@@ -181,7 +181,6 @@ class api_pool {
       }
     }
     if (alias === null) throw new Error("not available key");
-
     if (api_source.is_output_log) {
       api_source.output_method(`API POOL[${this.name}]: NOW USEING ${alias}`);
     }
@@ -193,6 +192,8 @@ class api_pool {
     });
     try {
       config.model = true_key.model;
+      // 测试用, 记得注释掉
+      console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
         api_source.output_method(
@@ -213,11 +214,15 @@ class api_server {
   default_pool = null; // 默认调用池子，如果没写或者模型名字不存在就调用它
   port = 0; // 端口
   host = ""; // 地址
-  pool_map = null; // 池子的集合
-  server = null; //外部服务提供
-
+  pool_map = null; // 池子的映射
+  server = null; // 外部服务提供
+  config = null; // 额外设置，比如是否在系统提示词里面加入时间戳
   // 构造函数
-  constructor(pool_array, host = "127.0.0.1", port = 3000) {
+  constructor(pool_array, config = {}, host = "127.0.0.1", port = 3000) {
+    const default_config = {
+      add_timestamp: false,
+    };
+    this.config = { ...default_config, ...config };
     this.default_pool = pool_array[0];
     this.port = port;
     this.host = host;
@@ -236,10 +241,14 @@ class api_server {
 
     // 健康
     app.get("/health", (req, res) => {
+      let obj = {};
+      this.pool_map.forEach((value, key) => {
+        obj[key] = value;
+      });
       res.json({
         status: "ok",
         timestamp: new Date().toISOString(),
-        pools: this.pool_map,
+        pools: JSON.stringify(obj),
       });
     });
 
@@ -260,9 +269,26 @@ class api_server {
             );
         }
         req.body.model = call_pool.name;
+        // 加入时间戳
+        if (
+          this.config.add_timestamp &&
+          req.body?.messages[0]?.role === "system"
+        ) {
+          const system_prompt = req.body.messages[0].content;
+          const now_time_str = new Date().toLocaleString(undefined, {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            weekday: "long",
+          });
+          req.body.messages[0].content = now_time_str + "\n" + system_prompt;
+        }
         const result = await call_pool.call_openai_chat(req.body);
         if (isStream) {
-          // ✅ 设置流式响应头
+          // 设置流式响应头
           res.setHeader("Content-Type", "text/event-stream");
           res.setHeader("Cache-Control", "no-cache");
           res.setHeader("Connection", "keep-alive");
