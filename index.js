@@ -210,6 +210,11 @@ class api_pool {
   }
 }
 
+/*
+  config = {
+    add_timestamp: 是否在系统提示词注入时间戳
+  }
+*/
 class api_server {
   default_pool = null; // 默认调用池子，如果没写或者模型名字不存在就调用它
   port = 0; // 端口
