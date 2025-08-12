@@ -270,11 +270,12 @@ class api_server {
         if (call_pool === undefined) {
           call_pool = this.default_pool;
           if (api_source.is_output_log)
-            console.log(
+            api_source.output_method(
               `SERVER @${this.host}:${this.port}: UNKNOW MODEL, USE DEFAULT POOL`
             );
         }
         req.body.model = call_pool.name;
+
         // 加入时间戳
         if (
           this.config.add_timestamp &&
@@ -291,7 +292,13 @@ class api_server {
             weekday: "long",
           });
           req.body.messages[0].content = now_time_str + "\n" + system_prompt;
+          if (api_source.is_output_log) {
+            api_source.output_method(
+              `SERVER @${this.host}:${this.port}: ADD TIMESTAMP: ${now_time_str})`
+            );
+          }
         }
+
         const result = await call_pool.call_openai_chat(req.body);
         if (isStream) {
           // 设置流式响应头
