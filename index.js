@@ -143,14 +143,17 @@ class api_pool {
     }
   }
   // 调用LLM
-  async call_openai_chat(
-    message,
-    temperature = 0.7,
-    max_tokens = 2000,
-    top_p = 1,
-    frequency_penalty = 0.2,
-    presence_penalty = 0
-  ) {
+  async call_openai_chat(in_config = {}) {
+    const default_config = {
+      messages: [],
+      temperature: 0.7,
+      max_tokens: 2000,
+      top_p: 1,
+      frequency_penalty: 0.2,
+      presence_penalty: 0,
+    };
+    const config = { ...default_config, ...in_config };
+
     let alias = null;
     let true_key = null;
     // 先拿有限的
@@ -190,16 +193,8 @@ class api_pool {
       timeout: this.timeout,
     });
     try {
-      const res = await openai.chat.completions.create({
-        model: true_key.model,
-        messages: message,
-        temperature,
-        max_tokens,
-        top_p,
-        frequency_penalty,
-        presence_penalty,
-        stream: false,
-      });
+      config.model = true_key.model;
+      const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
         api_source.output_method(
           `API POOL[${this.name}] RES: [${JSON.stringify(res)}]`
@@ -255,23 +250,18 @@ class api_server {
         return res.status(400).json({ error: "bad" });
       }
       const isStream = !!req.body.stream;
+      req.body.stream = false;
       try {
         let call_pool = this.pool_map.get(req.body.model);
         if (call_pool === undefined) {
           call_pool = this.default_pool;
           if (api_source.is_output_log)
             console.log(
-              `SERVER @${this.host}:${this.port}: UNKNOW MODEL, USE DEFAULT POLL`
+              `SERVER @${this.host}:${this.port}: UNKNOW MODEL, USE DEFAULT POOL`
             );
         }
-        const result = await call_pool.call_openai_chat(
-          req.body.messages,
-          req.body.temperature ?? 0.7,
-          req.body.max_tokens ?? 2000,
-          req.body.top_p ?? 1,
-          req.body.frequency_penalty ?? 0.2,
-          req.body.presence_penalty ?? 0
-        );
+        req.body.model = call_pool.name;
+        const result = await call_pool.call_openai_chat(req.body);
         if (isStream) {
           // ✅ 设置流式响应头
           res.setHeader("Content-Type", "text/event-stream");
