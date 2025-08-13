@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import fs from "fs";
 import express from "express";
+import tools from "./tool_functions.js";
 class api_source {
   // 是否输出log到终端
   static is_output_log = true;
@@ -123,9 +124,9 @@ class api_pool {
   keys = []; // 无限调用key
   keys_index = 0;
   name; // 池子的名字, 同时也是服务传的模型名字
-  timeout = 0; // 超时时间默认30, 单位是毫秒
+  timeout = 0; // 超时时间默认60000, 单位是毫秒
   // 构造函数
-  constructor(keys, name = "pool", timeout = 30000) {
+  constructor(keys, name = "pool", timeout = 60000) {
     this.name = name;
     this.timeout = timeout;
     for (let it of keys) {
@@ -213,7 +214,12 @@ class api_pool {
 /*
   config = {
     add_timestamp: boolean, // 是否在系统提示词注入时间戳,
-
+    web_summary:{
+      enable: boolean, // 是否开启
+      summary_pool: api_pool, // 总结用的API池子, 没有写就不总结
+      jina_ai_config: {
+      }, //jina_ai的设置
+    }
   }
 */
 class api_server {
@@ -227,8 +233,21 @@ class api_server {
   constructor(pool_array, config = {}, host = "127.0.0.1", port = 3000) {
     const default_config = {
       add_timestamp: false,
+      web_summary: {
+        enable: false,
+        summary_pool: null,
+        delay: 3000, // 请求延时
+        jina_ai_config: {},
+      },
     };
-    this.config = { ...default_config, ...config };
+    this.config = {
+      ...default_config,
+      ...config,
+      web_summary: {
+        ...default_config.web_summary,
+        ...(config.web_summary || {}),
+      },
+    };
     this.default_pool = pool_array[0];
     this.port = port;
     this.host = host;
@@ -281,21 +300,37 @@ class api_server {
           this.config.add_timestamp &&
           req.body?.messages[0]?.role === "system"
         ) {
-          const system_prompt = req.body.messages[0].content;
-          const now_time_str = new Date().toLocaleString(undefined, {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-            weekday: "long",
-          });
-          req.body.messages[0].content = now_time_str + "\n" + system_prompt;
+          req.body.messages[0].content = tools.add_timestamp_prefix(
+            req.body.messages[0].content
+          );
           if (api_source.is_output_log) {
             api_source.output_method(
-              `SERVER @${this.host}:${this.port}: ADD TIMESTAMP: ${now_time_str})`
+              `SERVER @${this.host}:${
+                this.port
+              }: ADD TIMESTAMP: ${tools.add_timestamp_prefix()}`
             );
+          }
+        }
+
+        // 用户输入网页总结
+        if (
+          this.config.web_summary.enable &&
+          req.body?.messages?.at(-1)?.role === "user"
+        ) {
+          const user_msg = req.body.messages.at(-1);
+          const web_sum = await tools.web_summary(
+            user_msg.content,
+            this.config.web_summary.summary_pool,
+            this.config.web_summary.delay,
+            this.config.web_summary.jina_ai_config
+          );
+          if (web_sum !== null && api_source.is_output_log) {
+            api_source.output_method(
+              `SERVER @${this.host}:${this.port}: SUMMARY_WEB_RES: ${
+                web_sum.slice(0, 500) + "..."
+              }`
+            );
+            user_msg.content = user_msg.content + "\n" + web_sum;
           }
         }
 
