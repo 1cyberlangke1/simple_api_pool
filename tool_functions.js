@@ -32,10 +32,10 @@ async function call_jina_ai(url = "", config = {}) {
     "x-with-shadow-dom": "true",
     "x-no-cache": "true", // 不使用缓存
   };
-  config = { ...default_config, ...config };
-  config.Accept = "application/json"; // 返回 JSON
+  config = { ...default_config, ...config, Accept: "application/json" }; // 返回 JSON
   const res = await fetch(`https://r.jina.ai/${url}`, { headers: config });
   const data = await res.json();
+  console.log(data);
   return {
     url: data.data.url,
     title: data.data.title,

@@ -28,6 +28,7 @@ const server = new simple_api_pool.api_server([pool], {
     summary_pool: summary_pool,
     jina_ai_config: {
       "x-no-cache": "false", // 是否使用缓存
+      "x-engine": "direct", // browser / direct
     },
   },
 });
