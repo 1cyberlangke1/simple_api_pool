@@ -27,7 +27,7 @@ const server = new simple_api_pool.api_server([pool], {
     enable: true,
     summary_pool: summary_pool,
     jina_ai_config: {
-      "x-no-cache": "false", // 是否使用缓存
+      "x-no-cache": "true", // 是否不使用缓存
       "x-engine": "direct", // browser / direct
     },
   },
