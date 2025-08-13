@@ -321,8 +321,8 @@ class api_server {
           const web_sum = await tools.web_summary(
             user_msg.content,
             this.config.web_summary.summary_pool,
-            this.config.web_summary.delay,
-            this.config.web_summary.jina_ai_config
+            this.config.web_summary.jina_ai_config,
+            this.config.web_summary.delay
           );
           if (web_sum !== null && api_source.is_output_log) {
             api_source.output_method(
