@@ -123,7 +123,7 @@ class api_pool {
   limit_keys_index = 0;
   keys = []; // 无限调用key
   keys_index = 0;
-  name; // 池子的名字, 同时也是服务传的模型名字
+  name = ""; // 池子的名字, 同时也是服务传的模型名字
   timeout = 0; // 超时时间默认60000, 单位是毫秒
   // 构造函数
   constructor(keys, name = "pool", timeout = 60000) {
@@ -211,6 +211,52 @@ class api_pool {
   }
 }
 
+// 能像正常的池子一样被调用, 但是只会返回固定字符串
+class fake_api {
+  name = ""; // 名字
+  return_strs = []; // 返回的字符串们
+  return_strs_index = 0;
+  constructor(return_strs = [], name = "fake_api") {
+    this.return_strs = return_strs;
+    this.name = name;
+  }
+
+  async call_openai_chat() {
+    const content =
+      this.return_strs[(this.return_strs_index + 1) % this.return_strs.length];
+    try {
+      const res = {
+        id: `chatcmpl-${Math.random().toString(36).substring(2, 12)}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: this.name,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: content,
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 10,
+          total_tokens: 20,
+        },
+      };
+      if (api_source.is_output_log) {
+        api_source.output_method(
+          `FAKE API [${this.name}] RES: [${JSON.stringify(res)}]`
+        );
+      }
+      return res;
+    } catch (error) {
+      throw error;
+    }
+  }
+}
 /*
   config = {
     add_timestamp: boolean, // 是否在系统提示词注入时间戳,
@@ -437,4 +483,4 @@ class api_server {
   }
 }
 
-export default { api_source, api_pool, api_server };
+export default { api_source, api_pool, fake_api, api_server };

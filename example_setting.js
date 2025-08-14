@@ -30,4 +30,7 @@ const summary_models = [
     limit: -1, //优先调用有限的, 再调用无限的
   },
 ];
-export default { setting, summary_models };
+
+// 假API要返回的字符串
+const fake_api_strs = ["NOT_TIME_RELATED"];
+export default { setting, summary_models, fake_api_strs };

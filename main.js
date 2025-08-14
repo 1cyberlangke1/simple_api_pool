@@ -21,7 +21,12 @@ const summary_pool = new simple_api_pool.api_pool(
   summary_alias_array,
   "GLM-Z1-9B-0414"
 );
-const server = new simple_api_pool.api_server([pool], {
+const fuck_reminder = new simple_api_pool.fake_api(
+  keys.fake_api_strs,
+  "fuck_reminder"
+);
+
+const server = new simple_api_pool.api_server([pool, fuck_reminder], {
   add_timestamp: true,
   web_summary: {
     enable: true,
