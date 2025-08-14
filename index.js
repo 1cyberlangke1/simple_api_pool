@@ -219,6 +219,11 @@ class fake_api {
   constructor(return_strs = [], name = "fake_api") {
     this.return_strs = return_strs;
     this.name = name;
+
+    if (api_source.is_output_log) {
+      api_source.output_method(`FAKE API[${name}]:`);
+      api_source.output_method("RETURN STRING: " + this.return_strs);
+    }
   }
 
   async call_openai_chat() {
