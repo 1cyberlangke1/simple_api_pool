@@ -334,7 +334,7 @@ class api_pool {
     try {
       config.model = true_key.model;
       //! 测试用, 记得注释掉
-      console.log(JSON.stringify(config.messages));
+      //console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
         api_source.output_method(`API POOL[${this.name}] RES: [${JSON.stringify(res)}]`);
