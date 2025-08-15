@@ -32,6 +32,21 @@ const summary_models = [
   },
 ];
 
+// 查询API配置
+const query_apis = [
+  {
+    name: "weather", // API名字
+    description: "查询天气", // 描述这个API是干什么的
+    url: "https://restapi.amap.com/v3/weather/weatherInfo", // API url
+    params: {
+      key: "xxxx",
+      extensions: "all",
+      city: "xxx",
+    }, // 请求参数
+    headers: {}, // 自定义请求头
+  },
+];
+
 // 假API要返回的字符串
 const fake_api_strs = ["NOT_TIME_RELATED"];
-export default { chat_models, summary_models, fake_api_strs };
+export default { chat_models, summary_models, query_apis, fake_api_strs };

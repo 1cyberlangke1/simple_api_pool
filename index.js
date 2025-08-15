@@ -4,6 +4,75 @@ import express from "express";
 import tools from "./tool_functions.js";
 
 /**
+ * 查询类API, 可以提供更多的上下文信息（如名称、用途描述），便于LLM理解并决定是否调用
+ * Qwen生成
+ * @class query_api
+ */
+class query_api {
+  /**
+   * API 的名称，用于标识和展示（例如：天气查询、用户信息获取）
+   * @type {string}
+   */
+  name = "";
+
+  /**
+   * API 的功能描述，主要供 LLM 理解其用途（例如：根据城市ID查询实时天气情况）
+   * @type {string}
+   */
+  description = "";
+
+  /**
+   * API 的完整基础 URL（不包含查询参数）
+   * @type {string}
+   */
+  url = "";
+
+  /**
+   * 请求参数（会自动编码并拼接到 URL 查询字符串中）
+   * 只有非 null/undefined 的值会被发送
+   * @type {Object}
+   */
+  params = {};
+
+  /**
+   * 自定义请求头（如认证 Token、User-Agent 等）
+   * @type {Object}
+   */
+  headers = {};
+
+  /**
+   * 构造函数：初始化一个查询类 API 实例
+   * @param {string} name - API 名称
+   * @param {string} description - API 功能描述（推荐给 LLM 阅读）
+   * @param {string} url - API 基础 URL（如：https://api.example.com/v1/data）
+   * @param {Object} [params={}] - 默认请求参数
+   * @param {Object} [headers={}] - 自定义请求头
+   */
+  constructor(name, description, url, params = {}, headers = {}) {
+    Object.assign(this, { name, description, url, params, headers });
+  }
+
+  /**
+   * 发起 GET 请求调用 API
+   * @async
+   * @returns {Promise<Object>} 返回解析后的 JSON 数据
+   * @throws {Error} 网络错误或 JSON 解析失败时抛出
+   */
+  async call_api() {
+    const url = new URL(this.url);
+    Object.entries(this.params)
+      .filter(([_, v]) => v != null)
+      .forEach(([k, v]) => url.searchParams.append(k, v));
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json", ...this.headers },
+    });
+    return await response.json();
+  }
+}
+
+/**
  *
  * API的"源泉", 从这里开始管理Key
  * @class api_source
@@ -265,7 +334,7 @@ class api_pool {
     try {
       config.model = true_key.model;
       //! 测试用, 记得注释掉
-      // console.log(JSON.stringify(config.messages));
+      console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
         api_source.output_method(`API POOL[${this.name}] RES: [${JSON.stringify(res)}]`);
@@ -348,12 +417,16 @@ class fake_api {
 /*
   config = {
     add_timestamp: boolean, // 是否在系统提示词注入时间戳,
-    web_summary:{
+    web_summary:{ //网页总结
       enable: boolean, // 是否开启
       summary_pool: api_pool, // 总结用的API池子, 没有写就不总结
       jina_ai_config: {
       }, //jina_ai的设置
-    }
+    },
+    query_apis:{ // 调用API给LLM提供信息
+      enable: boolean, // 是否开启
+      apis: Map<query_api>, // 提供的API
+    } // 对话时 使用 --xxx 调用对应的API结果
   }
 */
 class api_server {
@@ -453,7 +526,7 @@ class api_server {
         }
 
         // 用户输入网页总结
-        if (this.config.web_summary.enable && req.body?.messages?.at(-1)?.role === "user") {
+        if (this?.config?.web_summary?.enable && req.body?.messages?.at(-1)?.role === "user") {
           const user_msg = req.body.messages.at(-1);
           const web_sum = await tools.web_summary(
             user_msg.content,
@@ -466,6 +539,37 @@ class api_server {
               `SERVER @${this.host}:${this.port}: SUMMARY_WEB_RES: ${web_sum.slice(0, 500) + "..."}`
             );
             user_msg.content = user_msg.content + "\n" + web_sum;
+          }
+        }
+
+        // 查询API调用
+        if (
+          this?.config?.query_apis?.enable &&
+          this?.config?.query_apis?.api?.size &&
+          req.body?.messages?.at(-1)?.role === "user"
+        ) {
+          const user_msg = req.body.messages.at(-1);
+          const commands = tools.extract_command(user_msg.content);
+          let res = "以下是API调用结果\n";
+          let is_call = false;
+          if (commands.length && api_source.is_output_log) {
+            api_source.output_method(`SERVER @${this.host}:${this.port}: get_command: ${commands}`);
+          }
+          for (let it of commands) {
+            const now_query_api = this.config.query_apis.api.get(it);
+            if (now_query_api) {
+              let api_res = await now_query_api.call_api();
+              res += `API name:${now_query_api.name}\nAPI result:${JSON.stringify(api_res)}\n`;
+              is_call = true;
+            }
+          }
+          if (is_call) {
+            user_msg.content = user_msg.content + "\n" + res;
+            if (api_source.is_output_log) {
+              api_source.output_method(
+                `SERVER @${this.host}:${this.port}: API_CALL_RES: ${res.slice(0, 500) + "..."}`
+              );
+            }
           }
         }
 
@@ -574,4 +678,4 @@ class api_server {
   }
 }
 
-export default { api_source, api_pool, fake_api, api_server };
+export default { query_api, api_source, api_pool, fake_api, api_server };

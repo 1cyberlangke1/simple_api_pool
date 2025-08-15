@@ -63,13 +63,20 @@ async function call_jina_ai(url = "", config = {}) {
   };
 }
 
-// 总结文本中url的信息, input_str, summary_pool, config, delay_ms
-async function web_summary(
-  input_str = "",
-  summary_pool,
-  config = {},
-  delay_ms = 3000
-) {
+/**
+ * 从输入文本中提取 URL，并调用外部服务获取网页内容，再通过大模型生成结构化总结
+ * 最终将多个网页的总结信息合并为一个字符串返回
+ *
+ * @param {string} input_str - 输入的原始文本，函数会从中提取出所有 URL
+ * @param {api_pool} summary_pool - 若为 null，则跳过 AI 总结，直接返回原始抓取内容
+ * @param {Object} config - 配置对象，用于传递给 `call_jina_ai`（如 API Key、代理等）
+ * @param {number} delay_ms - 每次请求网页内容后等待的毫秒数，用于控制请求频率，避免触发反爬虫
+ * @returns {Promise<string|null>} 返回一个 Promise，解析为包含所有网页总结信息的字符串
+ *                                 - 若无 URL，返回 null
+ *                                 - 包含成功提取的网页标题、原始或 AI 总结后的内容
+ *                                 - 若抓取失败，记录错误信息
+ */
+async function web_summary(input_str = "", summary_pool, config = {}, delay_ms = 3000) {
   const urls = [...getUrls(input_str)];
   if (urls.length === 0) return null;
   let res_str = "以下是来自网页的信息:\n";
@@ -88,7 +95,7 @@ async function web_summary(
       if (summary_pool) {
         res = await summary_pool.call_openai_chat({
           messages: messages,
-          temperature: 0.3,
+          temperature: 0.2,
         });
         res = res?.choices[0]?.message?.content;
       }
@@ -102,4 +109,15 @@ async function web_summary(
   return res_str;
 }
 
-export default { delay, add_timestamp_prefix, call_jina_ai, web_summary };
+/**
+ *
+ * 提取命令名字, 比如--weather就会返回 ["weather"]
+ * @param {String} text
+ * @return {Array<String>} 提取出的命令名字参数
+ */
+function extract_command(text) {
+  const matches = text.match(/--(\w+)/g);
+  return matches ? matches.map((cmd) => cmd.slice(2)) : [];
+}
+
+export default { delay, add_timestamp_prefix, extract_command, call_jina_ai, web_summary };

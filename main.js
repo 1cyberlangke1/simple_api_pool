@@ -20,6 +20,15 @@ const pool = new simple_api_pool.api_pool(alias_array, "deepseek-v3");
 const summary_pool = new simple_api_pool.api_pool(summary_alias_array, "GLM-Z1-9B-0414");
 const fuck_reminder = new simple_api_pool.fake_api(keys.fake_api_strs, "fuck_reminder");
 
+// 初始化查询API
+const query_apis = new Map();
+for (let it of keys.query_apis) {
+  query_apis.set(
+    it.name,
+    new simple_api_pool.query_api(it.name, it.description, it.url, it.params, it.headers)
+  );
+}
+
 const server = new simple_api_pool.api_server([pool, fuck_reminder], {
   add_timestamp: true,
   web_summary: {
@@ -29,6 +38,10 @@ const server = new simple_api_pool.api_server([pool, fuck_reminder], {
       "x-no-cache": "true", // 是否不使用缓存
       "x-engine": "direct", // browser / direct
     },
+  },
+  query_apis: {
+    enable: true,
+    api: query_apis,
   },
 });
 
