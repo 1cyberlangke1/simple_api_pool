@@ -2,6 +2,12 @@ import OpenAI from "openai";
 import fs from "fs";
 import express from "express";
 import tools from "./tool_functions.js";
+
+/**
+ *
+ * API的"源泉", 从这里开始管理Key
+ * @class api_source
+ */
 class api_source {
   // 是否输出log到终端
   static is_output_log = true;
@@ -15,20 +21,22 @@ class api_source {
   // key是否被使用
   static #is_key_using_set = new Set();
 
-  // 添加key
+  /**
+   * 添加API Key
+   * @param {string} url - API服务地址
+   * @param {string} key - API密钥
+   * @param {string} model - 模型名称
+   * @param {number} [limit=-1] - 调用次数限制，负数表示无限制
+   * @param {string} [alias] - 密钥别名，未提供时自动生成
+   * @description 自动生成的别名为"key_数字"
+   * @memberof api_source
+   */
   static add_api_key(url, key, model, limit = -1, alias) {
-    let now_alias = this.#key_to_alias.get(key);
-    if (now_alias !== undefined) {
-      this.#keys.delete(now_alias);
-      this.#key_to_alias.delete(key);
-    }
     if (alias == null) alias = "key_" + ++this.#gen_alias;
     this.#key_to_alias.set(key, alias);
 
     if (this.is_output_log) {
-      this.output_method(
-        `ADD KEY ${alias} | ${model} ${url} ${key} ${limit < 0 ? "inf" : limit}`
-      );
+      this.output_method(`ADD KEY ${alias} | ${model} ${url} ${key} ${limit < 0 ? "inf" : limit}`);
     }
 
     this.#keys.set(alias, {
@@ -40,7 +48,13 @@ class api_source {
     });
   }
 
-  // 读取key
+  /**
+   * 读取指定别名的API Key信息
+   * @param {string} alias - API Key别名
+   * @returns {Object|null} 返回Key对象副本，不存在则返回null
+   *   对象包含: {model, url, key, limit, count}
+   * @memberof api_source
+   */
   static read_api_key(alias) {
     const obj = this.#keys.get(alias);
 
@@ -52,7 +66,14 @@ class api_source {
     return { ...obj };
   }
 
-  // 根据别名获取并占用API Key同时调用次数直接+1, 如果到配额上限或者被占用就返回null
+  /**
+   * 根据别名获取并占用API Key，同时增加调用次数
+   * @param {string} alias - API Key别名
+   * @returns {Object|null} 获取成功返回Key对象，否则返回null
+   *   返回对象包含: {url, key, model, limit, count, alias}
+   *   失败原因：别名不存在、Key已被占用、已达到调用配额上限
+   * @memberof api_source
+   */
   static get_api_key(alias) {
     const obj = this.#keys.get(alias);
     if (!obj) return null;
@@ -61,20 +82,29 @@ class api_source {
     this.#is_key_using_set.add(alias);
     ++obj.count;
 
-    if (this.is_output_log)
-      this.output_method(`SUCCESS GET KEY ${JSON.stringify(obj)}`);
+    if (this.is_output_log) this.output_method(`SUCCESS GET KEY ${JSON.stringify(obj)}`);
 
     return obj;
   }
 
-  // 根据别名释放API Key
+  /**
+   * 根据别名释放API Key
+   * @param {string} alias - 要释放的API Key别名
+   * @returns {boolean} 释放成功返回true，否则false
+   * @memberof api_source
+   */
   static free_api_key(alias) {
     if (this.is_output_log) this.output_method(`SUCCESS FREE KEY ${alias}`);
 
     return this.#is_key_using_set.delete(alias);
   }
 
-  // 根据别名key判断是否被正在使用
+  /**
+   * 判断指定别名的API Key是否正在使用
+   * @param {string} alias - API Key别名
+   * @returns {boolean} 正在使用返回true，否则false
+   * @memberof api_source
+   */
   static is_key_using(alias) {
     const res = this.#is_key_using_set.has(alias);
 
@@ -83,7 +113,11 @@ class api_source {
     return res;
   }
 
-  // 重置所有key的使用次数
+  /**
+   * 重置所有API Key的调用计数
+   * 将所有Key的使用次数重置为0
+   * @memberof api_source
+   */
   static reset_keys_count() {
     if (this.is_output_log) this.output_method(`RESET ALL KEY COUNT`);
 
@@ -92,7 +126,13 @@ class api_source {
     });
   }
 
-  // 从obj读入, 传入[{"url" : string, "key" : string, "model" : string,调用次数限制(如果为负数就是无限调用) : num, "alias": 别名}, ...]
+  /**
+   * 从JSON数组读取API密钥信息
+   * @param {Array<Object>} json - 密钥配置数组，元素格式：
+   *   { url: string, key: string, model: string, limit?: number, alias?: string }
+   *   limit为调用次数限制，负数表示无限调用
+   * @memberof api_source
+   */
   static read_key_json(json) {
     for (const entry of json) {
       const { url, key, model, limit = -1, alias } = entry;
@@ -100,24 +140,36 @@ class api_source {
     }
   }
 
-  //从文件读入
+  /**
+   * 从JSON文件读取API密钥信息
+   * @param {string} file_path - JSON文件路径
+   * @memberof api_source
+   */
   static read_key_json_file(file_path) {
     const data = fs.readFileSync(file_path, "utf8");
     const json = JSON.parse(data);
     this.read_key_json(json);
   }
 
-  //列出keys
+  /**
+   * 列出所有API密钥
+   * 返回密钥对象的副本，若启用日志则记录操作
+   * @returns {Object} API密钥对象，格式为 {key: value}
+   * @memberof api_source
+   */
   static list_api_keys() {
     const res = Object.fromEntries(this.#keys);
 
-    if (this.is_output_log)
-      this.output_method(`LIST ALL KEY: ${JSON.stringify(res)}`);
+    if (this.is_output_log) this.output_method(`LIST ALL KEY: ${JSON.stringify(res)}`);
 
     return res;
   }
 }
-
+/**
+ *
+ * OPENAI API池子, 一个API池子最好只对应一种模型
+ * @class api_pool
+ */
 class api_pool {
   limit_keys = []; // 有限调用key
   limit_keys_index = 0;
@@ -125,7 +177,17 @@ class api_pool {
   keys_index = 0;
   name = ""; // 池子的名字, 同时也是服务传的模型名字
   timeout = 0; // 超时时间默认60000, 单位是毫秒
-  // 构造函数
+
+  /**
+   * 构造函数
+   * @param {Array<string>} keys - API密钥别名数组
+   * @param {string} [name="pool"] - 池名称
+   * @param {number} [timeout=60000] - 请求超时时间(毫秒)
+   * @description
+   * 将密钥分为两类：无限次使用的加入keys数组，有限制的加入limit_keys数组
+   * 自动过滤null，若启用日志则输出池信息
+   * @memberof api_pool
+   */
   constructor(keys, name = "pool", timeout = 60000) {
     this.name = name;
     this.timeout = timeout;
@@ -142,7 +204,17 @@ class api_pool {
       api_source.output_method("KEYS: " + this.keys);
     }
   }
-  // 调用LLM
+
+  /**
+   * 调用LLM
+   * 轮询获取可用API密钥，优先使用有限制的密钥，然后是无限次密钥
+   * @param {Object} [in_config={}] - 请求配置
+   * @param {Array<Object>} [in_config.messages] - 对话消息数组
+   * @param {number} [in_config.temperature] - 温度
+   * @returns {Promise<Object>} OpenAI格式的响应对象
+   * @throws {Error} 当无可用密钥或API调用失败时抛出错误
+   * @memberof api_pool
+   */
   async call_openai_chat(in_config = {}) {
     const default_config = {
       messages: [],
@@ -160,8 +232,7 @@ class api_pool {
     for (let i = 0; i < this.limit_keys.length; ++i) {
       const now_alias = this.limit_keys[this.limit_keys_index];
       const now_true_key = api_source.get_api_key(now_alias);
-      this.limit_keys_index =
-        (this.limit_keys_index + 1) % this.limit_keys.length;
+      this.limit_keys_index = (this.limit_keys_index + 1) % this.limit_keys.length;
       if (now_true_key !== null) {
         alias = now_alias;
         true_key = now_true_key;
@@ -197,9 +268,7 @@ class api_pool {
       // console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
-        api_source.output_method(
-          `API POOL[${this.name}] RES: [${JSON.stringify(res)}]`
-        );
+        api_source.output_method(`API POOL[${this.name}] RES: [${JSON.stringify(res)}]`);
       }
       return res;
     } catch (error) {
@@ -211,11 +280,22 @@ class api_pool {
   }
 }
 
-// 能像正常的池子一样被调用, 但是只会返回固定字符串
+/**
+ *
+ * 假API, 能像api_pool一样被调用
+ * @class fake_api
+ */
 class fake_api {
   name = ""; // 名字
   return_strs = []; // 返回的字符串们
   return_strs_index = 0;
+
+  /**
+   * 创建一个fake_api实例
+   * @param {Array<string>} [return_strs=[]] 假API会返回的字符串
+   * @param {string} [name="fake_api"] api(模型)名字
+   * @memberof fake_api
+   */
   constructor(return_strs = [], name = "fake_api") {
     this.return_strs = return_strs;
     this.name = name;
@@ -226,9 +306,14 @@ class fake_api {
     }
   }
 
+  /**
+   *
+   * 假API, 返回固定的字符串, 就是这样
+   * @return {*}
+   * @memberof fake_api
+   */
   async call_openai_chat() {
-    const content =
-      this.return_strs[(this.return_strs_index + 1) % this.return_strs.length];
+    const content = this.return_strs[(this.return_strs_index + 1) % this.return_strs.length];
     try {
       const res = {
         id: `chatcmpl-${Math.random().toString(36).substring(2, 12)}`,
@@ -252,9 +337,7 @@ class fake_api {
         },
       };
       if (api_source.is_output_log) {
-        api_source.output_method(
-          `FAKE API [${this.name}] RES: [${JSON.stringify(res)}]`
-        );
+        api_source.output_method(`FAKE API [${this.name}] RES: [${JSON.stringify(res)}]`);
       }
       return res;
     } catch (error) {
@@ -276,11 +359,19 @@ class fake_api {
 class api_server {
   default_pool = null; // 默认调用池子，如果没写或者模型名字不存在就调用它
   port = 0; // 端口
-  host = ""; // 地址
+  host = ""; // 主机
   pool_map = null; // 池子的映射
   server = null; // 外部服务提供
   config = null; // 额外设置，比如是否在系统提示词里面加入时间戳
-  // 构造函数
+
+  /**
+   * 创建一个api_server实例
+   * @param {Array<api_pool>} pool_array API池子的数组
+   * @param {Object} [config={}] - 服务器配置
+   * @param {string} [host="127.0.0.1"]  主机
+   * @param {number} [port=3000]   端口
+   * @memberof api_server
+   */
   constructor(pool_array, config = {}, host = "127.0.0.1", port = 3000) {
     const default_config = {
       add_timestamp: false,
@@ -308,7 +399,12 @@ class api_server {
     }
   }
 
-  // 启动对外服务, qwen生成
+  /**
+   *
+   * 启动服务器, Qwen生成了框架
+   * @return {*}
+   * @memberof api_server
+   */
   start_server() {
     const app = express();
 
@@ -347,27 +443,17 @@ class api_server {
         req.body.model = call_pool.name;
 
         // 加入时间戳
-        if (
-          this.config.add_timestamp &&
-          req.body?.messages[0]?.role === "system"
-        ) {
-          req.body.messages[0].content = tools.add_timestamp_prefix(
-            req.body.messages[0].content
-          );
+        if (this.config.add_timestamp && req.body?.messages[0]?.role === "system") {
+          req.body.messages[0].content = tools.add_timestamp_prefix(req.body.messages[0].content);
           if (api_source.is_output_log) {
             api_source.output_method(
-              `SERVER @${this.host}:${
-                this.port
-              }: ADD TIMESTAMP: ${tools.add_timestamp_prefix()}`
+              `SERVER @${this.host}:${this.port}: ADD TIMESTAMP: ${tools.add_timestamp_prefix()}`
             );
           }
         }
 
         // 用户输入网页总结
-        if (
-          this.config.web_summary.enable &&
-          req.body?.messages?.at(-1)?.role === "user"
-        ) {
+        if (this.config.web_summary.enable && req.body?.messages?.at(-1)?.role === "user") {
           const user_msg = req.body.messages.at(-1);
           const web_sum = await tools.web_summary(
             user_msg.content,
@@ -377,9 +463,7 @@ class api_server {
           );
           if (web_sum !== null && api_source.is_output_log) {
             api_source.output_method(
-              `SERVER @${this.host}:${this.port}: SUMMARY_WEB_RES: ${
-                web_sum.slice(0, 500) + "..."
-              }`
+              `SERVER @${this.host}:${this.port}: SUMMARY_WEB_RES: ${web_sum.slice(0, 500) + "..."}`
             );
             user_msg.content = user_msg.content + "\n" + web_sum;
           }
@@ -437,8 +521,7 @@ class api_server {
           res.json(result);
         }
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         res.status(500).json({ error: errorMessage });
       }
     });
@@ -458,8 +541,7 @@ class api_server {
           data: models,
         });
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         res.status(500).json({ error: errorMessage });
       }
     });
@@ -475,7 +557,11 @@ class api_server {
     return this.server;
   }
 
-  //停止对外服务
+  /**
+   *
+   * 停止服务器
+   * @memberof api_server
+   */
   close_server() {
     if (this.server) {
       this.server.close(() => {

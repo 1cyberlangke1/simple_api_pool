@@ -1,12 +1,20 @@
 import getUrls from "get-urls";
 import simple_api_pool from "./index.js";
 
-// 延时函数, 单位毫秒
+/**
+ * 延时函数
+ * @param {number} [ms=1000] - 延迟毫秒数
+ * @returns {Promise<void>} 延迟完成的Promise
+ */
 function delay(ms = 1000) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 在字符串前面加入时间戳，传入传出字符串
+/**
+ * 在字符串前添加时间戳前缀
+ * @param {string} [str=""] - 原始字符串
+ * @returns {string} 包含时间戳前缀的字符串，格式：system timestamp: 星期X, YYYY/MM/DD, HH:MM\n[原始内容]
+ */
 function add_timestamp_prefix(str = "") {
   const now_time_str = new Date().toLocaleString(undefined, {
     year: "numeric",
@@ -22,7 +30,18 @@ function add_timestamp_prefix(str = "") {
   return res_str;
 }
 
-// 调用jina.ai 返回一个obj
+/**
+ * 调用Jina AI API获取网页内容
+ * @param {string} [url=""] - 目标网页URL
+ * @param {Object} [config={}] - 请求配置项
+ * @param {string} [config.x-timeout="30"] - 最大等待时间(秒)
+ * @param {string} [config.x-no-cache="true"] - 是否禁用缓存
+ * @returns {Promise<Object>} 解析后的网页对象
+ * @property {string} url - 网页地址
+ * @property {string} title - 网页标题
+ * @property {string} description - 网页描述
+ * @property {string} content - 网页内容
+ */
 async function call_jina_ai(url = "", config = {}) {
   const default_config = {
     "x-engine": "browser",

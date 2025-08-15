@@ -1,4 +1,5 @@
-const setting = [
+// 聊天模型
+const chat_models = [
   {
     url: "xxx/v1",
     key: "xxx",
@@ -33,4 +34,4 @@ const summary_models = [
 
 // 假API要返回的字符串
 const fake_api_strs = ["NOT_TIME_RELATED"];
-export default { setting, summary_models, fake_api_strs };
+export default { chat_models, summary_models, fake_api_strs };
