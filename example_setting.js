@@ -33,6 +33,29 @@ const summary_models = [
   },
 ];
 
+// 拦截请求后处理的API池子
+const process_models = [
+  {
+    url: "xxx/v1",
+    key: "xxx",
+    model: "xxx",
+    limit: 1, //大于等于0为有限调用次数, -1为无限
+    //alias: "key_001", 别名, 在这里不需要
+  },
+  {
+    url: "xxx/v1",
+    key: "xxx1",
+    model: "xxx",
+    limit: -1, //优先调用有限的, 再调用无限的
+  },
+];
+
+// 拦截关键词
+const hook_keywords = ["__core_memory__"];
+
+// 池子的温度
+const hook_models_temperature = 0.2;
+
 // 查询API配置
 // 在聊天时在最后输入 --API名字 触发API查询, 会将查询结果塞在用户输入里面发生给LLM
 const query_apis = [
@@ -58,7 +81,17 @@ const server_config = {
   port: 3000, // 端口
   add_timestamp: true, // 是否在系统提示词注入时间戳
   web_summary_enable: false, // 是否开启网页总结, true的话要写summary_models
+  hook_request_enable: false, // 是否开启请求拦截, true的话要写process_models和拦截关键词
   query_apis_enable: false, // 是否开启查询API
 };
 
-export default { chat_models, summary_models, query_apis, fake_api_strs, server_config };
+export default {
+  chat_models,
+  summary_models,
+  process_models,
+  hook_models_temperature,
+  hook_keywords,
+  query_apis,
+  fake_api_strs,
+  server_config,
+};

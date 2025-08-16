@@ -5,6 +5,7 @@ import cron from "node-cron";
 // 初始化池子
 simple_api_pool.api_source.read_key_json(setting.chat_models);
 simple_api_pool.api_source.read_key_json(setting.summary_models);
+simple_api_pool.api_source.read_key_json(setting.process_models);
 
 const alias_array = [];
 for (let i = 1; i <= setting.chat_models.length; ++i) {
@@ -16,8 +17,16 @@ for (let i = 1; i <= setting.summary_models.length; ++i) {
   summary_alias_array.push("key_" + (i + setting.chat_models.length));
 }
 
+const process_alias_array = [];
+for (let i = 1; i <= setting.process_models.length; ++i) {
+  process_alias_array.push(
+    "key_" + (i + setting.chat_models.length + setting.summary_models.length)
+  );
+}
+
 const pool = new simple_api_pool.api_pool(alias_array, "chat_model");
 const summary_pool = new simple_api_pool.api_pool(summary_alias_array, "summary_model");
+const process_pool = new simple_api_pool.api_pool(process_alias_array, "process_model");
 const fuck_reminder = new simple_api_pool.fake_api(setting.fake_api_strs, "fuck_reminder");
 
 // 初始化查询API
@@ -40,6 +49,16 @@ const server = new simple_api_pool.api_server(
         "x-no-cache": "true", // 是否不使用缓存
         "x-engine": "direct", // browser / direct
       },
+    },
+    hook_request: {
+      enable: setting.server_config.hook_request_enable,
+      keywords: [
+        {
+          keywords: setting.hook_keywords,
+          process_pool: process_pool,
+          temperature: setting.hook_models_temperature,
+        },
+      ],
     },
     query_apis: {
       enable: setting.server_config.query_apis_enable,

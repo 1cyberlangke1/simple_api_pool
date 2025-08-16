@@ -245,13 +245,13 @@ class api_pool {
   keys = []; // 无限调用key
   keys_index = 0;
   name = ""; // 池子的名字, 同时也是服务传的模型名字
-  timeout = 0; // 超时时间默认60000, 单位是毫秒
+  timeout = 0; // 超时时间默认90000, 单位是毫秒
 
   /**
    * 构造函数
    * @param {Array<string>} keys - API密钥别名数组
    * @param {string} [name="pool"] - 池名称
-   * @param {number} [timeout=60000] - 请求超时时间(毫秒)
+   * @param {number} [timeout=90000] - 请求超时时间(毫秒)
    * @description
    * 将密钥分为两类：无限次使用的加入keys数组，有限制的加入limit_keys数组
    * 自动过滤null，若启用日志则输出池信息
@@ -337,7 +337,9 @@ class api_pool {
       //console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
       if (api_source.is_output_log) {
-        api_source.output_method(`API POOL[${this.name}] RES: [${JSON.stringify(res)}]`);
+        api_source.output_method(
+          `API POOL[${this.name}] TEMP: ${config.temperature} RES: [${JSON.stringify(res)}]`
+        );
       }
       return res;
     } catch (error) {
@@ -423,10 +425,15 @@ class fake_api {
       jina_ai_config: {
       }, //jina_ai的设置
     },
+    hook_request:{ // 拦截出现特定关键词的请求, 并由特定API池子处理
+      enable: boolean, // 是否开启
+      keywords: [{keywords: Array<String>, process_pool: api_pool, temperature: 0.2}, ...], // 关键词, 和对应的池子
+    },
     query_apis:{ // 调用API给LLM提供信息
       enable: boolean, // 是否开启
       apis: Map<query_api>, // 提供的API
-    } // 对话时 使用 --xxx 调用对应的API结果
+    }, // 对话时 使用 --xxx 调用对应的API结果
+
   }
 */
 class api_server {
@@ -539,6 +546,32 @@ class api_server {
               `SERVER @${this.host}:${this.port}: SUMMARY_WEB_RES: ${web_sum.slice(0, 500) + "..."}`
             );
             user_msg.content = user_msg.content + "\n" + web_sum;
+          }
+        }
+
+        // 用户输入请求拦截
+        if (
+          this?.config?.hook_request?.enable &&
+          this?.config?.hook_request?.keywords?.length &&
+          req.body?.messages?.at(-1)?.role === "user"
+        ) {
+          const user_msg = req.body.messages.at(-1);
+          let flag = false; //是否匹配到了
+          for (let it of this.config.hook_request.keywords) {
+            for (let keystr of it.keywords) {
+              flag = user_msg.content.includes(keystr);
+              if (flag) {
+                call_pool = it.process_pool;
+                req.body.temperature = it.temperature || 0.7;
+                if (api_source.is_output_log) {
+                  api_source.output_method(
+                    `SERVER @${this.host}:${this.port}: HOOK KEYWORD: ${keystr}, USE API POOL: ${call_pool.name}, TEMP: ${req.body.temperature}`
+                  );
+                }
+                break;
+              }
+            }
+            if (flag) break;
           }
         }
 
