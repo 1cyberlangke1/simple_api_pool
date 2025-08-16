@@ -16,6 +16,7 @@ const chat_models = [
 ];
 
 // 用于总结的模型
+// 在网络内容总结中使用
 const summary_models = [
   {
     url: "xxx/v1",
@@ -33,6 +34,7 @@ const summary_models = [
 ];
 
 // 查询API配置
+// 在聊天时在最后输入 --API名字 触发API查询, 会将查询结果塞在用户输入里面发生给LLM
 const query_apis = [
   {
     name: "weather", // API名字
@@ -47,6 +49,16 @@ const query_apis = [
   },
 ];
 
-// 假API要返回的字符串
+// 假API要返回的字符串, 用来"关掉"kourichat"意图识别"的临时功能
 const fake_api_strs = ["NOT_TIME_RELATED"];
-export default { chat_models, summary_models, query_apis, fake_api_strs };
+
+// 服务器配置
+const server_config = {
+  host: "127.0.0.1", // 服务器主机
+  port: 3000, // 端口
+  add_timestamp: true, // 是否在系统提示词注入时间戳
+  web_summary_enable: false, // 是否开启网页总结, true的话要写summary_models
+  query_apis_enable: false, // 是否开启查询API
+};
+
+export default { chat_models, summary_models, query_apis, fake_api_strs, server_config };
