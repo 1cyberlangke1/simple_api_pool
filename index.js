@@ -425,7 +425,7 @@ class fake_api {
       jina_ai_config: {
       }, //jina_ai的设置
     },
-    hook_request:{ // 拦截出现特定关键词的请求, 并由特定API池子处理
+    hook_request:{ // 拦截出现特定关键词(用户最新输入)的请求, 并由特定API池子处理
       enable: boolean, // 是否开启
       keywords: [{keywords: Array<String>, process_pool: api_pool, temperature: 0.2}, ...], // 关键词, 和对应的池子
     },

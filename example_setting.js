@@ -50,7 +50,7 @@ const process_models = [
   },
 ];
 
-// 拦截关键词
+// 拦截关键词(用户最新输入)
 const hook_keywords = ["__core_memory__"];
 
 // 池子的温度
