@@ -8,8 +8,24 @@ simple_api_pool.api_source.read_key_json(setting.summary_models);
 simple_api_pool.api_source.read_key_json(setting.process_models);
 
 const alias_array = [];
-for (let i = 1; i <= setting.chat_models.length; ++i) {
-  alias_array.push("key_" + i);
+const pools_array = [];
+if (setting.server_config.multi_pool_enable) {
+  let sum = 0;
+  for (let it of setting.multi_pool_config) {
+    alias_array.length = 0;
+    for (let i = 1; i <= it.key_count; ++i) {
+      alias_array.push("key_" + (i + sum));
+    }
+    sum += it.key_count;
+    pools_array.push({
+      pool: new simple_api_pool.api_pool(alias_array),
+      temperature: it.temperature,
+    });
+  }
+} else {
+  for (let i = 1; i <= setting.chat_models.length; ++i) {
+    alias_array.push("key_" + i);
+  }
 }
 
 const summary_alias_array = [];
@@ -24,7 +40,12 @@ for (let i = 1; i <= setting.process_models.length; ++i) {
   );
 }
 
-const pool = new simple_api_pool.api_pool(alias_array, "chat_model");
+let pool = null;
+if (setting.server_config.multi_pool_enable) {
+  pool = new simple_api_pool.multi_pool(pools_array, "chat_model");
+} else {
+  pool = new simple_api_pool.api_pool(alias_array, "chat_model");
+}
 const summary_pool = new simple_api_pool.api_pool(summary_alias_array, "summary_model");
 const process_pool = new simple_api_pool.api_pool(process_alias_array, "process_model");
 const fuck_reminder = new simple_api_pool.fake_api(setting.fake_api_strs, "fuck_reminder");

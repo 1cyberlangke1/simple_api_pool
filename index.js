@@ -85,7 +85,7 @@ class api_source {
   static #keys = new Map();
   // key , 别名
   static #key_to_alias = new Map();
-  // 别名生成
+  // 别名生成, 从1开始
   static #gen_alias = 0;
   // key是否被使用
   static #is_key_using_set = new Set();
@@ -246,20 +246,27 @@ class api_pool {
   keys_index = 0;
   name = ""; // 池子的名字, 同时也是服务传的模型名字
   timeout = 0; // 超时时间默认90000, 单位是毫秒
-
+  error_msgs = []; // 如果API返回了这些字符串, 将会抛出错误
   /**
    * 构造函数
    * @param {Array<string>} keys - API密钥别名数组
    * @param {string} [name="pool"] - 池名称
    * @param {number} [timeout=90000] - 请求超时时间(毫秒)
+   * @param {Array<string>} [error_msgs] - 如果API返回了这些字符串, 将会抛出错误
    * @description
    * 将密钥分为两类：无限次使用的加入keys数组，有限制的加入limit_keys数组
    * 自动过滤null，若启用日志则输出池信息
    * @memberof api_pool
    */
-  constructor(keys, name = "pool", timeout = 60000) {
+  constructor(
+    keys,
+    name = "pool",
+    timeout = 60000,
+    error_msgs = ["", "所有API秘钥均请求失败\n具体错误请查看轮询日志"]
+  ) {
     this.name = name;
     this.timeout = timeout;
+    this.error_msgs = error_msgs;
     for (let it of keys) {
       let true_key = api_source.read_api_key(it);
       if (true_key == null) continue;
@@ -336,6 +343,14 @@ class api_pool {
       //! 测试用, 记得注释掉
       //console.log(JSON.stringify(config.messages));
       const res = await openai.chat.completions.create(config);
+      for (let it of this.error_msgs) {
+        if (res.choices[0].message.content === it) {
+          if (api_source.is_output_log) {
+            api_source.output_method(`API POOL[${this.name}] THROW ERROR: ${it}`);
+          }
+          throw new Error(it);
+        }
+      }
       if (api_source.is_output_log) {
         api_source.output_method(
           `API POOL[${this.name}] TEMP: ${config.temperature} RES: [${JSON.stringify(res)}]`
@@ -348,6 +363,76 @@ class api_pool {
       //一定要
       api_source.free_api_key(alias);
     }
+  }
+}
+
+/**
+ *
+ * 多层级池子, 上层池子调用失败会自动往下层的调用, 直到全部失败抛出错误, 能像api_pool一样被调用
+ * @class multi_pool
+ */
+class multi_pool {
+  pools = [];
+  name = "";
+
+  /**
+   * 构造函数
+   *
+   * @param {Array<{pool: api_pool, temperature: number}>} [pools=[]]
+   *        池子配置数组，按调用优先级从高到低排列。
+   *        每个对象包含：
+   *        - `pool`: 一个 `api_pool` 实例
+   *        - `temperature`: 该层级使用的默认温度值（可被调用时覆盖）
+   * @param {string} [name="multi_pool"] -多池子的名称
+   * @description
+   * 初始化一个多层级 API 池。调用时会按数组顺序尝试每个池子，
+   * 前一个失败后自动尝试下一个，直到成功或全部失败。
+   * @memberof multi_pool
+   */
+  constructor(pools = [{ pool: null, temperature: 0.7 }], name = "multi_pool") {
+    this.pools = pools;
+    this.name = name;
+    if (api_source.is_output_log) {
+      api_source.output_method(`INIT MULTI API POOL[${this.name}]`);
+      for (let it of this.pools) {
+        api_source.output_method(
+          `ADD MULTI API POOL[${this.name}] POOL: [${it.pool.name}] [${it.temperature}]`
+        );
+      }
+    }
+  }
+  /**
+   * 调用LLM
+   * 轮询获取可用API密钥，优先使用有限制的密钥，然后是无限次密钥
+   * @param {Object} [in_config={}] - 请求配置
+   * @param {Array<Object>} [in_config.messages] - 对话消息数组
+   * @returns {Promise<Object>} OpenAI格式的响应对象
+   * @throws {Error} 当无可用密钥或API调用失败时抛出错误
+   * @memberof multi_pool
+   */
+  async call_openai_chat(in_config = {}) {
+    const default_config = {
+      messages: [],
+      temperature: 0.7,
+      max_tokens: 2000,
+      top_p: 1,
+      frequency_penalty: 0.2,
+      presence_penalty: 0,
+    };
+    let config = { ...default_config, ...in_config };
+    for (let i = 0; i < this.pools.length; ++i) {
+      try {
+        let now_call_pool = this.pools[i].pool;
+        config.temperature = this.pools[i].temperature;
+        const res = await now_call_pool.call_openai_chat(config);
+        return res;
+      } catch (err) {
+        if (api_source.is_output_log) {
+          api_source.output_method(`MULTI API POOL[${this.name}] Error: ${err}`);
+        }
+      }
+    }
+    throw new Error("ALL POOL FAULT");
   }
 }
 
@@ -433,7 +518,10 @@ class fake_api {
       enable: boolean, // 是否开启
       apis: Map<query_api>, // 提供的API
     }, // 对话时 使用 --xxx 调用对应的API结果
-
+    auto_continue:{ // 自动续写, 给gemini用的
+      enable: boolean, // 是否开启
+      continue_pool: api_pool, // 继续写的池子
+    },
   }
 */
 class api_server {
@@ -575,12 +663,13 @@ class api_server {
           }
         }
 
-        // 查询API调用
+        // 查询类API调用
         if (
           this?.config?.query_apis?.enable &&
           this?.config?.query_apis?.api?.size &&
           req.body?.messages?.at(-1)?.role === "user"
         ) {
+          // 查询类API调用
           const user_msg = req.body.messages.at(-1);
           const commands = tools.extract_command(user_msg.content);
           let res = "以下是API调用结果\n";
@@ -606,7 +695,9 @@ class api_server {
           }
         }
 
+        // 开始调用
         const result = await call_pool.call_openai_chat(req.body);
+
         if (isStream) {
           // 设置流式响应头
           res.setHeader("Content-Type", "text/event-stream");
@@ -711,4 +802,4 @@ class api_server {
   }
 }
 
-export default { query_api, api_source, api_pool, fake_api, api_server };
+export default { query_api, api_source, api_pool, multi_pool, fake_api, api_server };

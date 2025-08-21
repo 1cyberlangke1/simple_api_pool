@@ -31,6 +31,18 @@ function add_timestamp_prefix(str = "") {
 }
 
 /**
+ *
+ * 移除指定后缀的字符串
+ * @param {string} [str=""] 原字符串
+ * @param {string} [suffix=""] 后缀
+ * @return {String} 移除后缀的字符串
+ */
+function remove_str_suffix(str = "", suffix = "") {
+  if (str.endsWith(suffix)) return str.slice(0, -suffix.length);
+  return str;
+}
+
+/**
  * 调用Jina AI API获取网页内容
  * @param {string} [url=""] - 目标网页URL
  * @param {Object} [config={}] - 请求配置项
