@@ -98,7 +98,7 @@ cron.schedule(
   "0 0 * * *",
   () => {
     console.log("🕒 正在执行每日 key 使用次数重置...");
-    simple_api_pool.api_source.reset_setting_count();
+    simple_api_pool.api_source.reset_keys_count();
     console.log("✅ key 使用次数已重置");
   },
   {

@@ -262,7 +262,12 @@ class api_pool {
     keys,
     name = "pool",
     timeout = 60000,
-    error_msgs = ["", "所有API密钥均请求失败\n具体错误请查看轮询日志"]
+    error_msgs = [
+      "",
+      "\n",
+      "所有API密钥均请求失败\n具体错误请查看轮询日志",
+      "空响应次数达到上限\n请修改输入提示词",
+    ]
   ) {
     this.name = name;
     this.timeout = timeout;

@@ -75,7 +75,7 @@ const query_apis = [
 // 假API要返回的字符串, 用来"关掉"kourichat"意图识别"的临时功能
 const fake_api_strs = ["NOT_TIME_RELATED"];
 
-// 多层级API池子配置
+// 多层级API池子配置, key_count的和要小于等于chat_models的key的个数
 const multi_pool_config = [
   {
     key_count: 5, // 取chat_models前5个key作为一个池子
@@ -99,7 +99,7 @@ const server_config = {
   web_summary_enable: false, // 是否开启网页总结, true的话要写summary_models
   hook_request_enable: false, // 是否开启请求拦截, true的话要写process_models和拦截关键词
   query_apis_enable: false, // 是否开启查询API
-  multi_pool_enable: false, // 是否启用多层级池子, true的话要写multi_pool_config
+  multi_pool_enable: false, // 是否启用多层级池子, 填false就是一个大池子, true的话要写multi_pool_config
 };
 
 export default {
