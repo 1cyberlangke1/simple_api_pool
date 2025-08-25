@@ -132,4 +132,11 @@ function extract_command(text) {
   return matches ? matches.map((cmd) => cmd.slice(2)) : [];
 }
 
-export default { delay, add_timestamp_prefix, extract_command, call_jina_ai, web_summary };
+export default {
+  delay,
+  add_timestamp_prefix,
+  remove_str_suffix,
+  extract_command,
+  call_jina_ai,
+  web_summary,
+};

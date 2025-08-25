@@ -100,6 +100,7 @@ const server_config = {
   hook_request_enable: false, // 是否开启请求拦截, true的话要写process_models和拦截关键词
   query_apis_enable: false, // 是否开启查询API
   multi_pool_enable: false, // 是否启用多层级池子, 填false就是一个大池子, true的话要写multi_pool_config
+  check_truncated: false, // 检查是否截断, 截断会抛出错误, 只影响chat_model池子, 会增加token用量
 };
 
 export default {

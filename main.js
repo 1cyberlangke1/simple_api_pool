@@ -21,6 +21,7 @@ if (setting.server_config.multi_pool_enable) {
       pool: new simple_api_pool.api_pool(alias_array),
       temperature: it.temperature,
     });
+    pools_array.at(-1).pool.check_truncated = setting.server_config.check_truncated;
   }
 } else {
   for (let i = 1; i <= setting.chat_models.length; ++i) {
@@ -45,6 +46,7 @@ if (setting.server_config.multi_pool_enable) {
   pool = new simple_api_pool.multi_pool(pools_array, "chat_model");
 } else {
   pool = new simple_api_pool.api_pool(alias_array, "chat_model");
+  pool.check_truncated = setting.server_config.check_truncated;
 }
 const summary_pool = new simple_api_pool.api_pool(summary_alias_array, "summary_model");
 const process_pool = new simple_api_pool.api_pool(process_alias_array, "process_model");

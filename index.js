@@ -89,7 +89,6 @@ class api_source {
   static #gen_alias = 0;
   // key是否被使用
   static #is_key_using_set = new Set();
-
   /**
    * 添加API Key
    * @param {string} url - API服务地址
@@ -247,12 +246,14 @@ class api_pool {
   name = ""; // 池子的名字, 同时也是服务传的模型名字
   timeout = 0; // 超时时间默认90000, 单位是毫秒
   error_msgs = []; // 如果API返回了这些字符串, 将会抛出错误
+  check_truncated = false; // 判断截断
   /**
    * 构造函数
    * @param {Array<string>} keys - API密钥别名数组
    * @param {string} [name="pool"] - 池名称
    * @param {number} [timeout=90000] - 请求超时时间(毫秒)
    * @param {Array<string>} [error_msgs] - 如果API返回了这些字符串, 将会抛出错误
+   * @param {Boolean} [check_truncated] - 判断消息是否截断, 是的话抛出错误
    * @description
    * 将密钥分为两类：无限次使用的加入keys数组，有限制的加入limit_keys数组
    * 自动过滤null，若启用日志则输出池信息
@@ -267,11 +268,13 @@ class api_pool {
       "\n",
       "所有API密钥均请求失败\n具体错误请查看轮询日志",
       "空响应次数达到上限\n请修改输入提示词",
-    ]
+    ],
+    check_truncated = false
   ) {
     this.name = name;
     this.timeout = timeout;
     this.error_msgs = error_msgs;
+    this.check_truncated = check_truncated;
     for (let it of keys) {
       let true_key = api_source.read_api_key(it);
       if (true_key == null) continue;
@@ -347,9 +350,16 @@ class api_pool {
       config.model = true_key.model;
       //! 测试用, 记得注释掉
       //console.log(JSON.stringify(config.messages));
+
+      // 检查消息是否完整: 注入提示词
+      if (this.check_truncated === true && config.messages?.at(-1)?.role === "user") {
+        config.messages.at(-1).content += '\n**无论如何都必须在输出结尾加上"__end__"(不包括"")**';
+      }
+
       const res = await openai.chat.completions.create(config);
+      const res_content = res.choices[0].message.content;
       for (let it of this.error_msgs) {
-        if (res.choices[0].message.content === it) {
+        if (res_content === it) {
           if (api_source.is_output_log) {
             api_source.output_method(`API POOL[${this.name}] THROW ERROR: ${it}`);
           }
@@ -360,6 +370,20 @@ class api_pool {
         api_source.output_method(
           `API POOL[${this.name}] TEMP: ${config.temperature} RES: [${JSON.stringify(res)}]`
         );
+      }
+      // 检查消息是否完整: 去掉后缀/判断完整性
+      if (this.check_truncated === true) {
+        if (res_content.endsWith("__end__")) {
+          res.choices[0].message.content = tools.remove_str_suffix(res_content, "__end__");
+          if (api_source.is_output_log) {
+            api_source.output_method(`API POOL[${this.name}] OK! NOT TRUNCATED`);
+          }
+        } else {
+          if (api_source.is_output_log) {
+            api_source.output_method(`API POOL[${this.name}] THROW ERROR: TRUNCATED`);
+          }
+          throw new Error("TRUNCATED");
+        }
       }
       return res;
     } catch (error) {
@@ -379,7 +403,6 @@ class api_pool {
 class multi_pool {
   pools = [];
   name = "";
-
   /**
    * 构造函数
    *
