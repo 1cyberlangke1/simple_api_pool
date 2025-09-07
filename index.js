@@ -352,6 +352,7 @@ class api_pool {
       //console.log(JSON.stringify(config.messages));
 
       // 检查消息是否完整: 注入提示词
+      const tmp_content = config.messages.at(-1).content;
       if (this.check_truncated === true && config.messages?.at(-1)?.role === "user") {
         config.messages.at(-1).content += '\n**无论如何都必须在输出结尾加上"__end__"(不包括"")**';
       }
@@ -373,6 +374,7 @@ class api_pool {
       }
       // 检查消息是否完整: 去掉后缀/判断完整性
       if (this.check_truncated === true) {
+        config.messages.at(-1).content = tmp_content;
         if (res_content.endsWith("__end__")) {
           res.choices[0].message.content = tools.remove_str_suffix(res_content, "__end__");
           if (api_source.is_output_log) {
