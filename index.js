@@ -639,9 +639,17 @@ class api_server {
             );
         }
         req.body.model = call_pool.name;
+        // 兼容cherry studio的工具调用
+        if (req.body?.messages?.at(-1)?.role === "user") {
+          const user_msg = req.body.messages.at(-1).content;
+          if (Array.isArray(user_msg))
+            req.body.messages[req.body.messages.length - 1].content = JSON.stringify(user_msg);
+          //console.log(req.body.messages.at(-1).content);
+        }
 
-        // 加入时间戳
         if (this.config.add_timestamp && req.body?.messages[0]?.role === "system") {
+          //api_source.output_method(JSON.stringify(req.body.messages));
+          // 加入时间戳
           req.body.messages[0].content = tools.add_timestamp_prefix(req.body.messages[0].content);
           if (api_source.is_output_log) {
             api_source.output_method(
