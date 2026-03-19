@@ -2,7 +2,7 @@
   <div class="dashboard">
     <!-- 统计卡片 -->
     <el-row :gutter="20">
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="6">
         <StatCard
           :icon="OfficeBuilding"
           icon-class="providers"
@@ -10,7 +10,7 @@
           label="提供商"
         />
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="6">
         <StatCard
           :icon="Document"
           icon-class="models"
@@ -18,10 +18,10 @@
           label="模型"
         />
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="6">
         <StatCard :icon="Key" icon-class="keys" :value="stats.keys" label="API Key" />
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="6">
         <StatCard :icon="Grid" icon-class="groups" :value="stats.groups" label="分组" />
       </el-col>
     </el-row>
@@ -36,7 +36,7 @@
             <el-select
               v-model="chartHours"
               size="small"
-              style="width: 120px; margin-left: 12px"
+              class="chart-select"
               @change="fetchChartStats"
             >
               <el-option label="最近 6 小时" :value="6" />
@@ -65,7 +65,7 @@
           <ConnectionStatus :state="sseState" />
         </div>
       </template>
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="descColumn" border>
         <el-descriptions-item label="状态">
           <el-tag :type="health.status === 'ok' ? 'success' : 'danger'">
             {{ health.status }}
@@ -74,17 +74,35 @@
         <el-descriptions-item label="运行时间">
           <span class="uptime">{{ formattedUptime }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="可用模型" :span="2">
-          <el-tag
-            v-for="model in health.models?.slice(0, 10)"
-            :key="model"
-            class="model-tag"
-          >
-            {{ model }}
-          </el-tag>
-          <el-tag v-if="health.models?.length > 10" type="info">
-            +{{ health.models.length - 10 }} 更多
-          </el-tag>
+        <el-descriptions-item label="可用模型" :span="descColumn">
+          <div class="model-tags">
+            <el-tag
+              v-for="model in health.models?.slice(0, 10)"
+              :key="model"
+              class="model-tag"
+              type="primary"
+            >
+              {{ model }}
+            </el-tag>
+            <el-tag v-if="health.models?.length > 10" type="info">
+              +{{ health.models.length - 10 }} 更多
+            </el-tag>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="可用分组" :span="descColumn">
+          <div class="model-tags">
+            <el-tag
+              v-for="group in health.groups?.slice(0, 10)"
+              :key="group"
+              class="model-tag"
+              type="success"
+            >
+              {{ group }}
+            </el-tag>
+            <el-tag v-if="health.groups?.length > 10" type="info">
+              +{{ health.groups.length - 10 }} 更多
+            </el-tag>
+          </div>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -103,11 +121,48 @@
               size="small"
               class="search-input"
             />
-            <ConnectionStatus :state="sseState" />
+            <ConnectionStatus :state="sseState" class="desktop-only" />
           </div>
         </div>
       </template>
-      <el-table :data="paginatedKeys" stripe>
+      
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-keys-list">
+        <div v-for="key in paginatedKeys" :key="key.alias" class="mobile-key-item">
+          <div class="key-header">
+            <span class="key-alias">{{ key.alias }}</span>
+            <el-tag :type="getQuotaTagType(key.quota.type)" size="small">
+              {{ getQuotaLabel(key.quota) }}
+            </el-tag>
+          </div>
+          <div class="key-info">
+            <span>{{ key.provider }}</span>
+            <span v-if="key.model">{{ key.model }}</span>
+          </div>
+          <div class="key-usage">
+            <template v-if="key.quota.type === 'daily'">
+              <el-progress
+                :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
+                :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
+              />
+              <span class="progress-text">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
+            </template>
+            <template v-else-if="key.quota.type === 'total'">
+              <el-progress
+                :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
+                :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
+              />
+              <span class="progress-text">${{ (key.remainingTotal || 0).toFixed(4) }} 剩余</span>
+            </template>
+            <template v-else>
+              <span class="progress-text">无限制</span>
+            </template>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 桌面端表格 -->
+      <el-table :data="paginatedKeys" stripe class="desktop-table">
         <el-table-column prop="alias" label="别名" width="120" />
         <el-table-column prop="provider" label="提供商" width="100" />
         <el-table-column prop="model" label="模型" width="120">
@@ -148,6 +203,7 @@
           </template>
         </el-table-column>
       </el-table>
+      
       <!-- 分页 -->
       <div v-if="filteredKeys.length > pageSize" class="pagination-wrapper">
         <span class="pagination-info">
@@ -169,7 +225,7 @@
 /**
  * 仪表盘视图
  * @description 显示系统概览、统计图表和 Key 状态
- * @优化 使用 SSE 替代轮询，只在后端有更新时才刷新数据
+ * @behavior 使用 SSE 替代轮询，只在后端有更新时才刷新数据
  */
 import { ref, reactive, onMounted, onUnmounted, h, computed } from "vue";
 import { OfficeBuilding, Document, Key, Grid, Search } from "@element-plus/icons-vue";
@@ -201,11 +257,15 @@ const health = reactive({
   timestamp: "",
   startTime: "", // 服务启动时间 (ISO 8601)
   models: [] as string[],
+  groups: [] as string[],
 });
 
 // 运行时间（前端计算，减轻后端负担）
 const uptime = ref(0); // 运行秒数
 const formattedUptime = ref("--");
+
+/** 描述列表列数（响应式） */
+const descColumn = ref(2);
 
 /**
  * 格式化运行时间为可读字符串
@@ -237,6 +297,14 @@ function updateUptime(): void {
   const nowMs = Date.now();
   uptime.value = Math.floor((nowMs - startMs) / 1000);
   formattedUptime.value = formatUptime(uptime.value);
+}
+
+/**
+ * 更新响应式变量（根据窗口宽度）
+ */
+function updateResponsive(): void {
+  const width = window.innerWidth;
+  descColumn.value = width < 768 ? 1 : 2;
 }
 
 const keys = ref<KeyState[]>([]);
@@ -401,6 +469,10 @@ async function refreshStats(): Promise<void> {
 }
 
 onMounted(async () => {
+  // 初始化响应式变量
+  updateResponsive();
+  window.addEventListener("resize", updateResponsive);
+  
   // 初始加载所有数据
   await Promise.all([
     fetchHealth(),
@@ -423,6 +495,8 @@ onUnmounted(() => {
     clearInterval(uptimeTimer);
     uptimeTimer = null;
   }
+  // 移除事件监听
+  window.removeEventListener("resize", updateResponsive);
 });
 
 async function fetchHealth() {
@@ -432,10 +506,12 @@ async function fetchHealth() {
     health.timestamp = data.timestamp;
     health.startTime = data.startTime || "";
     health.models = data.models || [];
-    const modelList = data.models.filter((m: string) => !m.startsWith("group/"));
-    stats.providers = new Set(modelList.map((m: string) => m.split("/")[0])).size;
-    stats.models = modelList.length;
-    stats.groups = data.models.filter((m: string) => m.startsWith("group/")).length;
+    health.groups = data.groups || [];
+    
+    // 统计数据
+    stats.providers = new Set(health.models.map((m: string) => m.split("/")[0])).size;
+    stats.models = health.models.length;
+    stats.groups = health.groups.length;
     
     // 初始化运行时间
     updateUptime();
@@ -519,6 +595,10 @@ async function fetchChartStats() {
   gap: 12px;
 }
 
+.chart-select {
+  width: 120px;
+}
+
 /* SSE 状态指示器 */
 .sse-status {
   font-size: 12px;
@@ -543,6 +623,12 @@ async function fetchChartStats() {
 }
 
 /* 模型标签 */
+.model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .model-tag {
   margin: 3px;
   border-radius: 6px;
@@ -621,5 +707,133 @@ async function fetchChartStats() {
 .pagination-info {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* 移动端 Key 列表默认隐藏 */
+.mobile-keys-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .search-input {
+    width: 140px;
+  }
+
+  .chart-select {
+    width: 100px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .dashboard {
+    gap: 16px;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-header > span:first-child {
+    font-size: 14px;
+  }
+
+  .chart-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .chart-select {
+    width: 100px;
+  }
+
+  .search-input {
+    width: 100%;
+    flex: 1;
+  }
+
+  .keys-header-actions {
+    width: 100%;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  /* 显示移动端 Key 列表 */
+  .mobile-keys-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+
+  .pagination-info {
+    display: none;
+  }
+
+  .pagination-wrapper {
+    justify-content: center;
+  }
+}
+
+/* 移动端 Key 卡片样式 */
+.mobile-key-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-key-item .key-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.mobile-key-item .key-alias {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mobile-key-item .key-info {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.mobile-key-item .key-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .dashboard {
+    gap: 12px;
+  }
+
+  .uptime {
+    font-size: 12px;
+  }
+
+  .sse-status {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
 }
 </style>

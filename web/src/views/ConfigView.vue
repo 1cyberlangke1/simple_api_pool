@@ -7,7 +7,7 @@
           <span>API 服务端点</span>
           <el-button type="primary" text @click="copyEndpoint">
             <el-icon><DocumentCopy /></el-icon>
-            复制端点地址
+            <span class="btn-text">复制端点</span>
           </el-button>
         </div>
       </template>
@@ -23,7 +23,7 @@
         </template>
       </el-alert>
 
-      <el-descriptions :column="1" border>
+      <el-descriptions :column="descColumn" border>
         <el-descriptions-item label="API 端点">
           <div class="endpoint-info">
             <code class="endpoint-url">{{ apiEndpoint }}</code>
@@ -111,14 +111,14 @@ while (true) {
           <span>高级配置</span>
           <el-button type="primary" @click="saveConfig" :loading="saving">
             <el-icon><Check /></el-icon>
-            保存配置
+            <span class="btn-text">保存配置</span>
           </el-button>
         </div>
       </template>
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="服务器设置" name="server">
-          <el-form label-width="120px">
+          <el-form label-width="120px" class="config-form">
             <el-form-item label="监听地址">
               <el-radio-group v-model="config.server.host">
                 <el-radio-button label="127.0.0.1">
@@ -157,7 +157,8 @@ while (true) {
             </template>
           </el-alert>
 
-          <el-table :data="config.tools.mcpTools" stripe>
+          <!-- 桌面端表格 -->
+          <el-table :data="config.tools.mcpTools" stripe class="desktop-table">
             <el-table-column label="名称" width="150" prop="name" />
             <el-table-column label="传输方式" width="100">
               <template #default="{ row }">
@@ -193,6 +194,35 @@ while (true) {
             </el-table-column>
           </el-table>
 
+          <!-- 移动端列表 -->
+          <div class="mobile-list">
+            <div v-for="(tool, index) in config.tools.mcpTools" :key="tool.name" class="mobile-item">
+              <div class="item-header">
+                <span class="item-name">{{ tool.name }}</span>
+                <el-tag :type="getTransportTagType(tool.transport)" size="small">
+                  {{ tool.transport?.toUpperCase() }}
+                </el-tag>
+              </div>
+              <div class="item-config">
+                <template v-if="tool.transport === 'stdio'">
+                  {{ tool.command }} {{ tool.args?.join(" ") || "" }}
+                </template>
+                <template v-else>
+                  {{ tool.endpoint }}
+                </template>
+              </div>
+              <div class="item-actions">
+                <el-button type="primary" text size="small" @click="editTool(index)">
+                  编辑
+                </el-button>
+                <el-button type="danger" text size="small" @click="removeTool(index)">
+                  删除
+                </el-button>
+              </div>
+            </div>
+            <el-empty v-if="config.tools.mcpTools.length === 0" description="暂无工具" />
+          </div>
+
           <el-button type="primary" style="margin-top: 16px" @click="showAddToolDialog">
             <el-icon><Plus /></el-icon>
             添加 MCP 工具
@@ -200,7 +230,7 @@ while (true) {
         </el-tab-pane>
 
         <el-tab-pane label="缓存" name="cache">
-          <el-form label-width="120px">
+          <el-form label-width="120px" class="config-form">
             <el-form-item label="启用缓存">
               <el-switch v-model="config.cache.enable" />
               <span class="form-hint">
@@ -227,15 +257,17 @@ while (true) {
         </el-tab-pane>
 
         <el-tab-pane label="原始配置" name="raw">
-          <el-input
-            v-model="rawConfig"
-            type="textarea"
-            :rows="20"
-            font-family="monospace"
-          />
-          <el-button type="primary" style="margin-top: 12px" @click="applyRawConfig">
-            应用配置
-          </el-button>
+          <div class="raw-config-container">
+            <el-input
+              v-model="rawConfig"
+              type="textarea"
+              :rows="10"
+              class="raw-textarea"
+            />
+            <el-button type="primary" style="margin-top: 12px" @click="applyRawConfig">
+              应用配置
+            </el-button>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -276,6 +308,9 @@ const rawConfig = ref("");
 const toolDialogVisible = ref(false);
 const editingToolIndex = ref(-1);
 const editingTool = ref<McpTool | null>(null);
+
+/** 描述列表列数（响应式） */
+const descColumn = ref(1);
 
 const config = reactive<AppConfig>({
   server: {
@@ -320,7 +355,18 @@ async function copyEndpoint() {
   }
 }
 
+/**
+ * 更新响应式变量（根据窗口宽度）
+ */
+function updateResponsive(): void {
+  const width = window.innerWidth;
+  descColumn.value = width < 768 ? 1 : 1;
+}
+
 onMounted(async () => {
+  updateResponsive();
+  window.addEventListener("resize", updateResponsive);
+  
   try {
     const { data } = await getConfig();
     Object.assign(config, data);
@@ -503,5 +549,133 @@ function handleToolSave(tool: McpTool) {
   word-break: break-all;
   color: var(--text-primary);
   transition: background-color 0.3s, border-color 0.3s;
+}
+
+/* 移动端列表默认隐藏 */
+.mobile-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .config-form :deep(.el-form-item__label) {
+    width: 100px !important;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .btn-text {
+    display: none;
+  }
+
+  .config-form :deep(.el-form-item__label) {
+    width: 100% !important;
+    text-align: left;
+    margin-bottom: 8px;
+  }
+
+  .config-form :deep(.el-form-item) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .endpoint-url {
+    font-size: 12px;
+    word-break: break-all;
+  }
+
+  .code-block {
+    font-size: 11px;
+    padding: 8px;
+  }
+
+  /* 显示移动端列表 */
+  .mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mobile-item .item-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mobile-item .item-config {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.mobile-item .item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .endpoint-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* 原始配置区域 */
+.raw-config-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.raw-textarea :deep(.el-textarea__inner) {
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  min-height: 200px;
+  max-height: 50vh;
+}
+
+/* Tab 内容区域响应式 */
+@media (max-width: 768px) {
+  :deep(.el-tabs__content) {
+    max-height: calc(100vh - 350px);
+    overflow-y: auto;
+  }
+
+  .raw-textarea :deep(.el-textarea__inner) {
+    min-height: 150px;
+    max-height: 40vh;
+  }
 }
 </style>

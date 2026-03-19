@@ -6,12 +6,13 @@
           <span>JS 工具编辑器</span>
           <el-button type="primary" @click="showAddDialog">
             <el-icon><Plus /></el-icon>
-            新建工具
+            <span class="btn-text">新建工具</span>
           </el-button>
         </div>
       </template>
 
-      <el-table :data="tools" stripe v-loading="loading">
+      <!-- 桌面端表格 -->
+      <el-table :data="tools" stripe v-loading="loading" class="desktop-table">
         <el-table-column prop="name" label="名称" width="180" />
         <el-table-column prop="description" label="描述" />
         <el-table-column label="状态" width="100">
@@ -42,6 +43,36 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-list" v-loading="loading">
+        <div v-for="tool in tools" :key="tool.id" class="mobile-item">
+          <div class="item-header">
+            <div class="item-info">
+              <span class="item-name">{{ tool.name }}</span>
+              <el-tag :type="tool.enabled ? 'success' : 'info'" size="small">
+                {{ tool.enabled ? "启用" : "禁用" }}
+              </el-tag>
+            </div>
+            <div class="item-actions">
+              <el-button type="primary" text size="small" @click="showEditDialog(tool)">
+                编辑
+              </el-button>
+              <el-button type="warning" text size="small" @click="showTestDialog(tool)">
+                测试
+              </el-button>
+              <el-popconfirm title="确定删除此工具？" @confirm="handleDelete(tool.id)">
+                <template #reference>
+                  <el-button type="danger" text size="small">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+          </div>
+          <div class="item-desc">{{ tool.description }}</div>
+          <div class="item-time">更新于 {{ formatDate(tool.updatedAt) }}</div>
+        </div>
+        <el-empty v-if="tools.length === 0 && !loading" description="暂无工具" />
+      </div>
     </el-card>
 
     <!-- 新建/编辑对话框 -->
@@ -52,7 +83,7 @@
     />
 
     <!-- 测试对话框 -->
-    <el-dialog v-model="testDialogVisible" title="测试工具" width="600px">
+    <el-dialog v-model="testDialogVisible" title="测试工具" :width="testDialogWidth">
       <div class="test-container">
         <div class="test-params">
           <div class="test-header">测试参数（JSON）</div>
@@ -91,7 +122,7 @@
  * JS 工具编辑器视图
  * @description 管理用户自定义 JS 工具
  */
-import { ref, onMounted, onActivated } from "vue";
+import { ref, onMounted, onActivated, computed } from "vue";
 import { Plus } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
@@ -112,6 +143,11 @@ const editingTool = ref<JsTool | null>(null);
 const testResult = ref<JsToolTestResult | null>(null);
 const testArgs = ref("{}");
 const testingToolId = ref("");
+
+/** 测试对话框宽度（响应式） */
+const testDialogWidth = computed(() => {
+  return window.innerWidth < 768 ? "95%" : "600px";
+});
 
 onMounted(() => {
   fetchTools();
@@ -217,5 +253,89 @@ function formatDate(timestamp: number): string {
   white-space: pre-wrap;
   word-break: break-all;
   transition: background-color 0.3s;
+}
+
+/* 移动端列表默认隐藏 */
+.mobile-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .btn-text {
+    display: none;
+  }
+
+  /* 显示移动端列表 */
+  .mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.mobile-item .item-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mobile-item .item-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mobile-item .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mobile-item .item-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.mobile-item .item-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .result-content {
+    font-size: 11px;
+    max-height: 200px;
+  }
+
+  .mobile-item .item-actions {
+    flex-direction: column;
+    gap: 2px;
+  }
 }
 </style>

@@ -43,6 +43,8 @@ export function registerGroupsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(400).send({ error: "group already exists" });
       }
       app.runtime.config.groups.push(request.body);
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -65,6 +67,8 @@ export function registerGroupsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(404).send({ error: "group not found" });
       }
       app.runtime.config.groups[idx] = request.body;
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -86,6 +90,8 @@ export function registerGroupsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(404).send({ error: "group not found" });
       }
       app.runtime.config.groups.splice(idx, 1);
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }

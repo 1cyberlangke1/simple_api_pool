@@ -6,12 +6,13 @@
           <span>分组配置</span>
           <el-button type="primary" @click="showAddDialog">
             <el-icon><Plus /></el-icon>
-            新增分组
+            <span class="btn-text">新增分组</span>
           </el-button>
         </div>
       </template>
 
-      <el-table :data="groups" stripe v-loading="loading">
+      <!-- 桌面端表格 -->
+      <el-table :data="groups" stripe v-loading="loading" class="desktop-table">
         <el-table-column label="分组 ID" width="180">
           <template #default="{ row }">
             <el-tag type="success">group/{{ row.name }}</el-tag>
@@ -69,6 +70,52 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-list" v-loading="loading">
+        <div v-for="group in groups" :key="group.name" class="mobile-item">
+          <div class="item-header">
+            <el-tag type="success" size="small">group/{{ group.name }}</el-tag>
+            <div class="item-actions">
+              <el-button type="primary" text size="small" @click="showEditDialog(group)">
+                编辑
+              </el-button>
+              <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(group.name)">
+                <template #reference>
+                  <el-button type="danger" text size="small">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+          </div>
+          <div class="item-routes">
+            <div v-for="(route, idx) in group.routes" :key="idx" class="route-tag">
+              <el-tag size="small">{{ route.modelId }}</el-tag>
+              <span v-if="route.temperature" class="temp-text">temp: {{ route.temperature }}</span>
+            </div>
+          </div>
+          <div class="item-features">
+            <el-tag size="small">{{ group.strategy || "round_robin" }}</el-tag>
+            <el-tag
+              v-if="group.features?.tools?.length"
+              size="small"
+              type="success"
+            >
+              工具 ({{ group.features.tools.length }})
+            </el-tag>
+            <el-tag v-if="group.features?.promptInject" size="small" type="info">
+              提示词
+            </el-tag>
+            <el-tag
+              v-if="group.features?.truncation?.enable"
+              size="small"
+              type="warning"
+            >
+              截断
+            </el-tag>
+          </div>
+        </div>
+        <el-empty v-if="groups.length === 0 && !loading" description="暂无分组" />
+      </div>
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -196,5 +243,77 @@ async function handleDelete(name: string) {
   font-size: 12px;
   color: var(--text-secondary);
   font-style: italic;
+}
+
+/* 移动端列表默认隐藏 */
+.mobile-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .btn-text {
+    display: none;
+  }
+
+  /* 显示移动端列表 */
+  .mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mobile-item .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mobile-item .item-routes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mobile-item .route-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mobile-item .temp-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mobile-item .item-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 </style>

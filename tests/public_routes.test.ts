@@ -111,7 +111,7 @@ describe("Public Routes", () => {
       expect(data.models).toContain("test-provider/test-model");
     });
 
-    it("includes group models in list", async () => {
+    it("includes groups in separate array", async () => {
       const response = await app.inject({
         method: "GET",
         url: "/health",
@@ -119,7 +119,10 @@ describe("Public Routes", () => {
 
       expect(response.statusCode).toBe(200);
       const data = response.json();
-      expect(data.models).toContain("group/default");
+      // 分组现在在单独的 groups 数组中，不在 models 中
+      expect(data.groups).toBeDefined();
+      expect(data.groups).toContain("default");
+      expect(data.models).not.toContain("group/default");
     });
 
     it("does not require authentication", async () => {

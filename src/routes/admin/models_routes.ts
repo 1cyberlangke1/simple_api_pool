@@ -46,6 +46,8 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(400).send({ error: "model already exists" });
       }
       app.runtime.config.models.push(request.body);
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -74,6 +76,8 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(404).send({ error: "model not found" });
       }
       app.runtime.config.models[idx] = request.body;
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -86,6 +90,7 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
    * @param name 模型名称
    * @returns 操作状态
    * @throws 404 如果模型不存在
+   * @behavior 同时清理分组中引用该模型的路由
    */
   app.delete<{ Params: { provider: string; name: string } }>(
     "/api/models/:provider/:name",
@@ -94,6 +99,7 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
       request: FastifyRequest<{ Params: { provider: string; name: string } }>,
       reply: FastifyReply
     ) => {
+      const modelId = `${request.params.provider}/${request.params.name}`;
       const idx = app.runtime.config.models.findIndex(
         (m) => m.name === request.params.name && m.provider === request.params.provider
       );
@@ -101,8 +107,20 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(404).send({ error: "model not found" });
       }
       app.runtime.config.models.splice(idx, 1);
+      // 清理分组中引用该模型的路由
+      let deletedGroupRoutes = 0;
+      for (const group of app.runtime.config.groups) {
+        const originalLength = group.routes.length;
+        group.routes = group.routes.filter((r) => r.modelId !== modelId);
+        deletedGroupRoutes += originalLength - group.routes.length;
+      }
+      // 删除空的分组（路由全部被清理）
+      const deletedGroups = app.runtime.config.groups.filter((g) => g.routes.length === 0).length;
+      app.runtime.config.groups = app.runtime.config.groups.filter((g) => g.routes.length > 0);
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({ status: "ok" });
+      return reply.send({ status: "ok", deletedGroupRoutes, deletedGroups });
     }
   );
 

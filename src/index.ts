@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import type { AppConfig } from "./core/types.js";
-import { ConfigStore, getDefaultRuntimePath } from "./core/config_store.js";
+import { ConfigStore, getDefaultConfigPath } from "./core/config_store.js";
 import { AppRuntime } from "./app_state.js";
 import { buildApp } from "./app.js";
 import { logger } from "./core/logger.js";
@@ -49,7 +49,7 @@ const validConfig = validationResult.data as AppConfig;
 async function bootstrap() {
   // 使用 process.cwd() 作为项目根目录
   const rootDir = process.cwd();
-  const configStore = new ConfigStore(validConfig, getDefaultRuntimePath(rootDir));
+  const configStore = new ConfigStore(validConfig, configPath);
 
   // 创建应用运行态
   const runtime = new AppRuntime(configStore.getConfig());

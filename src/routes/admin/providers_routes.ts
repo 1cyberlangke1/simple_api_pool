@@ -43,6 +43,8 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
         return reply.status(400).send({ error: "provider already exists" });
       }
       app.runtime.config.providers.push(request.body);
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -65,6 +67,8 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
         return reply.status(404).send({ error: "provider not found" });
       }
       app.runtime.config.providers[idx] = request.body;
+      // 刷新运行时以更新 modelRegistry
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
@@ -79,6 +83,7 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
    * - 删除提供商配置
    * - 级联删除关联的模型配置
    * - 级联删除关联的 Key
+   * - 清理分组中引用该提供商模型的路由
    */
   app.delete<{ Params: { name: string } }>(
     "/api/providers/:name",
@@ -99,11 +104,27 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
       for (const key of keysToDelete) {
         app.runtime.keyStore.deleteKey(key.alias);
       }
+      // 从配置中也移除这些 Key
+      app.runtime.config.keys = app.runtime.config.keys.filter((k) => k.provider !== providerName);
+      // 清理分组中引用该提供商模型的路由
+      let deletedGroupRoutes = 0;
+      for (const group of app.runtime.config.groups) {
+        const originalLength = group.routes.length;
+        group.routes = group.routes.filter((r) => !r.modelId.startsWith(`${providerName}/`));
+        deletedGroupRoutes += originalLength - group.routes.length;
+      }
+      // 删除空的分组（路由全部被清理）
+      const deletedGroups = app.runtime.config.groups.filter((g) => g.routes.length === 0).length;
+      app.runtime.config.groups = app.runtime.config.groups.filter((g) => g.routes.length > 0);
+      // 刷新运行时以更新 modelRegistry 和 keyStore
+      app.runtime.reset(app.runtime.config);
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({
         status: "ok",
         deletedModels: deletedModelsCount,
         deletedKeys: keysToDelete.length,
+        deletedGroupRoutes,
+        deletedGroups,
       });
     }
   );

@@ -4,22 +4,20 @@ import type { AppConfig } from "./types.js";
 
 /**
  * 配置存储器
- * @description 支持读取基础配置与运行时覆盖，并提供持久化更新能力
+ * @description 直接读写 setting.json，无 runtime.json 机制
  */
 export class ConfigStore {
-  private baseConfig: AppConfig;
-  private runtimePath: string;
+  private configPath: string;
   private currentConfig: AppConfig;
 
   /**
    * 初始化配置存储器
-   * @param baseConfig 基础配置
-   * @param runtimePath 运行时配置文件路径
+   * @param config 配置对象
+   * @param configPath 配置文件路径（setting.json）
    */
-  constructor(baseConfig: AppConfig, runtimePath: string) {
-    this.baseConfig = baseConfig;
-    this.runtimePath = runtimePath;
-    this.currentConfig = this.mergeWithRuntime();
+  constructor(config: AppConfig, configPath: string) {
+    this.configPath = configPath;
+    this.currentConfig = config;
   }
 
   /**
@@ -31,46 +29,33 @@ export class ConfigStore {
   }
 
   /**
-   * 更新当前配置并持久化
+   * 更新当前配置并持久化到 setting.json
    * @param nextConfig 新的配置
    */
   updateConfig(nextConfig: AppConfig): void {
     this.currentConfig = nextConfig;
     // 确保目录存在
-    const dir = path.dirname(this.runtimePath);
+    const dir = path.dirname(this.configPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.runtimePath, JSON.stringify(nextConfig, null, 2), "utf8");
+    fs.writeFileSync(this.configPath, JSON.stringify(nextConfig, null, 2), "utf8");
   }
 
   /**
-   * 合并运行时覆盖配置
-   * @returns 若存在 runtime.json 则返回运行时配置，否则返回基础配置
+   * 获取配置文件路径
+   * @returns 配置文件的完整路径
    */
-  private mergeWithRuntime(): AppConfig {
-    if (!fs.existsSync(this.runtimePath)) {
-      return this.baseConfig;
-    }
-    const raw = fs.readFileSync(this.runtimePath, "utf8");
-    const runtimeConfig = JSON.parse(raw) as AppConfig;
-    return runtimeConfig;
-  }
-
-  /**
-   * 获取运行时配置文件路径
-   * @returns 运行时配置文件的完整路径
-   */
-  getRuntimePath(): string {
-    return this.runtimePath;
+  getConfigPath(): string {
+    return this.configPath;
   }
 }
 
 /**
- * 生成默认运行时配置路径
+ * 获取默认配置文件路径
  * @param rootDir 根目录
- * @returns 运行时配置文件路径（默认为 config/runtime.json）
+ * @returns 配置文件路径（默认为 config/setting.json）
  */
-export function getDefaultRuntimePath(rootDir: string): string {
-  return path.join(rootDir, "config", "runtime.json");
+export function getDefaultConfigPath(rootDir: string): string {
+  return path.join(rootDir, "config", "setting.json");
 }

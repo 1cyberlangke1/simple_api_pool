@@ -396,6 +396,38 @@ describe("Admin Routes", () => {
     });
 
     it("DELETE /api/providers/:name deletes provider and cascades", async () => {
+      // 先添加完整的额外 provider 配置（provider + model + key）
+      await app.inject({
+        method: "POST",
+        url: "/admin/api/providers",
+        headers: authHeadersWithJson(),
+        payload: {
+          name: "another-provider",
+          baseUrl: "https://api.another.com/v1",
+        },
+      });
+      await app.inject({
+        method: "POST",
+        url: "/admin/api/models",
+        headers: authHeadersWithJson(),
+        payload: {
+          name: "another-model",
+          provider: "another-provider",
+          model: "another-model-id",
+        },
+      });
+      await app.inject({
+        method: "POST",
+        url: "/admin/api/keys",
+        headers: authHeadersWithJson(),
+        payload: {
+          alias: "another-key",
+          provider: "another-provider",
+          key: "sk-another-key",
+          quota: { type: "infinite" },
+        },
+      });
+
       const response = await app.inject({
         method: "DELETE",
         url: "/admin/api/providers/test-provider",
@@ -403,9 +435,11 @@ describe("Admin Routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(runtime.config.providers).toHaveLength(0);
+      expect(runtime.config.providers).toHaveLength(1);
+      expect(runtime.config.providers[0].name).toBe("another-provider");
       // 级联删除：关联的模型和 key 也应该被删除
       expect(runtime.config.models.filter(m => m.provider === "test-provider")).toHaveLength(0);
+      expect(runtime.config.keys.filter(k => k.provider === "test-provider")).toHaveLength(0);
     });
 
     it("DELETE /api/providers/:name returns 404 for non-existent", async () => {
@@ -562,7 +596,19 @@ describe("Admin Routes", () => {
       expect(response.statusCode).toBe(200);
     });
 
-    it("DELETE /api/models/:provider/:name deletes a model", async () => {
+    it("DELETE /api/models/:provider/:name deletes a model and cleans up groups", async () => {
+      // 先添加一个额外的 model，确保删除后配置仍然有效
+      await app.inject({
+        method: "POST",
+        url: "/admin/api/models",
+        headers: authHeadersWithJson(),
+        payload: {
+          name: "another-model",
+          provider: "test-provider",
+          model: "another-model-id",
+        },
+      });
+
       const response = await app.inject({
         method: "DELETE",
         url: "/admin/api/models/test-provider/test-model",
@@ -570,7 +616,10 @@ describe("Admin Routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(runtime.config.models).toHaveLength(0);
+      expect(runtime.config.models).toHaveLength(1);
+      expect(runtime.config.models[0].name).toBe("another-model");
+      // 分组中的引用应该被清理，空分组应该被删除
+      expect(runtime.config.groups).toHaveLength(0);
     });
 
     it("GET /api/models/capabilities returns model info", async () => {

@@ -49,6 +49,9 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Body: KeyConfig }>, reply: FastifyReply) => {
       app.runtime.keyStore.addKey(request.body);
+      // 同步到配置文件
+      app.runtime.config.keys = app.runtime.keyStore.listKeys();
+      app.onConfigUpdate?.(app.runtime.config);
       return reply.send({ status: "ok" });
     }
   );
@@ -65,6 +68,11 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Params: { alias: string }; Body: KeyConfig }>, reply: FastifyReply) => {
       const ok = app.runtime.keyStore.updateKey(request.params.alias, request.body);
+      if (ok) {
+        // 同步到配置文件
+        app.runtime.config.keys = app.runtime.keyStore.listKeys();
+        app.onConfigUpdate?.(app.runtime.config);
+      }
       return reply.send({ status: ok ? "ok" : "not_found" });
     }
   );
@@ -80,6 +88,11 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Params: { alias: string } }>, reply: FastifyReply) => {
       const ok = app.runtime.keyStore.deleteKey(request.params.alias);
+      if (ok) {
+        // 同步到配置文件
+        app.runtime.config.keys = app.runtime.keyStore.listKeys();
+        app.onConfigUpdate?.(app.runtime.config);
+      }
       return reply.send({ status: ok ? "ok" : "not_found" });
     }
   );

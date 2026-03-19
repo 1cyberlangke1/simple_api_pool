@@ -1,6 +1,7 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="230px" class="aside">
+    <!-- 桌面端侧边栏 -->
+    <el-aside width="230px" class="aside desktop-aside">
       <div class="logo">
         <div class="logo-icon">
           <el-icon :size="26"><Connection /></el-icon>
@@ -95,9 +96,103 @@
       </div>
     </el-aside>
 
+    <!-- 移动端抽屉导航 -->
+    <el-drawer
+      v-model="mobileMenuOpen"
+      direction="ltr"
+      :size="280"
+      :with-header="false"
+      class="mobile-drawer"
+    >
+      <div class="aside mobile-aside">
+        <div class="logo">
+          <div class="logo-icon">
+            <el-icon :size="26"><Connection /></el-icon>
+          </div>
+          <span class="logo-text">API Pool</span>
+        </div>
+
+        <el-menu
+          :default-active="route.path"
+          router
+          background-color="transparent"
+          text-color="var(--text-color)"
+          active-text-color="var(--primary-color)"
+          class="nav-menu"
+          @select="closeMobileMenu"
+        >
+          <el-menu-item index="/" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Odometer /></el-icon>
+              <span>仪表盘</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/playground" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>对话测试</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/keys" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Key /></el-icon>
+              <span>Key 管理</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/providers" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span>提供商</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/models" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Document /></el-icon>
+              <span>模型配置</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/groups" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Grid /></el-icon>
+              <span>分组配置</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/js-tools" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Cpu /></el-icon>
+              <span>JS 工具</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/config" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Setting /></el-icon>
+              <span>高级配置</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/logs" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><Notebook /></el-icon>
+              <span>系统日志</span>
+            </div>
+          </el-menu-item>
+        </el-menu>
+
+        <div class="aside-footer">
+          <div class="version">v2.0.0</div>
+        </div>
+      </div>
+    </el-drawer>
+
     <el-container>
       <el-header class="header">
         <div class="header-left">
+          <!-- 移动端汉堡菜单按钮 -->
+          <el-button
+            class="hamburger-btn"
+            @click="toggleMobileMenu"
+          >
+            <el-icon :size="20"><Fold v-if="mobileMenuOpen" /><Expand v-else /></el-icon>
+          </el-button>
           <h3>{{ pageTitle }}</h3>
         </div>
         <div class="header-right">
@@ -110,7 +205,7 @@
           </el-tooltip>
           <el-button type="danger" text class="logout-btn" @click="handleLogout">
             <el-icon><SwitchButton /></el-icon>
-            <span>退出</span>
+            <span class="logout-text">退出</span>
           </el-button>
         </div>
       </el-header>
@@ -129,7 +224,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+/**
+ * 主布局组件
+ * @description 提供响应式侧边栏导航和主内容区域
+ * @behavior 桌面端显示固定侧边栏，移动端使用抽屉式导航
+ */
+import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   Connection,
@@ -146,6 +246,8 @@ import {
   Monitor,
   ChatDotRound,
   Cpu,
+  Fold,
+  Expand,
 } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
@@ -154,6 +256,9 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
+
+/** 移动端菜单展开状态 */
+const mobileMenuOpen = ref(false);
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -186,6 +291,16 @@ function toggleTheme() {
 function handleLogout() {
   authStore.logout();
   router.push("/login");
+}
+
+/** 切换移动端菜单 */
+function toggleMobileMenu() {
+  mobileMenuOpen.value = !mobileMenuOpen.value;
+}
+
+/** 关闭移动端菜单 */
+function closeMobileMenu() {
+  mobileMenuOpen.value = false;
 }
 </script>
 
@@ -349,6 +464,12 @@ function handleLogout() {
   transition: all var(--transition-normal);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .header-left h3 {
   margin: 0;
   font-weight: 600;
@@ -396,6 +517,14 @@ function handleLogout() {
   transform: translateX(-4px);
 }
 
+/* 汉堡菜单按钮 */
+.hamburger-btn {
+  display: none;
+  padding: 8px;
+  border: none;
+  background: transparent;
+}
+
 /* ============================================================
    主内容区样式
    ============================================================ */
@@ -420,6 +549,91 @@ function handleLogout() {
 .fade-slide-leave-to {
   opacity: 0;
   transform: translateY(-12px);
+}
+
+/* ============================================================
+   移动端抽屉样式
+   ============================================================ */
+.mobile-drawer :deep(.el-drawer__body) {
+  padding: 0;
+}
+
+.mobile-aside {
+  height: 100%;
+  border-right: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .main {
+    padding: 16px;
+  }
+
+  .header {
+    padding: 0 16px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  /* 隐藏桌面端侧边栏 */
+  .desktop-aside {
+    display: none;
+  }
+
+  /* 显示汉堡菜单 */
+  .hamburger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .header-left h3 {
+    font-size: 16px;
+    padding-left: 8px;
+  }
+
+  .header-left h3::before {
+    width: 3px;
+    height: 16px;
+  }
+
+  .header {
+    padding: 0 12px;
+  }
+
+  .main {
+    padding: 12px;
+  }
+
+  .logout-text {
+    display: none;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .header-left h3 {
+    font-size: 14px;
+  }
+
+  .main {
+    padding: 8px;
+  }
+
+  .theme-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+  }
 }
 
 /* ============================================================

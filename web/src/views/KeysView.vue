@@ -13,31 +13,34 @@
               size="small"
               class="search-input"
             />
-            <el-button type="success" @click="showBatchImportDialog">
+            <el-button type="success" @click="showBatchImportDialog" class="action-btn">
               <el-icon><Upload /></el-icon>
-              批量导入
+              <span class="btn-text">批量导入</span>
             </el-button>
             <el-button
               type="danger"
               :disabled="selectedKeys.length === 0"
               @click="handleBatchDelete"
+              class="action-btn"
             >
               <el-icon><Delete /></el-icon>
-              批量删除 ({{ selectedKeys.length }})
+              <span class="btn-text">删除 ({{ selectedKeys.length }})</span>
             </el-button>
-            <el-button type="primary" @click="showAddDialog">
+            <el-button type="primary" @click="showAddDialog" class="action-btn">
               <el-icon><Plus /></el-icon>
-              新增 Key
+              <span class="btn-text">新增</span>
             </el-button>
           </div>
         </div>
       </template>
 
+      <!-- 桌面端表格 -->
       <el-table
         :data="filteredKeys"
         stripe
         v-loading="loading"
         @selection-change="handleSelectionChange"
+        class="desktop-table"
       >
         <el-table-column type="selection" width="50" />
         <el-table-column prop="alias" label="别名" width="180" />
@@ -96,6 +99,54 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-keys-list" v-loading="loading">
+        <div v-for="key in filteredKeys" :key="key.alias" class="mobile-key-item">
+          <div class="key-header">
+            <div class="key-main">
+              <span class="key-alias">{{ key.alias }}</span>
+              <el-tag size="small" type="info">{{ key.provider }}</el-tag>
+            </div>
+            <div class="key-actions">
+              <el-button type="primary" text size="small" @click="showEditDialog(key)">
+                编辑
+              </el-button>
+              <el-popconfirm title="确定删除此 Key？" @confirm="handleDelete(key.alias)">
+                <template #reference>
+                  <el-button type="danger" text size="small">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+          </div>
+          <div class="key-info">
+            <span class="key-mask">{{ maskKey(key.key) }}</span>
+            <el-tag v-if="key.model" size="small">{{ key.model }}</el-tag>
+          </div>
+          <div class="key-quota">
+            <el-tag :type="getQuotaTagType(key.quota.type)" size="small">
+              {{ getQuotaLabel(key.quota) }}
+            </el-tag>
+            <template v-if="key.quota.type === 'daily'">
+              <el-progress
+                :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
+                :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
+                :stroke-width="6"
+              />
+              <span class="progress-text">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
+            </template>
+            <template v-else-if="key.quota.type === 'total'">
+              <el-progress
+                :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
+                :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
+                :stroke-width="6"
+              />
+              <span class="progress-text">${{ (key.remainingTotal || 0).toFixed(4) }}</span>
+            </template>
+          </div>
+        </div>
+        <el-empty v-if="filteredKeys.length === 0 && !loading" description="暂无 Key" />
+      </div>
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -276,5 +327,114 @@ async function handleBatchDelete() {
   font-size: 12px;
   color: var(--text-secondary);
   margin-left: 8px;
+}
+
+/* 移动端卡片列表默认隐藏 */
+.mobile-keys-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .search-input {
+    width: 140px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .header-buttons {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .search-input {
+    width: 100%;
+    order: -1;
+  }
+
+  .btn-text {
+    display: none;
+  }
+
+  /* 显示移动端列表 */
+  .mobile-keys-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-key-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-key-item .key-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.mobile-key-item .key-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mobile-key-item .key-alias {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mobile-key-item .key-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mobile-key-item .key-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.mobile-key-item .key-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .action-btn {
+    padding: 8px 12px;
+  }
+
+  .mobile-key-item .key-actions {
+    flex-direction: column;
+    gap: 2px;
+  }
 }
 </style>

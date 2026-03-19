@@ -11,7 +11,7 @@
             <el-select
               v-model="selectedModel"
               placeholder="选择模型"
-              style="width: 220px"
+              class="model-select"
               :loading="isLoadingModels"
               filterable
             >
@@ -34,7 +34,12 @@
             </el-select>
             <el-button @click="clearMessages" :disabled="messages.length === 0">
               <el-icon><Delete /></el-icon>
-              清空对话
+              <span class="btn-text">清空对话</span>
+            </el-button>
+            <!-- 移动端设置按钮 -->
+            <el-button class="mobile-settings-btn" @click="showMobileSettings = true">
+              <el-icon><Setting /></el-icon>
+              <span class="btn-text">设置</span>
             </el-button>
           </div>
         </div>
@@ -51,8 +56,8 @@
       />
     </el-card>
 
-    <!-- 右侧面板 -->
-    <div class="side-panel">
+    <!-- 桌面端右侧面板 -->
+    <div class="side-panel desktop-panel">
       <ChatSettingsPanel
         ref="settingsRef"
         :messages="messages"
@@ -82,6 +87,44 @@
         <pre class="json-content">{{ lastResponse }}</pre>
       </el-card>
     </div>
+
+    <!-- 移动端设置抽屉 -->
+    <el-drawer
+      v-model="showMobileSettings"
+      direction="rtl"
+      :size="320"
+      title="请求设置"
+      class="mobile-settings-drawer"
+    >
+      <ChatSettingsPanel
+        ref="mobileSettingsRef"
+        :messages="messages"
+        :available-tools="availableTools"
+        @update:messages="messages = $event"
+      />
+
+      <!-- 请求体 JSON -->
+      <el-card v-if="lastRequestBody" class="json-card">
+        <template #header>
+          <div class="card-header">
+            <span>请求体</span>
+            <el-button text size="small" @click="copyRequestBody">复制</el-button>
+          </div>
+        </template>
+        <pre class="json-content">{{ lastRequestBody }}</pre>
+      </el-card>
+
+      <!-- 上游响应 JSON -->
+      <el-card v-if="lastResponse" class="json-card">
+        <template #header>
+          <div class="card-header">
+            <span>响应</span>
+            <el-button text size="small" @click="copyResponse">复制</el-button>
+          </div>
+        </template>
+        <pre class="json-content">{{ lastResponse }}</pre>
+      </el-card>
+    </el-drawer>
   </div>
 </template>
 
@@ -89,15 +132,16 @@
 /**
  * 对话测试视图
  * @description 提供对话测试界面，支持多轮对话和工具调用
+ * @behavior 桌面端显示右侧设置面板，移动端使用抽屉式设置
  */
 import { ref, onMounted, onActivated } from "vue";
-import { Delete, Warning, Refresh } from "@element-plus/icons-vue";
+import { Delete, Warning, Refresh, Setting } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { getTools, type ToolInfo } from "@/api/types";
 import { sendChatRequest, sendChatStreamRequest, getModels, type ModelInfo } from "@/api/index";
 import ChatPanel from "@/components/ChatPanel.vue";
 import ChatSettingsPanel from "@/components/ChatSettingsPanel.vue";
-import type { Message, ChatSettings } from "@/components/types";
+import type { Message } from "@/components/types";
 
 const availableModels = ref<ModelInfo[]>([]);
 const availableTools = ref<ToolInfo[]>([]);
@@ -110,6 +154,10 @@ const lastRequestBody = ref("");
 const lastResponse = ref("");
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 const settingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
+const mobileSettingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
+
+/** 移动端设置抽屉显示状态 */
+const showMobileSettings = ref(false);
 
 onMounted(() => {
   fetchModels();
@@ -146,6 +194,13 @@ async function fetchTools() {
 }
 
 /**
+ * 获取当前设置（兼容桌面端和移动端）
+ */
+function getCurrentSettings() {
+  return settingsRef.value?.settings || mobileSettingsRef.value?.settings;
+}
+
+/**
  * 处理发送消息
  * @param content 用户输入内容
  */
@@ -158,7 +213,7 @@ async function handleSend(content: string) {
   isLoading.value = true;
 
   try {
-    const settings = settingsRef.value?.settings;
+    const settings = getCurrentSettings();
     
     // 构建请求体
     const requestBody: Record<string, unknown> = {
@@ -176,7 +231,9 @@ async function handleSend(content: string) {
     if (settings) {
       // 处理 OpenAI 标准参数
       for (const [key, config] of Object.entries(settings.params)) {
-        if (config.enabled && config.value !== undefined && config.value !== "") {
+        if (config.enabled && config.value !== undefined) {
+          // 跳过空字符串
+          if (typeof config.value === "string" && config.value === "") continue;
           // 跳过空数组
           if (Array.isArray(config.value) && config.value.length === 0) continue;
           requestBody[key] = config.value;
@@ -405,6 +462,7 @@ function copyResponse() {
 
 .chat-card {
   flex: 1;
+  min-width: 0; /* 防止 flex 子项溢出 */
   display: flex;
   flex-direction: column;
 }
@@ -426,10 +484,17 @@ function copyResponse() {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
+.model-select {
+  width: 220px;
+}
+
+/* 右侧面板 - 关键修复：防止被挤压 */
 .side-panel {
   width: 480px;
+  flex-shrink: 0; /* 防止被压缩 */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -469,5 +534,104 @@ function copyResponse() {
   padding: 12px;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+/* 移动端设置按钮默认隐藏 */
+.mobile-settings-btn {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1200px) */
+@media (max-width: 1200px) {
+  .side-panel {
+    width: 380px;
+  }
+}
+
+/* 小平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .side-panel {
+    width: 320px;
+  }
+
+  .model-select {
+    width: 180px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .playground-view {
+    flex-direction: column;
+    height: calc(100vh - 88px);
+  }
+
+  /* 隐藏桌面端侧面板 */
+  .desktop-panel {
+    display: none;
+  }
+
+  /* 显示移动端设置按钮 */
+  .mobile-settings-btn {
+    display: inline-flex;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .model-select {
+    width: 140px;
+  }
+
+  .btn-text {
+    display: none;
+  }
+
+  .chat-card :deep(.el-card__header) {
+    padding: 12px;
+  }
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .playground-view {
+    gap: 12px;
+    height: calc(100vh - 72px);
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .model-select {
+    width: 120px;
+  }
+
+  .json-content {
+    font-size: 10px;
+    max-height: 180px;
+  }
+}
+
+/* 移动端抽屉内的 JSON 卡片样式 */
+.mobile-settings-drawer :deep(.el-drawer__body) {
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+  padding: 16px;
+}
+
+.mobile-settings-drawer .json-card {
+  margin-top: 16px;
+}
+
+.mobile-settings-drawer .json-content {
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
 }
 </style>

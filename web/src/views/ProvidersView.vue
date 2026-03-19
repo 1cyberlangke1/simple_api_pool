@@ -6,12 +6,13 @@
           <span>提供商配置</span>
           <el-button type="primary" @click="showAddDialog">
             <el-icon><Plus /></el-icon>
-            新增提供商
+            <span class="btn-text">新增提供商</span>
           </el-button>
         </div>
       </template>
 
-      <el-table :data="providers" stripe v-loading="loading">
+      <!-- 桌面端表格 -->
+      <el-table :data="providers" stripe v-loading="loading" class="desktop-table">
         <el-table-column prop="name" label="名称" width="120" />
         <el-table-column prop="baseUrl" label="Base URL" />
         <el-table-column label="流式模式" width="120">
@@ -54,6 +55,39 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-list" v-loading="loading">
+        <div v-for="provider in providers" :key="provider.name" class="mobile-item">
+          <div class="item-header">
+            <span class="item-name">{{ provider.name }}</span>
+            <div class="item-actions">
+              <el-button type="primary" text size="small" @click="showEditDialog(provider)">
+                编辑
+              </el-button>
+              <el-popconfirm title="确定删除此提供商？" @confirm="handleDelete(provider.name)">
+                <template #reference>
+                  <el-button type="danger" text size="small">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+          </div>
+          <div class="item-url">{{ provider.baseUrl }}</div>
+          <div class="item-tags">
+            <el-tag :type="getStreamModeTagType(provider.streamMode)" size="small">
+              {{ getStreamModeLabel(provider.streamMode) }}
+            </el-tag>
+            <el-tag size="small">{{ provider.strategy || "round_robin" }}</el-tag>
+            <el-tag v-if="provider.rpmLimit" type="warning" size="small">
+              {{ provider.rpmLimit }} RPM
+            </el-tag>
+            <el-tag v-if="provider.resetTime" type="info" size="small">
+              重置: {{ provider.resetTime }}
+            </el-tag>
+          </div>
+        </div>
+        <el-empty v-if="providers.length === 0 && !loading" description="暂无提供商" />
+      </div>
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -156,5 +190,72 @@ function getStreamModeTagType(
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* 移动端列表默认隐藏 */
+.mobile-list {
+  display: none;
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .btn-text {
+    display: none;
+  }
+
+  /* 显示移动端列表 */
+  .mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 隐藏桌面端表格 */
+  .desktop-table {
+    display: none;
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-item {
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+.mobile-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mobile-item .item-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mobile-item .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mobile-item .item-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.mobile-item .item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 </style>

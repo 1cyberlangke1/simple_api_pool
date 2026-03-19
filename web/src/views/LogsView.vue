@@ -5,13 +5,13 @@
         <div class="card-header">
           <span>系统日志</span>
           <div class="header-right">
-            <el-select v-model="selectedDate" placeholder="选择日期" style="width: 150px" @change="fetchLogContent">
+            <el-select v-model="selectedDate" placeholder="选择日期" class="date-select" @change="fetchLogContent">
               <el-option v-for="item in logFiles" :key="item.date" :label="item.date" :value="item.date">
                 <span>{{ item.date }}</span>
                 <span class="log-size">{{ formatSize(item.size) }}</span>
               </el-option>
             </el-select>
-            <el-select v-model="levelFilter" placeholder="日志级别" clearable style="width: 120px">
+            <el-select v-model="levelFilter" placeholder="日志级别" clearable class="level-select">
               <el-option label="全部" value="" />
               <el-option label="INFO" value="info" />
               <el-option label="WARN" value="warn" />
@@ -21,7 +21,7 @@
             </el-select>
             <el-button @click="refresh" :loading="loading">
               <el-icon><Refresh /></el-icon>
-              刷新
+              <span class="btn-text">刷新</span>
             </el-button>
           </div>
         </div>
@@ -223,6 +223,14 @@ function formatSize(bytes: number): string {
   gap: 12px;
 }
 
+.date-select {
+  width: 150px;
+}
+
+.level-select {
+  width: 120px;
+}
+
 .log-size {
   margin-left: 8px;
   font-size: 12px;
@@ -317,5 +325,70 @@ function formatSize(bytes: number): string {
 
 .log-level-warn {
   background: rgba(209, 154, 102, 0.1);
+}
+
+/* ============================================================
+   响应式媒体查询
+   ============================================================ */
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .date-select {
+    width: 130px;
+  }
+
+  .level-select {
+    width: 100px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .date-select {
+    width: 100%;
+  }
+
+  .level-select {
+    flex: 1;
+    min-width: 100px;
+  }
+
+  .btn-text {
+    display: none;
+  }
+
+  .log-content {
+    padding: 12px;
+    font-size: 11px;
+    max-height: 400px;
+  }
+
+  .log-line {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .log-level {
+    min-width: auto;
+  }
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .log-content {
+    font-size: 10px;
+    padding: 8px;
+  }
 }
 </style>

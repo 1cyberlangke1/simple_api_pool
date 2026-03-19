@@ -13,13 +13,21 @@ export function registerStatsRoutes(app: FastifyInstance, adminToken: string): v
    * 获取分组汇总统计
    * @route GET /api/stats/summary
    * @query hours - 统计最近多少小时（默认 24）
+   * @behavior 只返回当前存在的分组的统计信息
    */
   app.get<{ Querystring: { hours?: number } }>(
     "/api/stats/summary",
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Querystring: { hours?: number } }>, reply: FastifyReply) => {
       const hours = request.query.hours ?? 24;
-      const stats = request.server.runtime.statsStore.getGroupSummary(hours);
+      const rawStats = request.server.runtime.statsStore.getGroupSummary(hours);
+      
+      // 过滤掉已删除的分组
+      const validGroupNames = new Set(
+        request.server.runtime.config.groups.map(g => g.name)
+      );
+      const stats = rawStats.filter(s => validGroupNames.has(s.group));
+      
       return reply.send({ hours, stats });
     }
   );
@@ -29,29 +37,47 @@ export function registerStatsRoutes(app: FastifyInstance, adminToken: string): v
    * @route GET /api/stats/hourly
    * @query group - 分组名称（可选）
    * @query hours - 统计最近多少小时（默认 24）
+   * @behavior 只返回当前存在的分组的统计信息
    */
   app.get<{ Querystring: { group?: string; hours?: number } }>(
     "/api/stats/hourly",
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Querystring: { group?: string; hours?: number } }>, reply: FastifyReply) => {
       const { group, hours = 24 } = request.query;
-      const stats = request.server.runtime.statsStore.getHourlyStats(group, hours);
-      return reply.send({ group, hours, stats });
+      const rawStats = request.server.runtime.statsStore.getHourlyStats(group, hours);
+      
+      // 如果没有指定分组，过滤掉已删除的分组
+      if (!group) {
+        const validGroupNames = new Set(
+          request.server.runtime.config.groups.map(g => g.name)
+        );
+        const filteredStats = rawStats.filter(s => validGroupNames.has(s.group));
+        return reply.send({ group, hours, stats: filteredStats });
+      }
+      
+      return reply.send({ group, hours, stats: rawStats });
     }
   );
 
   /**
    * 获取图表数据
    * @route GET /api/stats/chart
-   * @description 返回适合前端图表展示的数据格式
+   * @description 返回适合前端图表展示的数据格式，只包含存在的分组
    */
   app.get<{ Querystring: { hours?: number } }>(
     "/api/stats/chart",
     { preHandler: adminAuth(adminToken) },
     async (request: FastifyRequest<{ Querystring: { hours?: number } }>, reply: FastifyReply) => {
       const hours = request.query.hours ?? 24;
-      const hourlyStats = request.server.runtime.statsStore.getHourlyStats(undefined, hours);
-      const groupSummary = request.server.runtime.statsStore.getGroupSummary(hours);
+      const rawHourlyStats = request.server.runtime.statsStore.getHourlyStats(undefined, hours);
+      const rawGroupSummary = request.server.runtime.statsStore.getGroupSummary(hours);
+
+      // 过滤掉已删除的分组
+      const validGroupNames = new Set(
+        request.server.runtime.config.groups.map(g => g.name)
+      );
+      const hourlyStats = rawHourlyStats.filter(s => validGroupNames.has(s.group));
+      const groupSummary = rawGroupSummary.filter(s => validGroupNames.has(s.group));
 
       // 构建时间轴（最近 N 小时）
       const timeline: string[] = [];

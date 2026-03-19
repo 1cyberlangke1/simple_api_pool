@@ -207,9 +207,9 @@
  * 聊天设置面板
  * @description 管理请求参数和 JSON 编辑
  */
-import { ref, reactive, watch, computed } from "vue";
+import { ref, reactive, watch } from "vue";
 import { Delete, Plus } from "@element-plus/icons-vue";
-import type { Message, ToolInfo, ChatSettings, CustomParam } from "./types";
+import type { Message, ToolInfo, ChatSettings } from "./types";
 import { createDefaultSettings } from "./types";
 
 interface Props {
@@ -482,5 +482,31 @@ defineExpose({
 
 :deep(.el-collapse-item__header) {
   font-weight: 500;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .param-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .param-row :deep(.el-checkbox) {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .param-slider,
+  .param-input {
+    width: 100%;
+  }
+
+  .custom-param-row {
+    flex-wrap: wrap;
+  }
+
+  .custom-key {
+    width: 100%;
+  }
 }
 </style>
