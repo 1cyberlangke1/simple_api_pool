@@ -74,21 +74,6 @@
         <el-descriptions-item label="运行时间">
           <span class="uptime">{{ formattedUptime }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="可用模型" :span="descColumn">
-          <div class="model-tags">
-            <el-tag
-              v-for="model in health.models?.slice(0, 10)"
-              :key="model"
-              class="model-tag"
-              type="primary"
-            >
-              {{ model }}
-            </el-tag>
-            <el-tag v-if="health.models?.length > 10" type="info">
-              +{{ health.models.length - 10 }} 更多
-            </el-tag>
-          </div>
-        </el-descriptions-item>
         <el-descriptions-item label="可用分组" :span="descColumn">
           <div class="model-tags">
             <el-tag
@@ -234,6 +219,7 @@ import {
   getKeys,
   getCacheStats,
   getStatsChart,
+  getConfig,
   type KeyState,
   type CacheStatsResponse,
   type ChartData,
@@ -256,7 +242,6 @@ const health = reactive({
   status: "ok",
   timestamp: "",
   startTime: "", // 服务启动时间 (ISO 8601)
-  models: [] as string[],
   groups: [] as string[],
 });
 
@@ -479,6 +464,7 @@ onMounted(async () => {
     fetchKeys(),
     fetchCacheStats(),
     fetchChartStats(),
+    fetchConfig(),
   ]);
 
   // 连接 SSE
@@ -505,12 +491,9 @@ async function fetchHealth() {
     health.status = data.status;
     health.timestamp = data.timestamp;
     health.startTime = data.startTime || "";
-    health.models = data.models || [];
     health.groups = data.groups || [];
     
-    // 统计数据
-    stats.providers = new Set(health.models.map((m: string) => m.split("/")[0])).size;
-    stats.models = health.models.length;
+    // 分组数量
     stats.groups = health.groups.length;
     
     // 初始化运行时间
@@ -543,6 +526,19 @@ async function fetchChartStats() {
   try {
     const { data } = await getStatsChart(chartHours.value);
     chartData.value = data;
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 获取配置数据（用于统计 providers 和 models 数量）
+ */
+async function fetchConfig() {
+  try {
+    const { data } = await getConfig();
+    stats.providers = data.providers?.length || 0;
+    stats.models = data.models?.length || 0;
   } catch {
     // ignore
   }

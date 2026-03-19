@@ -111,7 +111,7 @@ describe("buildApp", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.status).toBe("ok");
-      expect(body.models).toBeDefined();
+      expect(body.groups).toBeDefined();
     });
 
     it("应该注册 GET /v1/models 路由", async () => {

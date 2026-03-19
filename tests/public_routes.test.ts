@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import { AppRuntime } from "../src/app_state.js";
 import type { AppConfig } from "../src/core/types.js";
@@ -36,6 +36,11 @@ const testConfig: AppConfig = {
     {
       name: "default",
       strategy: "round_robin",
+      routes: [{ modelId: "test-provider/test-model" }],
+    },
+    {
+      name: "chat",
+      strategy: "random",
       routes: [{ modelId: "test-provider/test-model" }],
     },
   ],
@@ -98,7 +103,7 @@ describe("Public Routes", () => {
       expect(typeof data.timestamp).toBe("string");
     });
 
-    it("returns model list", async () => {
+    it("returns groups list (not upstream models)", async () => {
       const response = await app.inject({
         method: "GET",
         url: "/health",
@@ -106,23 +111,14 @@ describe("Public Routes", () => {
 
       expect(response.statusCode).toBe(200);
       const data = response.json();
-      expect(data.models).toBeDefined();
-      expect(Array.isArray(data.models)).toBe(true);
-      expect(data.models).toContain("test-provider/test-model");
-    });
-
-    it("includes groups in separate array", async () => {
-      const response = await app.inject({
-        method: "GET",
-        url: "/health",
-      });
-
-      expect(response.statusCode).toBe(200);
-      const data = response.json();
-      // 分组现在在单独的 groups 数组中，不在 models 中
       expect(data.groups).toBeDefined();
+      expect(Array.isArray(data.groups)).toBe(true);
+      // 只返回分组，不返回上游模型
       expect(data.groups).toContain("default");
-      expect(data.models).not.toContain("group/default");
+      expect(data.groups).toContain("chat");
+      expect(data.groups).toHaveLength(2);
+      // 不应该有 models 字段
+      expect(data.models).toBeUndefined();
     });
 
     it("does not require authentication", async () => {
@@ -152,7 +148,7 @@ describe("Public Routes", () => {
       expect(Array.isArray(data.data)).toBe(true);
     });
 
-    it("returns all available models", async () => {
+    it("returns only groups (not upstream models)", async () => {
       const response = await app.inject({
         method: "GET",
         url: "/v1/models",
@@ -162,8 +158,11 @@ describe("Public Routes", () => {
       const data = response.json();
 
       const modelIds = data.data.map((m: { id: string }) => m.id);
-      expect(modelIds).toContain("test-provider/test-model");
+      // 只返回分组，格式为 group/{name}
       expect(modelIds).toContain("group/default");
+      expect(modelIds).toContain("group/chat");
+      // 不应该包含上游模型
+      expect(modelIds).not.toContain("test-provider/test-model");
     });
 
     it("returns correct model object format", async () => {
