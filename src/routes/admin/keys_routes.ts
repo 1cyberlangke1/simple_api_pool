@@ -170,6 +170,8 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
         }
       }
 
+      // 同步到配置文件
+      app.runtime.config.keys = app.runtime.keyStore.listKeys();
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({
         status: "ok",
@@ -203,6 +205,8 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
         results.push({ alias, status: ok ? "success" : "not_found" });
       }
 
+      // 同步到配置文件
+      app.runtime.config.keys = app.runtime.keyStore.listKeys();
       app.onConfigUpdate?.(app.runtime.config);
       return reply.send({
         status: "ok",
