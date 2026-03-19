@@ -138,6 +138,21 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# 我的测试文件
-my_local_test.js
-setting.js
+# 本地配置/测试文件
+config/setting.json
+config/runtime.json
+config/*.sqlite
+other/
+AGENTS.md
+.claude/
+
+# 编译与前端产物
+dist/
+web/dist/
+web/node_modules/
+
+# 通用本地系统/数据库文件
+.DS_Store
+Thumbs.db
+*.db
+*.sqlite3

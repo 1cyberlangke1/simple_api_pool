@@ -1,0 +1,119 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "admin": {
+      "adminToken": "replace-me-with-secure-token"
+    }
+  },
+
+  "providers": [
+    {
+      "name": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "timeoutMs": 90000,
+      "rpmLimit": 3000,
+      "strategy": "round_robin",
+      "requestOverrides": {
+        "temperature": 0.7
+      },
+      "extraBody": {
+        "top_p": 1
+      }
+    }
+  ],
+
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "supportsTools": true,
+      "requestOverrides": {
+        "max_tokens": 2048
+      },
+      "pricing": {
+        "promptPer1k": 0.15,
+        "completionPer1k": 0.6
+      }
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "default",
+      "strategy": "round_robin",
+      "routes": [
+        { "modelId": "openai/gpt-4o-mini", "temperature": 0.7 }
+      ],
+      "features": {
+        "tools": ["get_weather"],
+        "toolRoutingStrategy": "local_first",
+        "promptInject": {
+          "enableTimestamp": true,
+          "enableLunar": true,
+          "enableWeather": false
+        },
+        "truncation": {
+          "enable": false
+        }
+      }
+    },
+    {
+      "name": "assistant",
+      "strategy": "round_robin",
+      "routes": [
+        { "modelId": "openai/gpt-4o-mini", "temperature": 0.5 }
+      ],
+      "features": {
+        "tools": ["get_weather", "search_web"],
+        "toolRoutingStrategy": "local_first",
+        "promptInject": {
+          "enableTimestamp": true,
+          "enableLunar": true,
+          "enableWeather": true,
+          "weather": {
+            "provider": "open-meteo",
+            "latitude": 39.9042,
+            "longitude": 116.4074
+          }
+        }
+      }
+    }
+  ],
+
+  "keys": [
+    {
+      "alias": "key_1",
+      "provider": "openai",
+      "key": "sk-your-key-here",
+      "model": "gpt-4o-mini",
+      "quota": { "type": "infinite" }
+    }
+  ],
+
+  "tools": {
+    "mcpTools": [
+      {
+        "type": "mcp",
+        "name": "weather",
+        "transport": "stdio",
+        "command": "node",
+        "args": ["./tools/mcp/weather_stdio.ts"]
+      },
+      {
+        "type": "mcp",
+        "name": "search",
+        "transport": "sse",
+        "endpoint": "http://localhost:8080/sse"
+      }
+    ]
+  },
+
+  "cache": {
+    "enable": true,
+    "maxEntries": 5000,
+    "dbPath": "./config/cache.sqlite",
+    "ttl": 86400
+  }
+}
