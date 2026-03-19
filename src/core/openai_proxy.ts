@@ -1,5 +1,9 @@
 import type { ModelConfig, ProviderConfig } from "./types.js";
 import { UpstreamError } from "./errors.js";
+import { createModuleLogger } from "./logger.js";
+
+/** 模块日志器 */
+const log = createModuleLogger("proxy");
 
 /**
  * 拼接 URL
@@ -155,8 +159,9 @@ export async function* callChatCompletionStream(
       try {
         const chunk = JSON.parse(jsonStr) as StreamChunk;
         yield chunk;
-      } catch {
-        // 忽略解析错误
+      } catch (parseError) {
+        // 记录解析失败的原始数据，便于调试
+        log.debug({ raw: jsonStr.slice(0, 100), error: String(parseError) }, "Failed to parse stream chunk");
       }
     }
   }

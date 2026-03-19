@@ -316,54 +316,59 @@ async function sendStreamRequest(body: Record<string, unknown>) {
 
   messages.value.push({ role: "assistant", content: "", extraFields: {} });
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    const chunk = decoder.decode(value);
-    rawChunks.push(chunk);
-    const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
+      const chunk = decoder.decode(value);
+      rawChunks.push(chunk);
+      const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
 
-    for (const line of lines) {
-      const data = line.slice(6);
-      if (data === "[DONE]") continue;
+      for (const line of lines) {
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
 
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta;
-        if (delta) {
-          let hasUpdate = false;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta) {
+            let hasUpdate = false;
 
-          // 处理 content 字段
-          if (delta.content) {
-            assistantContent += delta.content;
-            hasUpdate = true;
-          }
-          // 自适应处理所有其他字符串类型的字段（排除 role、content、tool_calls）
-          for (const [key, value] of Object.entries(delta)) {
-            if (key === "role" || key === "content" || key === "tool_calls") continue;
-            if (typeof value === "string") {
-              if (!extraFields[key]) extraFields[key] = "";
-              extraFields[key] += value;
+            // 处理 content 字段
+            if (delta.content) {
+              assistantContent += delta.content;
               hasUpdate = true;
             }
-          }
+            // 自适应处理所有其他字符串类型的字段（排除 role、content、tool_calls）
+            for (const [key, value] of Object.entries(delta)) {
+              if (key === "role" || key === "content" || key === "tool_calls") continue;
+              if (typeof value === "string") {
+                if (!extraFields[key]) extraFields[key] = "";
+                extraFields[key] += value;
+                hasUpdate = true;
+              }
+            }
 
-          // 统一触发响应式更新
-          if (hasUpdate) {
-            const lastIndex = messages.value.length - 1;
-            messages.value[lastIndex] = {
-              ...messages.value[lastIndex],
-              content: assistantContent,
-              extraFields: Object.keys(extraFields).length > 0 ? { ...extraFields } : undefined
-            };
-            chatPanelRef.value?.scrollToBottom();
+            // 统一触发响应式更新
+            if (hasUpdate) {
+              const lastIndex = messages.value.length - 1;
+              messages.value[lastIndex] = {
+                ...messages.value[lastIndex],
+                content: assistantContent,
+                extraFields: Object.keys(extraFields).length > 0 ? { ...extraFields } : undefined
+              };
+              chatPanelRef.value?.scrollToBottom();
+            }
           }
+        } catch {
+          // 忽略解析错误
         }
-      } catch {
-        // 忽略解析错误
       }
     }
+  } finally {
+    // 确保释放 reader 资源
+    reader.releaseLock();
   }
 
   // 保存完整的响应数据

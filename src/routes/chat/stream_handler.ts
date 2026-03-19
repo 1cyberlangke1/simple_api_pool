@@ -109,10 +109,18 @@ export async function sendStreamingResponse(reply: FastifyReply, result: OpenAIR
 export async function forwardStreamResponse(reply: FastifyReply, stream: AsyncGenerator<StreamChunk, void, unknown>): Promise<void> {
   setStreamHeaders(reply);
 
-  for await (const chunk of stream) {
-    reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-  }
+  try {
+    for await (const chunk of stream) {
+      reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    }
 
-  reply.raw.write("data: [DONE]\n\n");
-  reply.raw.end();
+    reply.raw.write("data: [DONE]\n\n");
+  } catch (error) {
+    // 发送错误信息给客户端
+    const errorMessage = error instanceof Error ? error.message : "Stream error";
+    reply.raw.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
+  } finally {
+    // 确保连接始终被关闭
+    reply.raw.end();
+  }
 }

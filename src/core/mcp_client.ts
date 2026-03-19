@@ -147,7 +147,9 @@ export class McpStdioClient extends BaseMcpClient {
       await this.fetchTools();
       this.connected = true;
     } catch (err) {
+      // 连接失败时重置所有状态
       this.transport = null;
+      this.reset();
       throw new Error(`Failed to connect to MCP stdio server: ${err}`);
     }
   }
@@ -202,7 +204,9 @@ export class McpSseClient extends BaseMcpClient {
       await this.fetchTools();
       this.connected = true;
     } catch (err) {
+      // 连接失败时重置所有状态
       this.transport = null;
+      this.reset();
       throw new Error(`Failed to connect to MCP SSE server: ${err}`);
     }
   }

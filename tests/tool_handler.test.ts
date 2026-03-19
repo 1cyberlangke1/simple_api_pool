@@ -145,8 +145,9 @@ describe("tool_handler", () => {
         },
       ];
 
-      // 空字符串不是有效 JSON，应该抛出错误
-      expect(() => classifyToolCalls(toolCalls, toolRegistry)).toThrow();
+      // 空字符串不是有效 JSON，应该使用 raw 包装
+      const result = classifyToolCalls(toolCalls, toolRegistry);
+      expect(result.local[0].args).toEqual({ raw: "" });
     });
 
     it("should handle undefined arguments (converted to {} by ?? operator)", () => {
@@ -610,7 +611,8 @@ describe("tool_handler edge cases", () => {
       },
     ];
 
-    // 应该抛出 JSON 解析错误
-    expect(() => classifyToolCalls(toolCalls, toolRegistry)).toThrow();
+    // 格式错误的 JSON 应该使用 raw 包装而不是抛出错误
+    const result = classifyToolCalls(toolCalls, toolRegistry);
+    expect(result.local[0].args).toEqual({ raw: "{invalid json}" });
   });
 });

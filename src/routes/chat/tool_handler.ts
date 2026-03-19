@@ -43,7 +43,15 @@ export function classifyToolCalls(
   for (const call of toolCalls) {
     const name = call.function.name;
     const argsRaw = call.function.arguments ?? "{}";
-    const args = typeof argsRaw === "string" ? JSON.parse(argsRaw) : argsRaw;
+    
+    // 安全解析 JSON 参数，处理格式错误的情况
+    let args: unknown;
+    try {
+      args = typeof argsRaw === "string" ? JSON.parse(argsRaw) : argsRaw;
+    } catch {
+      // JSON 格式错误，使用原始字符串作为参数
+      args = { raw: argsRaw };
+    }
 
     if (toolRegistry.has(name)) {
       local.push({ id: call.id, name, args });
