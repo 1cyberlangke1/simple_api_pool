@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="editIndex === -1 ? '添加 MCP 工具' : '编辑 MCP 工具'"
-    width="600px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" label-width="100px">
@@ -99,7 +99,7 @@
  * MCP 工具编辑对话框
  * @description 添加和编辑 MCP 工具配置
  */
-import { reactive, watch } from "vue";
+import { reactive, watch, computed } from "vue";
 import { ElMessage } from "element-plus";
 import {
   type McpStdioConfig,
@@ -130,6 +130,15 @@ const form = reactive({
   headersStr: "",
   reconnectInterval: 5000,
   timeout: 30000,
+});
+
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "600px";
+  return window.innerWidth < 768 ? "95%" : "600px";
 });
 
 watch(
@@ -266,5 +275,12 @@ function handleSave() {
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
 }
 </style>

@@ -2,8 +2,8 @@
   <el-dialog
     :model-value="visible"
     :title="editingTool ? '编辑工具' : '新建工具'"
-    width="900px"
-    top="5vh"
+    :width="dialogWidth"
+    :top="dialogTop"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
@@ -132,7 +132,7 @@
  * JS 工具表单对话框
  * @description 创建和编辑 JS 工具
  */
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, watch, computed } from "vue";
 import { Delete } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
@@ -185,6 +185,24 @@ const rules = {
   ],
   description: [{ required: true, message: "请输入工具描述", trigger: "blur" }],
 };
+
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "900px";
+  return window.innerWidth < 768 ? "95%" : "900px";
+});
+
+/**
+ * 响应式对话框顶部距离
+ * @returns 根据屏幕高度返回合适的顶部距离
+ */
+const dialogTop = computed(() => {
+  if (typeof window === "undefined") return "5vh";
+  return window.innerHeight < 600 ? "2vh" : "5vh";
+});
 
 watch(
   () => props.editingTool,
@@ -365,5 +383,46 @@ async function handleSubmit() {
   color: #f56c6c;
   font-size: 13px;
   margin: 4px 0;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .params-editor :deep(.el-table) {
+    font-size: 12px;
+  }
+
+  .params-editor :deep(.el-table .el-input__inner) {
+    font-size: 12px;
+  }
+
+  .params-editor :deep(.el-table__body-wrapper) {
+    overflow-x: auto;
+  }
+
+  .code-editor :deep(.el-textarea__inner) {
+    font-size: 12px;
+  }
+
+  .code-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .code-actions {
+    flex-wrap: wrap;
+  }
+
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
+
+  :deep(.el-row) {
+    flex-direction: column;
+  }
+
+  :deep(.el-col) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
 }
 </style>

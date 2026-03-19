@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     title="批量导入 Key"
-    width="600px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
@@ -106,6 +106,15 @@ const rules = {
   keys: [{ required: true, message: "请输入 Key 列表", trigger: "blur" }],
 };
 
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "600px";
+  return window.innerWidth < 768 ? "95%" : "600px";
+});
+
 const previewKeys = computed(() => {
   if (!form.keys) return [];
   const delimiter = form.delimiter || "\n";
@@ -195,5 +204,12 @@ async function handleImport() {
   font-size: 12px;
   color: var(--text-muted);
   margin-left: 4px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
 }
 </style>

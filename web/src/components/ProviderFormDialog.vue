@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="editingProvider ? '编辑提供商' : '新增提供商'"
-    width="600px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
@@ -147,7 +147,7 @@
  * 提供商表单对话框
  * @description 创建和编辑提供商配置
  */
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, watch, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { QuestionFilled } from "@element-plus/icons-vue";
 import {
@@ -194,6 +194,15 @@ const rules = {
   name: [{ required: true, message: "请输入名称", trigger: "blur" }],
   baseUrl: [{ required: true, message: "请输入 Base URL", trigger: "blur" }],
 };
+
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "600px";
+  return window.innerWidth < 768 ? "95%" : "600px";
+});
 
 watch(
   () => props.editingProvider,
@@ -298,5 +307,12 @@ async function handleSubmit() {
 .option-desc {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
 }
 </style>

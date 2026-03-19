@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="editingKey ? '编辑 Key' : '新增 Key'"
-    width="550px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
@@ -92,7 +92,7 @@
  * Key 表单对话框
  * @description 创建和编辑 API Key
  */
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, watch, computed } from "vue";
 import { ElMessage } from "element-plus";
 import {
   addKey,
@@ -132,6 +132,15 @@ const rules = {
   provider: [{ required: true, message: "请选择提供商", trigger: "change" }],
   key: [{ required: true, message: "请输入 API Key", trigger: "blur" }],
 };
+
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "550px";
+  return window.innerWidth < 768 ? "95%" : "550px";
+});
 
 watch(
   () => props.editingKey,
@@ -222,5 +231,12 @@ async function handleSubmit() {
 .quota-desc {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
 }
 </style>

@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="editingModel ? '编辑模型' : '新增模型'"
-    width="600px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
     @close="handleClose"
   >
@@ -286,6 +286,15 @@ const internalCompletionUSD = ref(0);
 const hasOverrides = computed(
   () => !!(form.requestOverridesJson.trim() || form.extraBodyJson.trim())
 );
+
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "600px";
+  return window.innerWidth < 768 ? "95%" : "600px";
+});
 
 const rules = {
   provider: [{ required: true, message: "请选择提供商", trigger: "change" }],
@@ -652,5 +661,49 @@ async function handleSubmit() {
 
 .text-danger {
   color: #f56c6c;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .provider-row {
+    flex-wrap: wrap;
+  }
+
+  .provider-row .el-button {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .model-input-row {
+    flex-wrap: wrap;
+  }
+
+  .model-input-row .el-button {
+    margin-left: 0;
+    margin-top: 8px;
+    width: 100%;
+  }
+
+  .json-editor-row {
+    flex-wrap: wrap;
+  }
+
+  .json-editor-row .el-button {
+    margin-left: 0;
+    margin-top: 8px;
+  }
+
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
+
+  :deep(.el-row) {
+    flex-direction: column;
+  }
+
+  :deep(.el-col) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
 }
 </style>

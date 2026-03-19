@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="editingGroup ? '编辑分组' : '新增分组'"
-    width="750px"
+    :width="dialogWidth"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
@@ -291,6 +291,15 @@ const modelOptions = computed(() => {
   return props.models.map((m) => `${m.provider}/${m.name}`);
 });
 
+/**
+ * 响应式对话框宽度
+ * @returns 根据屏幕宽度返回合适的对话框宽度
+ */
+const dialogWidth = computed(() => {
+  if (typeof window === "undefined") return "750px";
+  return window.innerWidth < 768 ? "95%" : "750px";
+});
+
 watch(
   () => props.editingGroup,
   (group) => {
@@ -524,5 +533,44 @@ function buildFeatures(): GroupFeatureConfig {
 .location-input {
   display: flex;
   gap: 12px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .route-row {
+    flex-wrap: wrap;
+  }
+
+  .route-row .el-select {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  .route-row .el-input-number {
+    width: calc(50% - 4px) !important;
+    min-width: unset !important;
+  }
+
+  .route-row .el-button {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .location-input {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .location-input .el-input-number {
+    width: 100% !important;
+  }
+
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
+
+  :deep(.el-form-item__content) {
+    flex-wrap: wrap;
+  }
 }
 </style>
