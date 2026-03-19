@@ -274,9 +274,11 @@ function formatUptime(seconds: number): string {
 
 /**
  * 更新运行时间（纯前端计算，不请求后端）
+ * @behavior 只有在后端连接正常时才更新时间
  */
 function updateUptime(): void {
-  if (!health.startTime) return;
+  // 如果后端连接断开或出错，不更新运行时间
+  if (sseState.value !== "connected" || !health.startTime) return;
   
   const startMs = new Date(health.startTime).getTime();
   const nowMs = Date.now();
