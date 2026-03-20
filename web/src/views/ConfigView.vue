@@ -33,7 +33,16 @@
           </div>
         </el-descriptions-item>
         <el-descriptions-item label="认证方式">
-          <span>无需认证（OpenAI 兼容接口）</span>
+          <template v-if="config.server.apiAuth?.enabled">
+            <el-tag type="warning">
+              {{ config.server.apiAuth.type === 'api-key' ? 'API Key (X-API-Key)' : 'Bearer Token' }}
+            </el-tag>
+            <span style="margin-left: 8px; color: var(--text-secondary);">需要认证</span>
+          </template>
+          <template v-else>
+            <el-tag type="success">无需认证</el-tag>
+            <span style="margin-left: 8px; color: var(--text-secondary);">对外暴露时建议启用</span>
+          </template>
         </el-descriptions-item>
         <el-descriptions-item label="可用分组">
           <div class="group-tags">
@@ -56,7 +65,7 @@
         <el-collapse-item title="使用示例" name="example">
           <div class="example-section">
             <h4>cURL</h4>
-            <pre class="code-block">curl {{ apiEndpoint }} \
+            <pre class="code-block code-panel">curl {{ apiEndpoint }} \
   -H "Content-Type: application/json" \
   -d '{
     "model": "group/{{ availableGroups[0] || 'your-group' }}",
@@ -65,7 +74,7 @@
   }'</pre>
 
             <h4>Python (OpenAI SDK)</h4>
-            <pre class="code-block">from openai import OpenAI
+            <pre class="code-block code-panel">from openai import OpenAI
 
 client = OpenAI(
     base_url="{{ apiBaseUrl }}",
@@ -82,7 +91,7 @@ for chunk in response:
     print(chunk.choices[0].delta.content, end="")</pre>
 
             <h4>JavaScript / TypeScript</h4>
-            <pre class="code-block">const response = await fetch("{{ apiEndpoint }}", {
+            <pre class="code-block code-panel">const response = await fetch("{{ apiEndpoint }}", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -120,11 +129,11 @@ while (true) {
         <el-tab-pane label="服务器设置" name="server">
           <el-form label-width="120px" class="config-form">
             <el-form-item label="监听地址">
-              <el-radio-group v-model="config.server.host">
-                <el-radio-button label="127.0.0.1">
+              <el-radio-group v-model="config.server.host" @change="saveConfig">
+                <el-radio-button value="127.0.0.1">
                   本地 (127.0.0.1)
                 </el-radio-button>
-                <el-radio-button label="0.0.0.0">
+                <el-radio-button value="0.0.0.0">
                   所有网卡 (0.0.0.0)
                 </el-radio-button>
               </el-radio-group>
@@ -138,97 +147,92 @@ while (true) {
                 v-model="config.server.port"
                 :min="1"
                 :max="65535"
+                @change="saveConfig"
               />
               <span class="form-hint" style="margin-left: 8px">
                 默认 3000，修改后需重启服务
               </span>
             </el-form-item>
+
+            <el-divider content-position="left">管理后台认证</el-divider>
+
+            <el-form-item label="管理员令牌">
+              <el-input
+                v-model="config.server.admin.adminToken"
+                type="password"
+                show-password
+                placeholder="请输入管理员令牌"
+                style="width: 300px"
+              />
+              <el-button type="primary" text @click="generateAdminToken" style="margin-left: 8px">
+                随机生成
+              </el-button>
+            </el-form-item>
+
+            <el-divider content-position="left">API 认证</el-divider>
+
+            <el-form-item label="启用认证">
+              <el-switch
+                v-model="apiAuthEnabled"
+                @change="handleApiAuthEnabledChange"
+              />
+              <span class="form-hint" style="margin-left: 8px">
+                启用后访问 /v1/* 接口需要提供认证令牌
+              </span>
+            </el-form-item>
+
+            <template v-if="apiAuthEnabled">
+              <el-form-item label="认证方式">
+                <el-radio-group v-model="apiAuthType">
+                  <el-radio-button value="bearer">
+                    Bearer Token
+                  </el-radio-button>
+                  <el-radio-button value="api-key">
+                    API Key (X-API-Key)
+                  </el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+
+              <el-form-item label="访问令牌">
+                <div style="display: flex; flex-direction: column; gap: 8px; width: 100%">
+                  <div style="display: flex; gap: 8px">
+                    <el-input
+                      v-model="newApiToken"
+                      placeholder="输入令牌或点击随机生成"
+                      style="width: 300px"
+                      @keyup.enter="addApiToken"
+                    />
+                    <el-button type="primary" text @click="generateNewApiToken">
+                      随机生成
+                    </el-button>
+                    <el-button type="primary" @click="addApiToken">添加</el-button>
+                  </div>
+                  <div v-if="apiAuthTokens.length > 0" class="token-tags">
+                    <el-tag
+                      v-for="(token, index) in apiAuthTokens"
+                      :key="index"
+                      closable
+                      type="info"
+                      @close="removeApiToken(index)"
+                      style="margin-right: 8px; margin-bottom: 8px"
+                    >
+                      {{ token.substring(0, 8) + '...' + token.substring(token.length - 4) }}
+                    </el-tag>
+                  </div>
+                  <div class="form-hint">
+                    共 {{ apiAuthTokens.length }} 个令牌，可分发给不同用户使用
+                  </div>
+                </div>
+              </el-form-item>
+
+              <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 16px">
+                <template #title>
+                  <span>请妥善保管访问令牌，启用认证后客户端需在请求头中携带令牌</span>
+                </template>
+              </el-alert>
+            </template>
           </el-form>
         </el-tab-pane>
-        <el-tab-pane label="MCP 工具池" name="tools">
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 16px"
-          >
-            <template #title>
-              <span>全局 MCP 工具池，可在分组配置中选择要注入的工具</span>
-            </template>
-          </el-alert>
-
-          <!-- 桌面端表格 -->
-          <el-table :data="config.tools.mcpTools" stripe class="desktop-table">
-            <el-table-column label="名称" width="150" prop="name" />
-            <el-table-column label="传输方式" width="100">
-              <template #default="{ row }">
-                <el-tag
-                  :type="getTransportTagType(row.transport)"
-                  size="small"
-                >
-                  {{ row.transport?.toUpperCase() }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="配置">
-              <template #default="{ row }">
-                <template v-if="row.transport === 'stdio'">
-                  <span class="config-path">
-                    {{ row.command }} {{ row.args?.join(" ") || "" }}
-                  </span>
-                </template>
-                <template v-else>
-                  <span class="config-path">{{ row.endpoint }}</span>
-                </template>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="{ $index }">
-                <el-button type="primary" text size="small" @click="editTool($index)">
-                  编辑
-                </el-button>
-                <el-button type="danger" text size="small" @click="removeTool($index)">
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <!-- 移动端列表 -->
-          <div class="mobile-list">
-            <div v-for="(tool, index) in config.tools.mcpTools" :key="tool.name" class="mobile-item">
-              <div class="item-header">
-                <span class="item-name">{{ tool.name }}</span>
-                <el-tag :type="getTransportTagType(tool.transport)" size="small">
-                  {{ tool.transport?.toUpperCase() }}
-                </el-tag>
-              </div>
-              <div class="item-config">
-                <template v-if="tool.transport === 'stdio'">
-                  {{ tool.command }} {{ tool.args?.join(" ") || "" }}
-                </template>
-                <template v-else>
-                  {{ tool.endpoint }}
-                </template>
-              </div>
-              <div class="item-actions">
-                <el-button type="primary" text size="small" @click="editTool(index)">
-                  编辑
-                </el-button>
-                <el-button type="danger" text size="small" @click="removeTool(index)">
-                  删除
-                </el-button>
-              </div>
-            </div>
-            <el-empty v-if="config.tools.mcpTools.length === 0" description="暂无工具" />
-          </div>
-
-          <el-button type="primary" style="margin-top: 16px" @click="showAddToolDialog">
-            <el-icon><Plus /></el-icon>
-            添加 MCP 工具
-          </el-button>
-        </el-tab-pane>
-
         <el-tab-pane label="缓存" name="cache">
           <el-form label-width="120px" class="config-form">
             <el-form-item label="启用缓存">
@@ -256,6 +260,49 @@ while (true) {
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="日志" name="log">
+          <el-form label-width="120px" class="config-form">
+            <el-form-item label="启用日志">
+              <el-switch v-model="logEnabled" />
+              <span class="form-hint">
+                启用后会将日志记录到文件，可在系统日志页面查看
+              </span>
+            </el-form-item>
+
+            <template v-if="logEnabled">
+              <el-form-item label="单文件上限">
+                <el-input-number
+                  v-model="logMaxSizeMB"
+                  :min="1"
+                  :max="1000"
+                  :step="1"
+                />
+                <span class="form-hint" style="margin-left: 8px">
+                  MB（单个日志文件最大大小，超过后停止写入当天日志）
+                </span>
+              </el-form-item>
+
+              <el-form-item label="保留天数">
+                <el-input-number
+                  v-model="logKeepDays"
+                  :min="1"
+                  :max="365"
+                  :step="1"
+                />
+                <span class="form-hint" style="margin-left: 8px">
+                  天（超过此天数的日志将被自动清理）
+                </span>
+              </el-form-item>
+
+              <el-alert type="info" :closable="false" show-icon>
+                <template #title>
+                  <span>日志文件存储在 <code>./logs/</code> 目录下，按日期命名（如 2024-01-15.log）</span>
+                </template>
+              </el-alert>
+            </template>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="原始配置" name="raw">
           <div class="raw-config-container">
             <el-input
@@ -271,43 +318,157 @@ while (true) {
         </el-tab-pane>
       </el-tabs>
     </el-card>
-
-    <!-- 工具编辑对话框 -->
-    <McpToolDialog
-      v-model:visible="toolDialogVisible"
-      :edit-index="editingToolIndex"
-      :tool="editingTool"
-      @save="handleToolSave"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 /**
  * 高级配置视图
- * @description 管理 MCP 工具池、缓存配置等
+ * @description 管理服务器配置、缓存配置等
  */
 import { ref, reactive, onMounted, watch, computed } from "vue";
-import { Check, Plus, DocumentCopy } from "@element-plus/icons-vue";
+import { Check, DocumentCopy } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
   getConfig,
   updateConfig,
   type AppConfig,
-  type McpStdioConfig,
-  type McpSseConfig,
-  type McpHttpConfig,
 } from "@/api/types";
-import McpToolDialog from "@/components/McpToolDialog.vue";
 
-type McpTool = McpStdioConfig | McpSseConfig | McpHttpConfig;
-
-const activeTab = ref("tools");
+const activeTab = ref("server");
 const saving = ref(false);
 const rawConfig = ref("");
-const toolDialogVisible = ref(false);
-const editingToolIndex = ref(-1);
-const editingTool = ref<McpTool | null>(null);
+
+/** API 认证配置（响应式计算属性） */
+const apiAuthEnabled = computed({
+  get: () => config.server.apiAuth?.enabled ?? false,
+  set: (val: boolean) => {
+    if (!config.server.apiAuth) {
+      config.server.apiAuth = { enabled: false, type: "bearer", tokens: [] };
+    }
+    config.server.apiAuth.enabled = val;
+  },
+});
+
+const apiAuthType = computed({
+  get: () => config.server.apiAuth?.type ?? "bearer",
+  set: (val: "bearer" | "api-key") => {
+    if (!config.server.apiAuth) {
+      config.server.apiAuth = { enabled: false, type: val, tokens: [] };
+    }
+    config.server.apiAuth.type = val;
+  },
+});
+
+/** API 认证令牌列表 */
+const apiAuthTokens = computed({
+  get: () => config.server.apiAuth?.tokens ?? [],
+  set: (val: string[]) => {
+    if (!config.server.apiAuth) {
+      config.server.apiAuth = { enabled: false, type: "bearer", tokens: val };
+    } else {
+      config.server.apiAuth.tokens = val;
+    }
+  },
+});
+
+/** 新令牌输入 */
+const newApiToken = ref("");
+
+/**
+ * 生成随机 API 令牌
+ * @description 生成 sk- 前缀的 32 位随机字符串
+ */
+function generateNewApiToken(): void {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let token = "sk-";
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  newApiToken.value = token;
+}
+
+/**
+ * 添加 API 令牌
+ * @description 将输入的令牌添加到列表中
+ */
+function addApiToken(): void {
+  const token = newApiToken.value.trim();
+  if (!token) {
+    ElMessage.warning("请输入令牌");
+    return;
+  }
+  if (apiAuthTokens.value.includes(token)) {
+    ElMessage.warning("该令牌已存在");
+    return;
+  }
+  apiAuthTokens.value = [...apiAuthTokens.value, token];
+  newApiToken.value = "";
+  ElMessage.success("已添加令牌");
+}
+
+/**
+ * 移除 API 令牌
+ * @param index 要移除的令牌索引
+ */
+function removeApiToken(index: number): void {
+  apiAuthTokens.value = apiAuthTokens.value.filter((_, i) => i !== index);
+  ElMessage.success("已移除令牌");
+}
+
+/** 日志配置（响应式计算属性） */
+const logEnabled = computed({
+  get: () => config.log?.enabled ?? true,
+  set: (val: boolean) => {
+    if (!config.log) {
+      config.log = { enabled: val, maxSizeMB: 10, keepDays: 30 };
+    } else {
+      config.log.enabled = val;
+    }
+  },
+});
+
+const logMaxSizeMB = computed({
+  get: () => config.log?.maxSizeMB ?? 10,
+  set: (val: number) => {
+    if (!config.log) {
+      config.log = { enabled: true, maxSizeMB: val, keepDays: 30 };
+    } else {
+      config.log.maxSizeMB = val;
+    }
+  },
+});
+
+const logKeepDays = computed({
+  get: () => config.log?.keepDays ?? 30,
+  set: (val: number) => {
+    if (!config.log) {
+      config.log = { enabled: true, maxSizeMB: 10, keepDays: val };
+    } else {
+      config.log.keepDays = val;
+    }
+  },
+});
+
+/**
+ * 生成随机管理员令牌
+ * @description 生成 32 位随机字符串作为管理员令牌
+ */
+function generateAdminToken(): void {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let token = "";
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  config.server.admin.adminToken = token;
+  ElMessage.success("已生成随机管理员令牌");
+}
+
+function handleApiAuthEnabledChange(val: boolean) {
+  if (val && !config.server.apiAuth) {
+    config.server.apiAuth = { enabled: true, type: "bearer", tokens: [] };
+  }
+}
 
 /** 描述列表列数（响应式） */
 const descColumn = ref(1);
@@ -408,47 +569,6 @@ function applyRawConfig() {
     ElMessage.error("JSON 格式错误");
   }
 }
-
-function getTransportTagType(
-  transport?: string
-): "success" | "warning" | "info" | "danger" {
-  switch (transport) {
-    case "stdio":
-      return "success";
-    case "sse":
-      return "warning";
-    case "http":
-      return "info";
-    default:
-      return "info";
-  }
-}
-
-function showAddToolDialog() {
-  editingToolIndex.value = -1;
-  editingTool.value = null;
-  toolDialogVisible.value = true;
-}
-
-function editTool(index: number) {
-  editingToolIndex.value = index;
-  editingTool.value = config.tools.mcpTools[index];
-  toolDialogVisible.value = true;
-}
-
-function removeTool(index: number) {
-  config.tools.mcpTools.splice(index, 1);
-}
-
-function handleToolSave(tool: McpTool) {
-  if (editingToolIndex.value === -1) {
-    config.tools.mcpTools.push(tool);
-    ElMessage.success("工具已添加");
-  } else {
-    config.tools.mcpTools[editingToolIndex.value] = tool;
-    ElMessage.success("工具已更新");
-  }
-}
 </script>
 
 <style scoped>
@@ -523,6 +643,17 @@ function handleToolSave(tool: McpTool) {
   font-size: 12px;
 }
 
+/* 令牌标签样式 */
+.token-tags {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: var(--bg-color);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  min-height: 40px;
+}
+
 /* 代码示例样式 */
 .example-section {
   padding: 8px 0;
@@ -538,17 +669,7 @@ function handleToolSave(tool: McpTool) {
 }
 
 .code-block {
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: monospace;
-  font-size: 12px;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--text-primary);
-  transition: background-color 0.3s, border-color 0.3s;
+  margin: 0;
 }
 
 /* 移动端列表默认隐藏 */

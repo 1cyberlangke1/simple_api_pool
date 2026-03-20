@@ -136,7 +136,11 @@ const GroupFeatureSchema = z.object({
  */
 const GroupConfigSchema = z.object({
   name: z.string().min(1),
-  strategy: z.enum(["round_robin", "random", "exhaust", "weighted"]).optional(),
+  strategy: z.enum(["round_robin", "random", "exhaust", "weighted", "failover"]).optional(),
+  /** @deprecated 已合并到 strategy 中，保留用于向后兼容 */
+  failover: z.boolean().optional(),
+  /** @deprecated 已合并到 strategy 中，保留用于向后兼容 */
+  failoverMaxRetries: z.number().int().min(0).optional(),
   routes: z.array(GroupRouteSchema).min(1),
   features: GroupFeatureSchema.optional(),
 });
@@ -209,10 +213,37 @@ const CacheSchema = z.object({
   enable: z.boolean(),
   /** 最大缓存条目数 */
   maxEntries: z.number().positive(),
-  /** 数据库路径 */
-  dbPath: z.string().min(1),
+  /** 数据库路径（仅允许项目相对路径） */
+  dbPath: z.string()
+    .min(1, "数据库路径不能为空")
+    .refine(
+      (path) => {
+        // 禁止目录穿越
+        if (path.includes("..")) return false;
+        // 禁止用户目录引用
+        if (path.includes("~")) return false;
+        // 禁止绝对路径（Unix: /xxx, Windows: C:\xxx 或 C:/xxx）
+        if (path.startsWith("/") || /^[A-Za-z]:[/\\]/.test(path)) return false;
+        return true;
+      },
+      { message: "数据库路径必须是项目相对路径，不能包含 '..'、'~' 或使用绝对路径" }
+    ),
   /** 过期时间（秒） */
   ttl: z.number().positive().optional(),
+});
+
+/**
+ * 日志配置 Schema
+ */
+const LogSchema = z.object({
+  /** 是否启用日志记录 */
+  enabled: z.boolean().default(true),
+  /** 单个日志文件最大大小（MB），默认 10MB */
+  maxSizeMB: z.number().positive().max(1000).default(10),
+  /** 日志保留天数，默认 30 天 */
+  keepDays: z.number().int().min(1).max(365).default(30),
+  /** 日志目录路径 */
+  logDir: z.string().optional(),
 });
 
 /**
@@ -225,12 +256,22 @@ const AdminSchema = z.object({
 });
 
 /**
+ * OpenAI 兼容接口认证配置 Schema
+ */
+const ApiAuthSchema = z.object({
+  enabled: z.boolean().default(false),
+  type: z.enum(["bearer", "api-key"]).optional().default("bearer"),
+  tokens: z.array(z.string()).optional(),
+});
+
+/**
  * 服务器配置 Schema
  */
 const ServerSchema = z.object({
   host: z.string(),
   port: z.number().positive().max(65535),
   admin: AdminSchema,
+  apiAuth: ApiAuthSchema.optional(),
   bodyLimit: z.number().positive().optional(),
   shutdownTimeout: z.number().positive().optional(),
 });
@@ -255,6 +296,7 @@ export const AppConfigSchema = z.object({
   keys: z.array(KeyConfigSchema).min(1, "At least one key is required"),
   tools: ToolsConfigSchema,
   cache: CacheSchema,
+  log: LogSchema.optional(),
   plugins: z.array(PluginSchema).optional(),
   extensions: z.record(z.unknown()).optional(),
 });

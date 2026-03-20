@@ -2,38 +2,44 @@
   <div class="groups-view">
     <el-card>
       <template #header>
-        <div class="card-header">
-          <span>分组配置</span>
-          <el-button type="primary" @click="showAddDialog">
-            <el-icon><Plus /></el-icon>
-            <span class="btn-text">新增分组</span>
-          </el-button>
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>分组配置</span>
+          </div>
+          <div class="page-header__actions">
+            <el-button type="primary" @click="showAddDialog">
+              <el-icon><Plus /></el-icon>
+              <span class="btn-text">新增分组</span>
+            </el-button>
+          </div>
         </div>
       </template>
 
       <!-- 桌面端表格 -->
       <el-table :data="groups" stripe v-loading="loading" class="desktop-table">
-        <el-table-column label="分组 ID" width="180">
+        <el-table-column label="分组 ID" min-width="160">
           <template #default="{ row }">
             <el-tag type="success">group/{{ row.name }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="策略" width="120">
+        <el-table-column label="策略" min-width="100">
           <template #default="{ row }">
             <el-tag>{{ row.strategy || "round_robin" }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="路由">
+        <el-table-column label="路由" min-width="200">
           <template #default="{ row }">
             <div v-for="(route, idx) in row.routes" :key="idx" class="route-item">
-              <el-tag size="small">{{ route.modelId }}</el-tag>
+              <el-tooltip :content="route.modelId" placement="top" :show-after="500">
+                <el-tag size="small" class="route-tag">{{ route.modelId }}</el-tag>
+              </el-tooltip>
               <span v-if="route.temperature" class="temp-badge">
                 temp: {{ route.temperature }}
               </span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="功能配置" width="200">
+        <el-table-column label="功能配置" min-width="180">
           <template #default="{ row }">
             <div class="feature-tags">
               <el-tag
@@ -59,62 +65,83 @@
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" text size="small" @click="showEditDialog(row)">
-              编辑
-            </el-button>
-            <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(row.name)">
-              <template #reference>
-                <el-button type="danger" text size="small">删除</el-button>
-              </template>
-            </el-popconfirm>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 移动端卡片列表 -->
-      <div class="mobile-list" v-loading="loading">
-        <div v-for="group in groups" :key="group.name" class="mobile-item">
-          <div class="item-header">
-            <el-tag type="success" size="small">group/{{ group.name }}</el-tag>
-            <div class="item-actions">
-              <el-button type="primary" text size="small" @click="showEditDialog(group)">
+            <div class="action-buttons">
+              <el-button type="primary" text size="small" @click="showEditDialog(row)">
                 编辑
               </el-button>
-              <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(group.name)">
+              <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(row.name)">
                 <template #reference>
                   <el-button type="danger" text size="small">删除</el-button>
                 </template>
               </el-popconfirm>
             </div>
-          </div>
-          <div class="item-routes">
-            <div v-for="(route, idx) in group.routes" :key="idx" class="route-tag">
-              <el-tag size="small">{{ route.modelId }}</el-tag>
-              <span v-if="route.temperature" class="temp-text">temp: {{ route.temperature }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="data-card-list" v-loading="loading">
+        <div v-for="group in groups" :key="group.name" class="data-card">
+          <div class="data-card__header">
+            <div class="data-card__title">
+              <el-tag type="success" size="small">group/{{ group.name }}</el-tag>
+            </div>
+            <div class="data-card__tags">
+              <el-tag size="small">{{ group.strategy || "round_robin" }}</el-tag>
             </div>
           </div>
-          <div class="item-features">
-            <el-tag size="small">{{ group.strategy || "round_robin" }}</el-tag>
-            <el-tag
-              v-if="group.features?.tools?.length"
-              size="small"
-              type="success"
-            >
-              工具 ({{ group.features.tools.length }})
-            </el-tag>
-            <el-tag v-if="group.features?.promptInject" size="small" type="info">
-              提示词
-            </el-tag>
-            <el-tag
-              v-if="group.features?.truncation?.enable"
-              size="small"
-              type="warning"
-            >
-              截断
-            </el-tag>
+          <div class="data-card__body">
+            <div class="data-card__body-row">
+              <span class="data-card__label">路由：</span>
+              <div class="data-card__tags">
+                <el-tag v-for="(route, idx) in group.routes" :key="idx" size="small">
+                  {{ route.modelId }}
+                </el-tag>
+              </div>
+            </div>
+            <div class="data-card__body-row">
+              <div class="data-card__tags">
+                <el-tag
+                  v-if="group.features?.tools?.length"
+                  size="small"
+                  type="success"
+                >
+                  工具 ({{ group.features.tools.length }})
+                </el-tag>
+                <el-tag v-if="group.features?.promptInject" size="small" type="info">
+                  提示词
+                </el-tag>
+                <el-tag
+                  v-if="group.features?.truncation?.enable"
+                  size="small"
+                  type="warning"
+                >
+                  截断
+                </el-tag>
+              </div>
+            </div>
+          </div>
+          <div class="data-card__footer">
+            <el-button type="primary" text size="small" @click="showEditDialog(group)">
+              编辑
+            </el-button>
+            <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(group.name)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </div>
         </div>
-        <el-empty v-if="groups.length === 0 && !loading" description="暂无分组" />
+        <div v-if="groups.length === 0 && !loading" class="page-empty">
+          <div class="page-empty__icon">
+            <el-icon :size="24"><Plus /></el-icon>
+          </div>
+          <p class="page-empty__title">暂无分组</p>
+          <p class="page-empty__desc">创建分组来组织你的模型路由</p>
+          <div class="page-empty__action">
+            <el-button type="primary" @click="showAddDialog">新增分组</el-button>
+          </div>
+        </div>
       </div>
     </el-card>
 
@@ -141,6 +168,7 @@ import {
   getGroups,
   deleteGroup,
   getModels,
+  getTools,
   type GroupConfig,
   type ModelConfig,
 } from "@/api/types";
@@ -151,16 +179,18 @@ const dialogVisible = ref(false);
 const groups = ref<GroupConfig[]>([]);
 const models = ref<ModelConfig[]>([]);
 const editingGroup = ref<GroupConfig | null>(null);
-const availableTools = ref<string[]>(["get_weather", "search_web"]);
+const availableTools = ref<string[]>([]);
 
 onMounted(() => {
   fetchGroups();
   fetchModels();
+  fetchTools();
 });
 
 onActivated(() => {
   fetchGroups();
   fetchModels();
+  fetchTools();
 });
 
 async function fetchGroups() {
@@ -177,6 +207,15 @@ async function fetchModels() {
   try {
     const { data } = await getModels();
     models.value = data;
+  } catch {
+    // ignore
+  }
+}
+
+async function fetchTools() {
+  try {
+    const { data } = await getTools();
+    availableTools.value = data.tools.map((t) => t.name);
   } catch {
     // ignore
   }
@@ -207,13 +246,7 @@ async function handleDelete(name: string) {
 .groups-view {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: var(--page-gap);
 }
 
 .route-item {
@@ -223,10 +256,17 @@ async function handleDelete(name: string) {
   margin: 4px 0;
 }
 
+.route-tag {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .temp-badge {
   font-size: 12px;
   color: var(--text-secondary);
-  background: var(--border-color);
+  background: var(--surface-secondary);
   padding: 2px 6px;
   border-radius: 4px;
   transition: background-color 0.3s, color 0.3s;
@@ -241,109 +281,25 @@ async function handleDelete(name: string) {
 
 .inherit-hint {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-style: italic;
 }
 
-/* 移动端列表默认隐藏 */
-.mobile-list {
-  display: none;
-}
-
-/* ============================================================
-   响应式媒体查询
-   ============================================================ */
-
-/* 平板端 (< 1024px) */
-@media (max-width: 1024px) {
-  .groups-view {
-    gap: 16px;
-  }
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
-  .groups-view {
-    gap: 12px;
-  }
-
   .btn-text {
     display: none;
   }
 
-  /* 显示移动端列表 */
-  .mobile-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  /* 隐藏桌面端表格 */
   .desktop-table {
     display: none;
   }
-}
-
-/* 小屏手机 (< 480px) */
-@media (max-width: 480px) {
-  .groups-view {
-    gap: 8px;
-  }
-
-  .mobile-item {
-    padding: 10px;
-  }
-
-  .mobile-item .route-tag {
-    font-size: 11px;
-  }
-
-  .mobile-item .temp-text {
-    font-size: 10px;
-  }
-}
-
-/* 移动端卡片样式 */
-.mobile-item {
-  padding: 12px;
-  background: var(--border-light);
-  border-radius: 8px;
-  transition: background-color 0.3s;
-}
-
-.mobile-item .item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.mobile-item .item-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.mobile-item .item-routes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.mobile-item .route-tag {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.mobile-item .temp-text {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.mobile-item .item-features {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 </style>

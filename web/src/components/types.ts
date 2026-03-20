@@ -3,15 +3,40 @@
  */
 
 /**
+ * 文本内容块
+ */
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+/**
+ * 图片内容块
+ */
+export interface ImageContent {
+  type: "image_url";
+  image_url: {
+    url: string;
+  };
+}
+
+/**
+ * 消息内容块（多模态）
+ */
+export type MessageContent = TextContent | ImageContent;
+
+/**
  * 聊天消息
  */
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | unknown;
+  content: string | MessageContent[] | unknown;
   name?: string;
   tool_call_id?: string;
   /** 额外字段，用于存储自定义字段如 reasoning_content 等 */
   extraFields?: Record<string, unknown>;
+  /** 附加的图片预览（仅用于前端显示） */
+  images?: string[];
 }
 
 /**

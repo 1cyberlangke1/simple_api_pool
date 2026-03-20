@@ -2,26 +2,20 @@
   <div class="models-view">
     <el-card>
       <template #header>
-        <div class="card-header">
-          <div class="header-left">
+        <div class="card-header page-header">
+          <div class="header-left page-header__meta">
             <span>模型配置</span>
-            <el-tag
-              v-if="exchangeRate"
-              size="small"
-              type="info"
-              class="rate-tag"
-            >
-              汇率: 1 USD = {{ exchangeRate.rate.toFixed(4) }} CNY
-              <el-icon
-                v-if="exchangeRate.source === 'fallback'"
-                :size="12"
-                style="margin-left: 4px"
-              >
-                <Warning />
-              </el-icon>
-            </el-tag>
+            <el-tag size="small" type="info">共 {{ models.length }} 条</el-tag>
+            <div v-if="exchangeRate" class="rate-display">
+              <el-tag size="small" :type="exchangeRate.source === 'online' ? 'success' : 'warning'">
+                汇率: 1 USD = {{ exchangeRate.rate.toFixed(4) }} CNY
+              </el-tag>
+              <el-button type="primary" text size="small" @click="showRateDialog = true" style="margin-left: 4px">
+                编辑
+              </el-button>
+            </div>
           </div>
-          <div class="header-right">
+          <div class="header-right page-header__actions">
             <el-switch
               v-model="showCNY"
               active-text="人民币"
@@ -37,14 +31,14 @@
       </template>
 
       <!-- 桌面端表格 -->
-      <el-table :data="models" stripe v-loading="loading" class="desktop-table">
-        <el-table-column label="模型 ID" width="180">
+      <el-table :data="paginatedModels" stripe v-loading="loading" class="desktop-table">
+        <el-table-column label="模型 ID" min-width="170">
           <template #default="{ row }">
             <el-tag>{{ row.provider }}/{{ row.name }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="model" label="上游模型" width="150" />
-        <el-table-column label="工具支持" width="100">
+        <el-table-column prop="model" label="上游模型" min-width="140" />
+        <el-table-column label="工具支持" min-width="100">
           <template #default="{ row }">
             <el-tag :type="row.supportsTools !== false ? 'success' : 'danger'">
               {{ row.supportsTools !== false ? "支持" : "不支持" }}
@@ -63,7 +57,7 @@
             <span v-else class="text-muted">未配置</span>
           </template>
         </el-table-column>
-        <el-table-column label="覆写配置" width="100">
+        <el-table-column label="覆写配置" min-width="100">
           <template #default="{ row }">
             <el-tag
               v-if="row.requestOverrides || row.extraBody"
@@ -77,52 +71,94 @@
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" text size="small" @click="showEditDialog(row)">
-              编辑
-            </el-button>
-            <el-popconfirm
-              title="确定删除此模型？"
-              @confirm="handleDelete(row.provider, row.name)"
-            >
-              <template #reference>
-                <el-button type="danger" text size="small">删除</el-button>
-              </template>
-            </el-popconfirm>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 移动端卡片列表 -->
-      <div class="mobile-list" v-loading="loading">
-        <div v-for="model in models" :key="`${model.provider}/${model.name}`" class="mobile-item">
-          <div class="item-header">
-            <el-tag size="small">{{ model.provider }}/{{ model.name }}</el-tag>
-            <div class="item-actions">
-              <el-button type="primary" text size="small" @click="showEditDialog(model)">
+            <div class="action-buttons">
+              <el-button type="primary" text size="small" @click="showEditDialog(row)">
                 编辑
               </el-button>
-              <el-popconfirm title="确定删除此模型？" @confirm="handleDelete(model.provider, model.name)">
+              <el-popconfirm
+                title="确定删除此模型？"
+                @confirm="handleDelete(row.provider, row.name)"
+              >
                 <template #reference>
                   <el-button type="danger" text size="small">删除</el-button>
                 </template>
               </el-popconfirm>
             </div>
-          </div>
-          <div class="item-info">
-            <span>上游模型: {{ model.model }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 分页 -->
+      <div class="pagination-wrapper" v-if="models.length > pageSize">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="models.length"
+          layout="total, sizes, prev, pager, next"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
+
+      <!-- 移动端卡片列表 -->
+      <div class="data-card-list" v-loading="loading">
+        <div v-for="model in paginatedModels" :key="`${model.provider}/${model.name}`" class="data-card">
+          <div class="data-card__header">
+            <div class="data-card__title">
+              <el-tag size="small">{{ model.provider }}/{{ model.name }}</el-tag>
+            </div>
             <el-tag :type="model.supportsTools !== false ? 'success' : 'danger'" size="small">
-              {{ model.supportsTools !== false ? "支持工具" : "不支持工具" }}
+              {{ model.supportsTools !== false ? "工具" : "无工具" }}
             </el-tag>
           </div>
-          <div v-if="model.pricing" class="item-price">
-            <span>输入: {{ formatPrice(model.pricing.promptPer1k) }}</span>
-            <span>输出: {{ formatPrice(model.pricing.completionPer1k) }}</span>
+          <div class="data-card__body">
+            <div class="data-card__body-row">
+              <span class="data-card__label">上游模型：</span>
+              <span>{{ model.model }}</span>
+            </div>
+            <div v-if="model.pricing" class="data-card__body-row">
+              <span class="data-card__label">价格：</span>
+              <span>输入 {{ formatPrice(model.pricing.promptPer1k) }} · 输出 {{ formatPrice(model.pricing.completionPer1k) }}</span>
+            </div>
+            <div v-if="model.requestOverrides || model.extraBody" class="data-card__body-row">
+              <el-tag type="warning" size="small">已配置覆写</el-tag>
+            </div>
           </div>
-          <div v-if="model.requestOverrides || model.extraBody" class="item-extra">
-            <el-tag type="warning" size="small">已配置覆写</el-tag>
+          <div class="data-card__footer">
+            <el-button type="primary" text size="small" @click="showEditDialog(model)">
+              编辑
+            </el-button>
+            <el-popconfirm title="确定删除此模型？" @confirm="handleDelete(model.provider, model.name)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </div>
         </div>
-        <el-empty v-if="models.length === 0 && !loading" description="暂无模型" />
+        <div v-if="models.length === 0 && !loading" class="page-empty">
+          <div class="page-empty__icon">
+            <el-icon :size="24"><Plus /></el-icon>
+          </div>
+          <p class="page-empty__title">暂无模型</p>
+          <p class="page-empty__desc">添加模型配置来开始使用</p>
+          <div class="page-empty__action">
+            <el-button type="primary" @click="showAddDialog">新增模型</el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 移动端分页 -->
+      <div class="pagination-wrapper pagination-mobile" v-if="models.length > pageSize">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="models.length"
+          layout="prev, pager, next"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
       </div>
     </el-card>
 
@@ -134,6 +170,41 @@
       :exchange-rate="exchangeRate"
       @submitted="fetchModels"
     />
+
+    <!-- 汇率编辑对话框 -->
+    <el-dialog v-model="showRateDialog" title="设置汇率" width="400px">
+      <el-form label-width="100px">
+        <el-form-item label="当前汇率">
+          <span v-if="exchangeRate">1 USD = {{ exchangeRate.rate.toFixed(4) }} CNY</span>
+          <span v-else>未获取</span>
+          <el-tag v-if="exchangeRate" :type="exchangeRate.source === 'online' ? 'success' : 'warning'" size="small" style="margin-left: 8px">
+            {{ exchangeRate.source === 'online' ? '在线' : '备用' }}
+          </el-tag>
+        </el-form-item>
+        <el-form-item label="新汇率">
+          <el-input-number
+            v-model="newRate"
+            :precision="4"
+            :step="0.01"
+            :min="0.01"
+            :max="100"
+            style="width: 200px"
+          />
+          <span style="margin-left: 8px">CNY/USD</span>
+        </el-form-item>
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>
+            <span>设置的汇率将被视为今日在线获取，有效期 24 小时</span>
+          </template>
+        </el-alert>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRateDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleSetRate" :loading="rateLoading">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -142,8 +213,8 @@
  * 模型配置视图
  * @description 管理模型的增删改查，支持价格查询和货币转换
  */
-import { ref, onMounted, onActivated } from "vue";
-import { Plus, Warning } from "@element-plus/icons-vue";
+import { ref, computed, onMounted, onActivated } from "vue";
+import { Plus } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
   getModels,
@@ -161,7 +232,40 @@ const models = ref<ModelConfig[]>([]);
 const providers = ref<ProviderConfig[]>([]);
 const editingModel = ref<ModelConfig | null>(null);
 
-const { showCNY, exchangeRate, fetchExchangeRate, formatPrice } = useCurrency();
+/** 分页配置 */
+const pageSize = ref(20);
+const currentPage = ref(1);
+
+/** 汇率编辑相关 */
+const showRateDialog = ref(false);
+const newRate = ref(7.25);
+const rateLoading = ref(false);
+
+/** 分页后的模型列表 */
+const paginatedModels = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return models.value.slice(start, end);
+});
+
+/**
+ * 页码变化处理
+ * @param page 新页码
+ */
+function handlePageChange(page: number): void {
+  currentPage.value = page;
+}
+
+/**
+ * 每页数量变化处理
+ * @param size 新的每页数量
+ */
+function handleSizeChange(size: number): void {
+  pageSize.value = size;
+  currentPage.value = 1;
+}
+
+const { showCNY, exchangeRate, loading: currencyLoading, fetchExchangeRate, updateExchangeRate, formatPrice } = useCurrency();
 
 onMounted(() => {
   fetchModels();
@@ -174,6 +278,25 @@ onActivated(() => {
   fetchProviders();
   fetchExchangeRate();
 });
+
+/**
+ * 设置新汇率
+ */
+async function handleSetRate(): Promise<void> {
+  if (newRate.value <= 0) {
+    ElMessage.warning("请输入有效的汇率");
+    return;
+  }
+  rateLoading.value = true;
+  try {
+    const success = await updateExchangeRate(newRate.value);
+    if (success) {
+      showRateDialog.value = false;
+    }
+  } finally {
+    rateLoading.value = false;
+  }
+}
 
 async function fetchModels() {
   loading.value = true;
@@ -219,19 +342,14 @@ async function handleDelete(provider: string, name: string) {
 .models-view {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: var(--page-gap);
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .header-right {
@@ -239,7 +357,7 @@ async function handleDelete(provider: string, name: string) {
   align-items: center;
 }
 
-.rate-tag {
+.rate-display {
   display: flex;
   align-items: center;
 }
@@ -248,35 +366,42 @@ async function handleDelete(provider: string, name: string) {
   color: var(--text-secondary);
 }
 
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .price-cell {
   display: flex;
   align-items: center;
 }
 
-/* 移动端列表默认隐藏 */
-.mobile-list {
-  display: none;
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0;
 }
 
-/* ============================================================
-   响应式媒体查询
-   ============================================================ */
+.pagination-mobile {
+  justify-content: center;
+}
 
 /* 平板端 (< 1024px) */
 @media (max-width: 1024px) {
-  .rate-tag {
-    display: none;
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-right {
+    justify-content: flex-start;
   }
 }
 
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
-  .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
   .header-left {
     width: 100%;
   }
@@ -294,57 +419,9 @@ async function handleDelete(provider: string, name: string) {
     display: none;
   }
 
-  /* 显示移动端列表 */
-  .mobile-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  /* 隐藏桌面端表格 */
   .desktop-table {
     display: none;
   }
-}
-
-/* 移动端卡片样式 */
-.mobile-item {
-  padding: 12px;
-  background: var(--border-light);
-  border-radius: 8px;
-  transition: background-color 0.3s;
-}
-
-.mobile-item .item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.mobile-item .item-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.mobile-item .item-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.mobile-item .item-price {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.mobile-item .item-extra {
-  margin-top: 8px;
 }
 
 /* 小屏手机 (< 480px) */
@@ -353,6 +430,10 @@ async function handleDelete(provider: string, name: string) {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .rate-display {
+    flex-wrap: wrap;
   }
 }
 </style>

@@ -21,6 +21,26 @@ export function registerExchangeRateRoutes(app: FastifyInstance, adminToken: str
     }
   );
 
+  // 手动设置汇率
+  app.post<{ Body: { base?: string; target?: string; rate?: number } }>(
+    "/api/exchange-rate",
+    { preHandler: adminAuth(adminToken) },
+    async (
+      request: FastifyRequest<{ Body: { base?: string; target?: string; rate?: number } }>,
+      reply: FastifyReply
+    ) => {
+      const { base = "USD", target = "CNY", rate } = request.body;
+
+      if (!rate || rate <= 0) {
+        return reply.status(400).send({ error: "Invalid rate value" });
+      }
+
+      exchangeRateService.setRate(base, target, rate);
+      const rateData = await exchangeRateService.getRate(base, target);
+      return reply.send(rateData);
+    }
+  );
+
   // 强制刷新汇率
   app.post(
     "/api/exchange-rate/refresh",

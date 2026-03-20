@@ -187,9 +187,9 @@ export class LogStore {
   /**
    * 读取指定日期的日志
    * @param date 日期字符串（YYYY-MM-DD）
-   * @param offset 偏移行数
+   * @param offset 偏移行数（从最新的日志往前偏移，默认 0 表示从最新开始）
    * @param limit 读取行数
-   * @returns 日志行列表
+   * @returns 日志行列表（按时间顺序，最新的在末尾）
    */
   readLogs(date: string, offset: number = 0, limit: number = 1000): string[] {
     if (!this.enabled) return [];
@@ -202,7 +202,14 @@ export class LogStore {
     const content = fs.readFileSync(logPath, "utf-8");
     const lines = content.split("\n").filter(l => l.trim());
 
-    return lines.slice(offset, offset + limit);
+    // 从末尾开始读取最新的日志
+    // offset=0 时返回最新的 limit 行
+    // offset>0 时跳过最新的 offset 行，再返回 limit 行（用于加载更早的日志）
+    const totalLines = lines.length;
+    const endIdx = totalLines - offset;
+    const startIdx = Math.max(0, endIdx - limit);
+
+    return lines.slice(startIdx, endIdx);
   }
 
   /**

@@ -187,9 +187,16 @@ export interface GroupFeatureConfig {
 export interface GroupConfig {
   /** 分组名称，下游通过 group/{name} 访问 */
   name: string;
-  /** 分组内模型路由策略 */
+  /** 
+   * 分组内模型路由策略
+   * @description - round_robin: 轮流使用，平均分配请求
+   *              - random: 随机选择一个模型
+   *              - exhaust: 用完再换，一个模型的 Key 配额用尽后切换
+   *              - weighted: 按权重分配
+   *              - failover: 故障转移，按顺序尝试，失败自动切换下一个
+   */
   strategy?: ModelGroupStrategy;
-  /** 分组内的模型路由列表 */
+  /** 分组内的模型路由列表（按优先级排序，前面的优先级更高） */
   routes: GroupRouteConfig[];
   /** 功能配置（独立配置，不继承全局） */
   features?: GroupFeatureConfig;
@@ -289,12 +296,40 @@ export interface CacheConfig {
 }
 
 /**
+ * 日志配置
+ * @description 控制日志文件的大小限制和清理策略
+ */
+export interface LogConfig {
+  /** 是否启用日志记录 */
+  enabled: boolean;
+  /** 单个日志文件最大大小（MB），超过后停止写入当天日志 */
+  maxSizeMB: number;
+  /** 日志保留天数，超过此天数的日志将被自动清理 */
+  keepDays: number;
+  /** 日志目录路径 */
+  logDir?: string;
+}
+
+/**
  * 管理面板配置
  * @description 保护 /admin 与管理 API
  */
 export interface AdminConfig {
   adminToken: string;
   ipWhitelist?: string[];
+}
+
+/**
+ * OpenAI 兼容接口认证配置
+ * @description 控制 /v1/* 接口的认证方式
+ */
+export interface ApiAuthConfig {
+  /** 是否启用认证，false 表示无需认证 */
+  enabled: boolean;
+  /** 认证类型：bearer (Authorization: Bearer xxx) 或 api-key (X-API-Key: xxx) */
+  type?: "bearer" | "api-key";
+  /** 访问令牌列表，启用认证时至少需要一个令牌 */
+  tokens?: string[];
 }
 
 /**
@@ -305,6 +340,8 @@ export interface ServerConfig {
   host: string;
   port: number;
   admin: AdminConfig;
+  /** OpenAI 兼容接口认证配置 */
+  apiAuth?: ApiAuthConfig;
   bodyLimit?: number;
   shutdownTimeout?: number;
 }
@@ -338,6 +375,8 @@ export interface AppConfig {
   tools: ToolsConfig;
   /** 全局缓存配置 */
   cache: CacheConfig;
+  /** 日志配置 */
+  log?: LogConfig;
   /** 插件配置 */
   plugins?: PluginConfig[];
   /** 扩展配置 */
@@ -349,7 +388,7 @@ export interface AppConfig {
 // ============================================================
 
 export type KeySelectionStrategy = "exhaust" | "round_robin" | "random" | "weighted";
-export type ModelGroupStrategy = "round_robin" | "random" | "exhaust" | "weighted";
+export type ModelGroupStrategy = "round_robin" | "random" | "exhaust" | "weighted" | "failover";
 
 export interface IKeySelectionStrategy {
   /** 策略名称（内置策略或自定义名称） */
@@ -359,8 +398,28 @@ export interface IKeySelectionStrategy {
 }
 
 export interface IModelGroupStrategy {
+  /** 策略名称 */
   readonly name: ModelGroupStrategy;
+  /**
+   * 选择下一个路由
+   * @param routes 路由配置数组
+   * @returns 选中的路由配置
+   */
   select(routes: GroupRouteConfig[]): GroupRouteConfig | null;
+  /**
+   * 报告请求失败（用于故障转移策略）
+   * @description 调用后策略会尝试切换到下一个路由
+   */
+  reportFailure?(): void;
+  /**
+   * 报告请求成功
+   * @description 重置内部失败状态
+   */
+  reportSuccess?(): void;
+  /**
+   * 重置策略状态
+   */
+  reset?(): void;
 }
 
 // ============================================================
@@ -445,6 +504,8 @@ export interface KeyState {
   model?: string;
   quota: QuotaConfig;
   usage: { dailyCount: number; totalCost: number };
+  /** 每日计数重置日期 (YYYY-MM-DD)，用于持久化恢复后判断是否需要重置 */
+  dailyResetDate?: string;
   available: boolean;
   lastUsedAt: number | null;
   metadata?: Record<string, unknown>;

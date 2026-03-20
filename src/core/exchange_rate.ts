@@ -256,6 +256,35 @@ export class ExchangeRateService {
   }
 
   /**
+   * 手动设置汇率
+   * @param base 基础货币
+   * @param target 目标货币
+   * @param rate 汇率
+   * @description 手动设置的汇率视为在线获取，有效期24小时
+   */
+  setRate(base: string, target: string, rate: number): void {
+    const now = Date.now();
+    const pair = `${base.toUpperCase()}-${target.toUpperCase()}`;
+    const reversePair = `${target.toUpperCase()}-${base.toUpperCase()}`;
+
+    // 设置正向汇率
+    this.cache.set(pair, {
+      rate,
+      updatedAt: now,
+      source: "online",
+    });
+
+    // 设置反向汇率
+    this.cache.set(reversePair, {
+      rate: 1 / rate,
+      updatedAt: now,
+      source: "online",
+    });
+
+    log.info({ rate: `1 ${base} = ${rate} ${target}` }, "Exchange rate manually set");
+  }
+
+  /**
    * 获取当前缓存状态
    * @returns 所有缓存的汇率信息
    */

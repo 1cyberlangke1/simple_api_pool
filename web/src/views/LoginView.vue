@@ -37,7 +37,7 @@
                 type="warning"
                 :closable="false"
                 show-icon
-                style="margin-top: 12px"
+                class="help-alert"
               >
                 <template #title>
                   <span>如果忘记 Token，请查看服务器启动时的配置文件</span>
@@ -104,21 +104,46 @@ async function handleLogin() {
 
 <style scoped>
 .login-container {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--bg-color) 0%, var(--border-color) 100%);
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(201, 107, 51, 0.12), transparent 34%),
+    linear-gradient(135deg, var(--bg-color) 0%, color-mix(in srgb, var(--bg-color) 70%, var(--border-color) 30%) 100%);
   transition: background 0.3s;
 }
 
 .login-card {
-  width: 450px;
-  max-width: 90%;
+  width: min(100%, 480px);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  position: relative;
+}
+
+.login-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary-color), var(--primary-light), var(--primary-color));
+  background-size: 200% 100%;
+  animation: shimmer 3s ease infinite;
 }
 
 .card-header {
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-header .el-icon {
+  filter: drop-shadow(0 0 12px rgba(201, 107, 51, 0.3));
 }
 
 .card-header h2 {
@@ -181,7 +206,7 @@ async function handleLogin() {
   color: var(--primary-color);
 }
 
-.help-content .el-divider {
-  margin: 12px 0;
+.help-alert {
+  margin-top: 12px;
 }
 </style>

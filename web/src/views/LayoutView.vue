@@ -65,11 +65,11 @@
             </div>
           </el-menu-item>
         </el-tooltip>
-        <el-tooltip content="编写自定义 JS 工具，扩展 AI 能力（开发者功能）" placement="right" :show-after="500">
-          <el-menu-item index="/js-tools" class="nav-item">
+        <el-tooltip content="管理 JS 工具和 MCP 工具，扩展 AI 能力" placement="right" :show-after="500">
+          <el-menu-item index="/tools" class="nav-item">
             <div class="nav-item-content">
               <el-icon><Cpu /></el-icon>
-              <span>JS 工具</span>
+              <span>工具管理</span>
             </div>
           </el-menu-item>
         </el-tooltip>
@@ -157,10 +157,10 @@
               <span>分组配置</span>
             </div>
           </el-menu-item>
-          <el-menu-item index="/js-tools" class="nav-item">
+          <el-menu-item index="/tools" class="nav-item">
             <div class="nav-item-content">
               <el-icon><Cpu /></el-icon>
-              <span>JS 工具</span>
+              <span>工具管理</span>
             </div>
           </el-menu-item>
           <el-menu-item index="/config" class="nav-item">
@@ -183,7 +183,7 @@
       </div>
     </el-drawer>
 
-    <el-container>
+    <el-container class="layout-main-shell">
       <el-header class="header">
         <div class="header-left">
           <!-- 移动端汉堡菜单按钮 -->
@@ -211,13 +211,15 @@
       </el-header>
 
       <el-main class="main">
-        <router-view v-slot="{ Component }">
-          <transition name="fade-slide" mode="out-in">
-            <keep-alive>
-              <component :is="Component" />
-            </keep-alive>
-          </transition>
-        </router-view>
+        <div class="page-shell app-page-shell">
+          <router-view v-slot="{ Component }">
+            <transition name="fade-slide" mode="out-in">
+              <keep-alive>
+                <component :is="Component" />
+              </keep-alive>
+            </transition>
+          </router-view>
+        </div>
       </el-main>
     </el-container>
   </el-container>
@@ -268,7 +270,7 @@ const pageTitle = computed(() => {
     "/providers": "提供商配置",
     "/models": "模型配置",
     "/groups": "分组配置",
-    "/js-tools": "JS 工具编辑器",
+    "/tools": "工具管理",
     "/config": "高级配置",
     "/logs": "系统日志",
   };
@@ -306,7 +308,12 @@ function closeMobileMenu() {
 
 <style scoped>
 .layout-container {
-  height: 100vh;
+  min-height: 100vh;
+  background: var(--bg-gradient);
+}
+
+.layout-main-shell {
+  min-width: 0;
 }
 
 /* ============================================================
@@ -320,6 +327,7 @@ function closeMobileMenu() {
   transition: all var(--transition-normal);
   position: relative;
   overflow: hidden;
+  backdrop-filter: blur(12px);
 }
 
 .aside::before {
@@ -459,15 +467,20 @@ function closeMobileMenu() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  height: 64px;
+  gap: 16px;
+  padding: 0 var(--page-padding-x);
+  height: 68px;
   transition: all var(--transition-normal);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .header-left h3 {
@@ -477,6 +490,9 @@ function closeMobileMenu() {
   color: var(--text-color);
   position: relative;
   padding-left: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-left h3::before {
@@ -494,7 +510,9 @@ function closeMobileMenu() {
 .header-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .theme-btn {
@@ -529,10 +547,14 @@ function closeMobileMenu() {
    主内容区样式
    ============================================================ */
 .main {
-  background: var(--bg-color);
-  padding: 24px;
+  background: transparent;
+  padding: var(--page-padding-y) var(--page-padding-x);
   transition: all var(--transition-normal);
   overflow-y: auto;
+}
+
+.app-page-shell {
+  min-height: 100%;
 }
 
 /* 页面切换动画 */
@@ -569,12 +591,20 @@ function closeMobileMenu() {
 
 /* 平板端 (< 1024px) */
 @media (max-width: 1024px) {
-  .main {
-    padding: 16px;
+  .desktop-aside {
+    width: 208px !important;
   }
 
   .header {
-    padding: 0 16px;
+    height: 64px;
+  }
+
+  .header-right {
+    gap: 10px;
+  }
+
+  .main {
+    padding: var(--page-padding-y) var(--page-padding-x);
   }
 }
 
@@ -592,6 +622,10 @@ function closeMobileMenu() {
     justify-content: center;
   }
 
+  .header-left {
+    flex: 1;
+  }
+
   .header-left h3 {
     font-size: 16px;
     padding-left: 8px;
@@ -603,11 +637,11 @@ function closeMobileMenu() {
   }
 
   .header {
-    padding: 0 12px;
+    height: 60px;
   }
 
   .main {
-    padding: 12px;
+    padding: var(--page-padding-y) var(--page-padding-x);
   }
 
   .logout-text {
@@ -626,7 +660,7 @@ function closeMobileMenu() {
   }
 
   .main {
-    padding: 8px;
+    padding: var(--page-padding-y) var(--page-padding-x);
   }
 
   .theme-btn {

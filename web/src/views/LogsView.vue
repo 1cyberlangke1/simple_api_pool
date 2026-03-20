@@ -2,9 +2,11 @@
   <div class="logs-view">
     <el-card>
       <template #header>
-        <div class="card-header">
-          <span>系统日志</span>
-          <div class="header-right">
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>系统日志</span>
+          </div>
+          <div class="header-right page-header__actions">
             <el-select v-model="selectedDate" placeholder="选择日期" class="date-select" @change="fetchLogContent">
               <el-option v-for="item in logFiles" :key="item.date" :label="item.date" :value="item.date">
                 <span>{{ item.date }}</span>
@@ -38,7 +40,7 @@
             (显示最近 {{ logEntries.length }} 行)
           </span>
         </div>
-        <div class="log-content">
+        <div ref="logContentRef" class="log-content">
           <div
             v-for="(entry, index) in logEntries"
             :key="index"
@@ -61,7 +63,7 @@
  * 日志查看视图
  * @description 查看系统运行日志
  */
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, nextTick, watch } from "vue";
 import { Refresh } from "@element-plus/icons-vue";
 import { getLogList, getLogContent, type LogEntry, type LogFileInfo } from "@/api/types";
 
@@ -71,11 +73,17 @@ const selectedDate = ref("");
 const levelFilter = ref("");
 const rawLogEntries = ref<LogEntry[]>([]); // 原始解析后的日志
 const totalLines = ref(0);
+const logContentRef = ref<HTMLElement | null>(null); // 日志容器引用
 
 // 根据级别过滤后的日志
 const logEntries = computed(() => {
   if (!levelFilter.value) return rawLogEntries.value;
   return rawLogEntries.value.filter(entry => entry.level === levelFilter.value);
+});
+
+// 监听级别过滤变化，滚动到底部
+watch(levelFilter, () => {
+  scrollToBottom();
 });
 
 onMounted(() => {
@@ -178,14 +186,34 @@ async function fetchLogContent() {
       if (entry) entries.push(entry);
     }
     
-    rawLogEntries.value = entries.reverse(); // 最新的在前面
+    rawLogEntries.value = entries; // 保持时间顺序，最新的在底部
     totalLines.value = data.total || 0;
+
+    // 滚动到底部
+    scrollToBottom();
   } catch {
     // 错误已在拦截器中处理
   } finally {
     loading.value = false;
   }
 }
+
+/**
+ * 滚动日志到底部
+ */
+function scrollToBottom() {
+  // 使用 setTimeout 确保 DOM 完全渲染后再滚动
+  setTimeout(() => {
+    if (logContentRef.value) {
+      logContentRef.value.scrollTop = logContentRef.value.scrollHeight;
+    }
+  }, 100);
+}
+
+// 监听原始日志条目变化，自动滚动到底部
+watch(rawLogEntries, () => {
+  scrollToBottom();
+}, { deep: true });
 
 async function refresh() {
   await fetchLogList();
@@ -260,13 +288,14 @@ function formatSize(bytes: number): string {
 }
 
 .log-content {
-  background: #1e1e1e;
-  border-radius: 8px;
-  padding: 16px;
+  background: linear-gradient(180deg, #1f2024 0%, #17181b 100%);
+  border-radius: var(--card-radius-sm);
+  border: 1px solid var(--border-light);
+  padding: 12px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
   line-height: 1.6;
-  max-height: 600px;
+  max-height: min(68vh, 720px);
   overflow-y: auto;
 }
 
@@ -333,12 +362,17 @@ function formatSize(bytes: number): string {
 
 /* 平板端 (< 1024px) */
 @media (max-width: 1024px) {
+  .header-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .date-select {
-    width: 130px;
+    width: min(220px, 100%);
   }
 
   .level-select {
-    width: 100px;
+    width: min(160px, 100%);
   }
 }
 
@@ -355,13 +389,9 @@ function formatSize(bytes: number): string {
     gap: 8px;
   }
 
-  .date-select {
-    width: 100%;
-  }
-
+  .date-select,
   .level-select {
-    flex: 1;
-    min-width: 100px;
+    width: 100%;
   }
 
   .btn-text {
@@ -371,7 +401,7 @@ function formatSize(bytes: number): string {
   .log-content {
     padding: 12px;
     font-size: 11px;
-    max-height: 400px;
+    max-height: min(56vh, 420px);
   }
 
   .log-line {
@@ -389,6 +419,7 @@ function formatSize(bytes: number): string {
   .log-content {
     font-size: 10px;
     padding: 8px;
+    max-height: min(52vh, 360px);
   }
 }
 </style>

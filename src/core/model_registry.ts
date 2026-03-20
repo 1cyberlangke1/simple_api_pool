@@ -122,6 +122,31 @@ export class ModelRegistry {
   }
 
   /**
+   * 获取分组的所有路由（按优先级排序）
+   * @description 用于故障转移，返回分组内的所有路由配置
+   * @param groupId 分组 ID（支持 -cache 后缀，支持 group/ 前缀或纯分组名）
+   * @returns 路由配置数组，按原始顺序排列（前面的优先级更高）
+   */
+  getGroupRoutes(groupId: string): GroupRouteConfig[] {
+    // 处理 -cache 后缀
+    let actualGroupId = groupId;
+    if (groupId.endsWith("-cache")) {
+      actualGroupId = groupId.slice(0, -6);
+    }
+    
+    // 处理 group/ 前缀（如果没有则添加）
+    const groupKey = actualGroupId.startsWith("group/") 
+      ? actualGroupId 
+      : `group/${actualGroupId}`;
+    
+    const group = this.groups.get(groupKey);
+    if (!group || group.routes.length === 0) return [];
+    
+    // 返回路由的副本，保持原始顺序（前面的优先级更高）
+    return [...group.routes];
+  }
+
+  /**
    * 从分组中选择路由
    * @param groupId 分组 ID（支持 -cache 后缀，支持 group/ 前缀或纯分组名）
    * @returns 分组路由配置，根据策略选择

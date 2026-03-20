@@ -2,9 +2,11 @@
   <div class="playground-view">
     <el-card class="chat-card">
       <template #header>
-        <div class="card-header">
-          <span>对话测试</span>
-          <div class="header-actions">
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>对话测试</span>
+          </div>
+          <div class="header-actions page-header__actions">
             <el-button @click="fetchModels" :loading="isLoadingModels" title="刷新模型列表">
               <el-icon><Refresh /></el-icon>
             </el-button>
@@ -67,14 +69,16 @@
 
     <!-- 桌面端右侧面板 -->
     <div class="side-panel desktop-panel">
-      <ChatSettingsPanel
-        ref="settingsRef"
-        :messages="messages"
-        :available-tools="availableTools"
-        @update:messages="messages = $event"
-      />
+      <div class="settings-panel-wrap">
+        <ChatSettingsPanel
+          ref="settingsRef"
+          :messages="messages"
+          :available-tools="availableTools"
+          @update:messages="messages = $event"
+        />
+      </div>
 
-      <!-- 请求体 JSON -->
+      <div class="debug-cards">
       <el-card v-if="lastRequestBody" class="json-card">
         <template #header>
           <div class="card-header">
@@ -82,7 +86,7 @@
             <el-button text size="small" @click="copyRequestBody">复制</el-button>
           </div>
         </template>
-        <pre class="json-content">{{ lastRequestBody }}</pre>
+        <pre class="json-content code-panel">{{ lastRequestBody }}</pre>
       </el-card>
 
       <!-- 上游响应 JSON -->
@@ -90,11 +94,15 @@
         <template #header>
           <div class="card-header">
             <span>上游响应 (Response)</span>
-            <el-button text size="small" @click="copyResponse">复制</el-button>
+            <div class="card-actions">
+              <el-button text size="small" @click="copyResponse">复制</el-button>
+              <el-button text size="small" @click="downloadResponse">下载</el-button>
+            </div>
           </div>
         </template>
-        <pre class="json-content">{{ lastResponse }}</pre>
+        <pre class="json-content code-panel">{{ lastResponse }}</pre>
       </el-card>
+      </div>
     </div>
 
     <!-- 移动端设置抽屉 -->
@@ -129,7 +137,7 @@
             <el-button text size="small" @click="copyRequestBody">复制</el-button>
           </div>
         </template>
-        <pre class="json-content">{{ lastRequestBody }}</pre>
+        <pre class="json-content code-panel">{{ lastRequestBody }}</pre>
       </el-card>
 
       <!-- 上游响应 JSON -->
@@ -137,10 +145,13 @@
         <template #header>
           <div class="card-header">
             <span>响应</span>
-            <el-button text size="small" @click="copyResponse">复制</el-button>
+            <div class="card-actions">
+              <el-button text size="small" @click="copyResponse">复制</el-button>
+              <el-button text size="small" @click="downloadResponse">下载</el-button>
+            </div>
           </div>
         </template>
-        <pre class="json-content">{{ lastResponse }}</pre>
+        <pre class="json-content code-panel">{{ lastResponse }}</pre>
       </el-card>
 
       <el-empty v-if="!lastRequestBody && !lastResponse" description="暂无调试信息" />
@@ -154,14 +165,14 @@
  * @description 提供对话测试界面，支持多轮对话和工具调用
  * @behavior 桌面端显示右侧设置面板，移动端使用抽屉式设置
  */
-import { ref, onMounted, onActivated, computed } from "vue";
+import { ref, onMounted, onActivated, computed, onUnmounted, watch } from "vue";
 import { Delete, Warning, Refresh, Setting, Document } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { getTools, type ToolInfo } from "@/api/types";
 import { sendChatRequest, sendChatStreamRequest, getModels, type ModelInfo } from "@/api/index";
 import ChatPanel from "@/components/ChatPanel.vue";
 import ChatSettingsPanel from "@/components/ChatSettingsPanel.vue";
-import type { Message } from "@/components/types";
+import type { Message, MessageContent } from "@/components/types";
 
 const availableModels = ref<ModelInfo[]>([]);
 const availableTools = ref<ToolInfo[]>([]);
@@ -176,6 +187,52 @@ const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 const settingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
 const mobileSettingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
 
+/** 字符串截断阈值（超过此长度则截断） */
+const TRUNCATE_THRESHOLD = 200;
+/** 截断后显示的长度 */
+const TRUNCATE_SHOW_LENGTH = 50;
+
+/**
+ * 智能截断 JSON 中的长字符串值
+ * @description 递归遍历对象，对超过阈值的长字符串进行截断，避免大数据渲染卡顿
+ * @param value 要处理的值
+ * @returns 处理后的值（原始值不变，返回截断后的副本）
+ */
+function truncateLongStrings(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.length > TRUNCATE_THRESHOLD) {
+      const truncated = value.slice(0, TRUNCATE_SHOW_LENGTH);
+      const remaining = value.length - TRUNCATE_SHOW_LENGTH;
+      return `${truncated}... [已截断 ${remaining} 字符，共 ${value.length} 字符]`;
+    }
+    return value;
+  }
+  
+  if (Array.isArray(value)) {
+    return value.map((item) => truncateLongStrings(item));
+  }
+  
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = truncateLongStrings(val);
+    }
+    return result;
+  }
+  
+  return value;
+}
+
+/**
+ * 格式化 JSON 并截断长字符串
+ * @param data JSON 数据
+ * @returns 格式化后的字符串
+ */
+function formatJsonWithTruncate(data: unknown): string {
+  const truncated = truncateLongStrings(data);
+  return JSON.stringify(truncated, null, 2);
+}
+
 /** 移动端设置抽屉显示状态 */
 const showMobileSettings = ref(false);
 
@@ -183,9 +240,17 @@ const showMobileSettings = ref(false);
 const showMobileDebug = ref(false);
 
 /** 是否为移动端 */
-const isMobile = computed(() => window.innerWidth < 768);
+const windowWidth = ref(window.innerWidth);
+const isMobile = computed(() => windowWidth.value < 768);
+const isCompactLayout = computed(() => windowWidth.value < 1024);
+
+function updateWindowWidth() {
+  windowWidth.value = window.innerWidth;
+}
 
 onMounted(() => {
+  updateWindowWidth();
+  window.addEventListener("resize", updateWindowWidth);
   fetchModels();
   fetchTools();
 });
@@ -193,6 +258,10 @@ onMounted(() => {
 // 页面激活时刷新模型列表（解决分组修改后不更新的问题）
 onActivated(() => {
   fetchModels();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", updateWindowWidth);
 });
 
 async function fetchModels() {
@@ -229,11 +298,35 @@ function getCurrentSettings() {
 /**
  * 处理发送消息
  * @param content 用户输入内容
+ * @param images 图片 base64 数组（可选）
  */
-async function handleSend(content: string) {
+async function handleSend(content: string, images?: string[]) {
   if (!selectedModel.value) return;
 
-  const userMessage: Message = { role: "user", content };
+  // 构建消息内容
+  let messageContent: string | MessageContent[];
+  if (images && images.length > 0) {
+    // 多模态消息：文本 + 图片
+    messageContent = [];
+    if (content) {
+      messageContent.push({ type: "text", text: content });
+    }
+    for (const img of images) {
+      messageContent.push({
+        type: "image_url",
+        image_url: { url: img },
+      });
+    }
+  } else {
+    // 纯文本消息
+    messageContent = content;
+  }
+
+  const userMessage: Message = {
+    role: "user",
+    content: messageContent,
+    images: images, // 保存图片用于前端预览
+  };
   messages.value.push(userMessage);
 
   isLoading.value = true;
@@ -287,8 +380,8 @@ async function handleSend(content: string) {
       }
     }
 
-    // 保存请求体 JSON
-    lastRequestBody.value = JSON.stringify(requestBody, null, 2);
+    // 保存请求体 JSON（自动截断长字符串）
+    lastRequestBody.value = formatJsonWithTruncate(requestBody);
 
     if (useStream.value) {
       await sendStreamRequest(requestBody);
@@ -312,8 +405,8 @@ async function handleSend(content: string) {
       errorResponse.body = err.body;
     }
     
-    // 保存完整的错误响应体
-    lastResponse.value = JSON.stringify(errorResponse, null, 2);
+    // 保存完整的错误响应体（自动截断长字符串）
+    lastResponse.value = formatJsonWithTruncate(errorResponse);
     
     // 在消息列表中显示错误（方便用户查看）
     messages.value.push({
@@ -405,15 +498,15 @@ async function sendStreamRequest(body: Record<string, unknown>) {
     reader.releaseLock();
   }
 
-  // 保存完整的响应数据
-  lastResponse.value = JSON.stringify({
+  // 保存完整的响应数据（自动截断长字符串）
+  lastResponse.value = formatJsonWithTruncate({
     stream: true,
     content: assistantContent,
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
     usage: streamUsage,
     rawChunks: rawChunks.length,
     raw: rawChunks.join("\n")
-  }, null, 2);
+  });
 }
 
 /**
@@ -442,7 +535,7 @@ async function sendNonStreamRequest(body: Record<string, unknown>) {
     });
   }
 
-  lastResponse.value = JSON.stringify(data, null, 2);
+  lastResponse.value = formatJsonWithTruncate(data);
   chatPanelRef.value?.scrollToBottom();
 }
 
@@ -467,14 +560,32 @@ function handleRetry() {
   }
   // 找到最后一条用户消息并重新发送
   const lastUserMsg = [...messages.value].reverse().find(m => m.role === "user");
-  if (lastUserMsg && typeof lastUserMsg.content === "string") {
-    // 删除该用户消息（会重新添加）
-    const userIndex = messages.value.lastIndexOf(lastUserMsg);
-    if (userIndex > -1) {
-      messages.value.splice(userIndex, 1);
-    }
-    // 重新发送
+  if (!lastUserMsg) return;
+
+  // 删除该用户消息（会重新添加）
+  const userIndex = messages.value.lastIndexOf(lastUserMsg);
+  if (userIndex > -1) {
+    messages.value.splice(userIndex, 1);
+  }
+
+  // 根据内容类型提取文本和图片
+  if (typeof lastUserMsg.content === "string") {
+    // 纯文本消息
     handleSend(lastUserMsg.content);
+  } else if (Array.isArray(lastUserMsg.content)) {
+    // 多模态消息：提取文本和图片
+    let textContent = "";
+    const images: string[] = [];
+
+    for (const part of lastUserMsg.content) {
+      if (part.type === "text" && part.text) {
+        textContent += part.text;
+      } else if (part.type === "image_url" && part.image_url?.url) {
+        images.push(part.image_url.url);
+      }
+    }
+
+    handleSend(textContent, images.length > 0 ? images : undefined);
   }
 }
 
@@ -491,18 +602,56 @@ function copyResponse() {
     ElMessage.success("已复制");
   }
 }
+
+/**
+ * 下载响应 JSON 文件
+ */
+function downloadResponse() {
+  if (!lastResponse.value) return;
+  
+  // 创建 Blob 对象
+  const blob = new Blob([lastResponse.value], { type: "application/json" });
+  
+  // 创建下载链接
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  
+  // 生成文件名（包含时间戳）
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  link.download = `response-${timestamp}.json`;
+  
+  // 触发下载
+  document.body.appendChild(link);
+  link.click();
+  
+  // 清理
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  
+  ElMessage.success("已下载");
+}
+
+watch(isCompactLayout, (compact) => {
+  if (compact) {
+    showMobileSettings.value = false;
+    showMobileDebug.value = false;
+  }
+});
 </script>
 
 <style scoped>
 .playground-view {
-  display: flex;
-  gap: 20px;
-  height: calc(100vh - 120px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  align-items: start;
+  gap: var(--page-gap);
+  min-height: min(780px, calc(100vh - 150px));
 }
 
 .chat-card {
-  flex: 1;
-  min-width: 0; /* 防止 flex 子项溢出 */
+  min-width: 0;
+  min-height: min(780px, calc(100vh - 150px));
   display: flex;
   flex-direction: column;
 }
@@ -511,13 +660,20 @@ function copyResponse() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: 14px;
+  min-height: 0;
 }
 
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .header-actions {
@@ -531,21 +687,23 @@ function copyResponse() {
   width: 220px;
 }
 
-/* 右侧面板 - 可滚动，防止被挤压 */
 .side-panel {
-  width: 480px;
-  flex-shrink: 0; /* 防止被压缩 */
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-  max-height: calc(100vh - 120px);
-  padding-right: 4px; /* 滚动条空间 */
+  gap: 14px;
+  position: sticky;
+  top: 84px;
 }
 
-/* 请求设置面板 */
-.side-panel > :first-child {
-  flex-shrink: 0;
+.settings-panel-wrap {
+  min-width: 0;
+}
+
+.debug-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .json-card {
@@ -554,16 +712,9 @@ function copyResponse() {
 
 .json-content {
   margin: 0;
-  padding: 12px;
-  background: var(--bg-color);
-  border-radius: 8px;
-  font-size: 11px;
-  max-height: 200px;
+  max-height: 220px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  transition: background-color 0.3s;
-  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
 }
 
 .group-option {
@@ -596,44 +747,45 @@ function copyResponse() {
    响应式媒体查询
    ============================================================ */
 
-/* 平板端 (< 1200px) */
-@media (max-width: 1200px) {
-  .side-panel {
-    width: 380px;
-  }
-}
-
-/* 小平板端 (< 1024px) */
-@media (max-width: 1024px) {
-  .side-panel {
-    width: 320px;
+@media (max-width: 1280px) {
+  .playground-view {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   }
 
   .model-select {
-    width: 180px;
+    width: 200px;
+  }
+}
+
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .playground-view {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
+  }
+
+  .desktop-panel {
+    display: none;
+  }
+
+  .mobile-settings-btn,
+  .mobile-debug-btn {
+    display: inline-flex;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+  }
+
+  .model-select {
+    width: min(240px, 100%);
   }
 }
 
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
   .playground-view {
-    flex-direction: column;
-    height: calc(100vh - 88px);
-  }
-
-  /* 隐藏桌面端侧面板 */
-  .desktop-panel {
-    display: none;
-  }
-
-  /* 显示移动端设置按钮 */
-  .mobile-settings-btn {
-    display: inline-flex;
-  }
-
-  /* 显示移动端调试按钮 */
-  .mobile-debug-btn {
-    display: inline-flex;
+    gap: var(--page-gap);
   }
 
   .header-actions {
@@ -641,11 +793,15 @@ function copyResponse() {
   }
 
   .model-select {
-    width: 140px;
+    width: min(100%, 180px);
   }
 
   .btn-text {
     display: none;
+  }
+
+  .chat-card {
+    min-height: min(620px, calc(100vh - 132px));
   }
 
   .chat-card :deep(.el-card__header) {
@@ -657,7 +813,6 @@ function copyResponse() {
 @media (max-width: 480px) {
   .playground-view {
     gap: 12px;
-    height: calc(100vh - 72px);
   }
 
   .header-actions {
@@ -665,7 +820,7 @@ function copyResponse() {
   }
 
   .model-select {
-    width: 120px;
+    width: 100%;
   }
 
   .json-content {

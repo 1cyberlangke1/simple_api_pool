@@ -1,5 +1,6 @@
 import { ref } from "vue";
-import { getExchangeRate, type ExchangeRateData } from "@/api/types";
+import { getExchangeRate, setExchangeRate, type ExchangeRateData } from "@/api/types";
+import { ElMessage } from "element-plus";
 
 /**
  * 货币转换 Composable
@@ -20,6 +21,26 @@ export function useCurrency() {
       exchangeRate.value = data;
     } catch {
       // 忽略错误
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 手动设置汇率
+   * @param rate 汇率值
+   * @description 设置的汇率视为在线获取，有效期24小时
+   */
+  async function updateExchangeRate(rate: number): Promise<boolean> {
+    loading.value = true;
+    try {
+      const { data } = await setExchangeRate("USD", "CNY", rate);
+      exchangeRate.value = data;
+      ElMessage.success(`汇率已设置为 1 USD = ${rate} CNY`);
+      return true;
+    } catch {
+      ElMessage.error("设置汇率失败");
+      return false;
     } finally {
       loading.value = false;
     }
@@ -76,6 +97,7 @@ export function useCurrency() {
     exchangeRate,
     loading,
     fetchExchangeRate,
+    updateExchangeRate,
     formatPrice,
     toCNY,
     toUSD,

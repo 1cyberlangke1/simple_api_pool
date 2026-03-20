@@ -45,9 +45,9 @@ const router = createRouter({
           component: () => import("@/views/GroupsView.vue"),
         },
         {
-          path: "js-tools",
-          name: "JsTools",
-          component: () => import("@/views/JsToolsView.vue"),
+          path: "tools",
+          name: "Tools",
+          component: () => import("@/views/ToolsView.vue"),
         },
         {
           path: "config",

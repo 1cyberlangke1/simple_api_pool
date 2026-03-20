@@ -53,7 +53,6 @@
                 <el-option label="数字" value="number" />
                 <el-option label="布尔" value="boolean" />
                 <el-option label="数组" value="array" />
-                <el-option label="对象" value="object" />
               </el-select>
             </template>
           </el-table-column>

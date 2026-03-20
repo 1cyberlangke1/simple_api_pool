@@ -12,9 +12,9 @@
 
       <el-form-item label="传输方式">
         <el-radio-group v-model="form.transport">
-          <el-radio label="stdio">Stdio</el-radio>
-          <el-radio label="sse">SSE</el-radio>
-          <el-radio label="http">HTTP</el-radio>
+          <el-radio value="stdio">Stdio</el-radio>
+          <el-radio value="sse">SSE</el-radio>
+          <el-radio value="http">HTTP</el-radio>
         </el-radio-group>
       </el-form-item>
 

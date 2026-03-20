@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify from "fastify";
 import { registerLogsRoutes } from "../src/routes/admin/logs_routes.js";
 import type { LogStore, LogFileInfo } from "../src/core/log_store.js";
+import type { AppConfig } from "../src/core/types.js";
 
 // Mock LogStore
 function createMockLogStore(): LogStore {
@@ -21,6 +22,20 @@ function createMockLogStore(): LogStore {
   } as unknown as LogStore;
 }
 
+// Mock minimal runtime
+function createMockRuntime(mockLogStore: LogStore) {
+  return {
+    logStore: mockLogStore,
+    config: {
+      log: {
+        enabled: true,
+        maxSizeMB: 10,
+        keepDays: 30,
+      },
+    } as Partial<AppConfig>,
+  };
+}
+
 describe("logs_routes", () => {
   const adminToken = "test-admin-token";
   let app: ReturnType<typeof Fastify>;
@@ -29,7 +44,9 @@ describe("logs_routes", () => {
   beforeEach(async () => {
     app = Fastify();
     mockLogStore = createMockLogStore();
-    registerLogsRoutes(app, adminToken, mockLogStore);
+    // 模拟 runtime 对象
+    app.decorate("runtime", createMockRuntime(mockLogStore));
+    registerLogsRoutes(app, adminToken);
     await app.ready();
   });
 
@@ -218,6 +235,8 @@ describe("logs_routes", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
         enabled: true,
+        maxSizeMB: 10,
+        keepDays: 30,
         totalFiles: 2,
         totalSize: 1536,
       });
@@ -235,6 +254,8 @@ describe("logs_routes", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
         enabled: true,
+        maxSizeMB: 10,
+        keepDays: 30,
         totalFiles: 0,
         totalSize: 0,
       });

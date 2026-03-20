@@ -1,53 +1,43 @@
 <template>
   <el-card class="cache-card">
     <template #header>
-      <div class="card-header">
-        <span>缓存统计</span>
-        <div class="cache-actions">
+      <div class="card-header page-header">
+        <div class="page-header__meta">
+          <span>缓存统计</span>
+        </div>
+        <div class="page-header__actions compact-toolbar">
           <el-button type="danger" size="small" @click="handleClearCache" :loading="clearingCache">
             清空缓存
           </el-button>
         </div>
       </div>
     </template>
-    <el-row :gutter="20">
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value">{{ stats?.entries ?? 0 }} / {{ stats?.maxEntries ?? 0 }}</div>
-          <div class="cache-stat-label">缓存条目</div>
-        </div>
-      </el-col>
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value">{{ formatBytes(stats?.dbSizeBytes ?? 0) }}</div>
-          <div class="cache-stat-label">占用空间</div>
-        </div>
-      </el-col>
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value hit">{{ formatHitRate(stats?.hitRate ?? 0) }}</div>
-          <div class="cache-stat-label">总命中率</div>
-        </div>
-      </el-col>
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value hit">{{ formatHitRate(stats?.hitRate24h ?? 0) }}</div>
-          <div class="cache-stat-label">24小时命中率</div>
-        </div>
-      </el-col>
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value">{{ formatNumber(stats?.hits24h ?? 0) }}</div>
-          <div class="cache-stat-label">24小时命中</div>
-        </div>
-      </el-col>
-      <el-col :span="4">
-        <div class="cache-stat">
-          <div class="cache-stat-value miss">{{ formatNumber(stats?.misses24h ?? 0) }}</div>
-          <div class="cache-stat-label">24小时未命中</div>
-        </div>
-      </el-col>
-    </el-row>
+    <div class="info-grid info-grid--3">
+      <div class="info-grid__item">
+        <div class="info-grid__value">{{ stats?.entries ?? 0 }} / {{ stats?.maxEntries ?? 0 }}</div>
+        <div class="info-grid__label">缓存条目</div>
+      </div>
+      <div class="info-grid__item">
+        <div class="info-grid__value">{{ formatBytes(stats?.dbSizeBytes ?? 0) }}</div>
+        <div class="info-grid__label">占用空间</div>
+      </div>
+      <div class="info-grid__item">
+        <div class="info-grid__value hit">{{ formatHitRate(stats?.hitRate ?? 0) }}</div>
+        <div class="info-grid__label">总命中率</div>
+      </div>
+      <div class="info-grid__item">
+        <div class="info-grid__value hit">{{ formatHitRate(stats?.hitRate24h ?? 0) }}</div>
+        <div class="info-grid__label">24小时命中率</div>
+      </div>
+      <div class="info-grid__item">
+        <div class="info-grid__value">{{ formatNumber(stats?.hits24h ?? 0) }}</div>
+        <div class="info-grid__label">24小时命中</div>
+      </div>
+      <div class="info-grid__item">
+        <div class="info-grid__value miss">{{ formatNumber(stats?.misses24h ?? 0) }}</div>
+        <div class="info-grid__label">24小时未命中</div>
+      </div>
+    </div>
   </el-card>
 </template>
 
@@ -96,40 +86,11 @@ async function handleClearCache() {
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.cache-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.cache-stat {
-  text-align: center;
-  padding: 12px;
-}
-
-.cache-stat-value {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-color);
-}
-
-.cache-stat-value.hit {
+.info-grid__value.hit {
   color: #67c23a;
 }
 
-.cache-stat-value.miss {
+.info-grid__value.miss {
   color: #f56c6c;
-}
-
-.cache-stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 4px;
 }
 </style>

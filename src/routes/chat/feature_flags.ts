@@ -25,11 +25,16 @@ export interface GroupFeatures {
 
 /**
  * 获取分组功能配置
- * @param groupId 分组 ID（可能包含 -cache 后缀）
+ * @param groupId 分组 ID（不含 -cache 后缀）
  * @param runtime 运行时配置
+ * @param wantsCache 是否请求缓存版本
  * @returns 功能配置
  */
-export function getGroupFeatures(groupId: string | null, runtime: { config: AppConfig }): GroupFeatures {
+export function getGroupFeatures(
+  groupId: string | null, 
+  runtime: { config: AppConfig },
+  wantsCache: boolean = false
+): GroupFeatures {
   if (!groupId) {
     // 无分组，返回空配置
     return {
@@ -41,9 +46,8 @@ export function getGroupFeatures(groupId: string | null, runtime: { config: AppC
     };
   }
 
-  // 检查是否请求缓存版本（分组名以 -cache 结尾）
-  const wantsCache = groupId.endsWith("-cache");
-  const actualGroupId = wantsCache ? groupId.slice(0, -6) : groupId;
+  // 去掉 group/ 前缀（如果存在）
+  const actualGroupId = groupId.startsWith("group/") ? groupId.slice(6) : groupId;
 
   // 查找分组配置
   const group = runtime.config.groups.find((g) => g.name === actualGroupId);

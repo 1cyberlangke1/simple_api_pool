@@ -1,11 +1,11 @@
 /**
  * Chat Completion 路由入口
- * @description 处理 /v1/chat/completions 请求，支持流式响应、工具调用、缓存等
+ * @description 处理 /v1/chat/completions 请求，支持流式响应、工具调用、缓存、故障转移等
  * @module routes/chat
  */
 
 import type { FastifyRequest, FastifyReply } from "fastify";
-import type { StreamMode, RequestContext } from "../../core/types.js";
+import type { StreamMode, RequestContext, GroupRouteConfig, KeyState, ProviderConfig, ModelConfig } from "../../core/types.js";
 import { applyOverrides, callChatCompletion, callChatCompletionStream, collectStreamToNonStream } from "../../core/openai_proxy.js";
 import { estimateTokensFromMessages, estimateTokensFromString } from "../../core/usage.js";
 import { injectSystemPrompt } from "../../core/system_prompt.js";
@@ -16,6 +16,7 @@ import { handleToolCalls } from "./tool_handler.js";
 import { sendStreamingResponse, forwardStreamResponse } from "./stream_handler.js";
 import type { ChatCompletionBody, OpenAIResponse, UsageInfo } from "./types.js";
 import { decideStreamMode } from "./types.js";
+import { UpstreamError, getErrorStatusCode } from "../../core/errors.js";
 import { randomUUID } from "crypto";
 import { createModuleLogger } from "../../core/logger.js";
 
@@ -27,96 +28,88 @@ export type { GroupFeatures } from "./feature_flags.js";
 export type { ToolCallClassification, ToolCallItem } from "./tool_handler.js";
 
 /**
- * Chat Completion 处理器
- * @description 处理 /v1/chat/completions 请求
+ * 单次模型请求执行参数
  */
-export async function chatCompletionHandler(
-  request: FastifyRequest<{ Body: ChatCompletionBody }>,
-  reply: FastifyReply
-): Promise<void> {
-  const runtime = request.server.runtime;
-  const body = request.body;
+interface SingleRequestParams {
+  targetModelId: string;
+  routeTemperature?: number;
+  requestedModelId: string;
+  parsedGroupId: { name: string; wantsCache: boolean } | null;
+  body: ChatCompletionBody;
+  runtime: ReturnType<FastifyRequest["server"]["runtime"]>;
+  reply: FastifyReply;
+  isFailoverAttempt?: boolean;
+}
 
-  // ============================================================
-  // 1. 参数校验与模型解析
-  // ============================================================
-  const requestedModelId = body.model;
-  if (!requestedModelId || !Array.isArray(body.messages)) {
-    return reply.status(400).send({ error: "invalid request: model and messages are required" });
-  }
+/**
+ * 单次模型请求执行结果
+ */
+interface SingleRequestResult {
+  success: boolean;
+  response?: OpenAIResponse;
+  error?: string;
+  statusCode?: number;
+  usage?: UsageInfo;
+  /** 是否来自缓存 */
+  fromCache?: boolean;
+}
 
-  let targetModelId = requestedModelId;
-  let routeTemperature: number | undefined;
-  let groupId: string | null = null;
-  // 预解析分组 ID，避免后续重复调用 parseGroupId
-  let parsedGroupId: { name: string; wantsCache: boolean } | null = null;
-
-  // 处理分组模型（支持 -cache 后缀）
-  if (runtime.modelRegistry.isGroup(targetModelId)) {
-    groupId = targetModelId;
-    // 解析分组名和缓存请求（只解析一次）
-    parsedGroupId = parseGroupId(targetModelId);
-    
-    // 使用实际分组名查找路由
-    const route = runtime.modelRegistry.pickGroupRoute(parsedGroupId.name);
-    if (!route) {
-      // 记录统计（失败）
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-      return reply.status(400).send({ error: "group route not found" });
-    }
-    targetModelId = route.modelId;
-    routeTemperature = route.temperature;
-  }
+/**
+ * 执行单次模型请求
+ * @description 执行对单个模型的请求，不包含故障转移逻辑
+ * @param params 请求参数
+ * @returns 请求结果
+ */
+async function executeSingleModelRequest(params: SingleRequestParams): Promise<SingleRequestResult> {
+  const {
+    targetModelId,
+    routeTemperature,
+    requestedModelId,
+    parsedGroupId,
+    body,
+    runtime,
+    reply,
+    isFailoverAttempt = false,
+  } = params;
 
   // 获取分组功能配置（独立配置，支持 -cache 后缀）
-  const features = getGroupFeatures(groupId, runtime);
+  const features = getGroupFeatures(
+    parsedGroupId ? `group/${parsedGroupId.name}` : null, 
+    runtime,
+    parsedGroupId?.wantsCache ?? false
+  );
 
   // 获取模型配置
   const modelConfig = runtime.modelRegistry.getModel(targetModelId);
   if (!modelConfig) {
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-    }
-    return reply.status(404).send({ error: "model not found" });
+    return { success: false, error: "model not found", statusCode: 404 };
   }
 
   // 获取提供商配置
   const provider = runtime.modelRegistry.getProvider(modelConfig.provider);
   if (!provider) {
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-    }
-    return reply.status(404).send({ error: "provider not found" });
+    return { success: false, error: "provider not found", statusCode: 404 };
   }
 
-  // ============================================================
-  // 2. 流式模式决策
-  // ============================================================
+  // 流式模式决策
   const streamMode: StreamMode = provider.streamMode ?? "none";
   const clientWantsStream = body.stream === true;
   const { shouldRequestStream, shouldRespondStream } = decideStreamMode(streamMode, clientWantsStream);
 
-  // ============================================================
-  // 3. 限流与 Key 选择
-  // ============================================================
+  // 限流检查
   const limiter = runtime.rpmLimiters.get(provider.name);
   if (limiter && !limiter.allow()) {
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-    }
-    return reply.status(429).send({ error: "provider rpm limit exceeded" });
+    return { success: false, error: "provider rpm limit exceeded", statusCode: 429 };
   }
 
+  // Key 选择
   const strategy = provider.strategy ?? "round_robin";
   const keyState = runtime.keyStore.pickKey(provider.name, strategy, modelConfig.model);
   if (!keyState) {
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-    }
-    return reply.status(429).send({ error: "no available key" });
+    return { success: false, error: "no available key", statusCode: 429 };
   }
 
-  // 发射 Key 选择事件（用于 SSE 实时更新）
+  // 发射 Key 选择事件
   runtime.eventEmitter.emit("request:key:select", {
     alias: keyState.alias,
     provider: provider.name,
@@ -124,18 +117,14 @@ export async function chatCompletionHandler(
     group: parsedGroupId?.name,
   });
 
-  // ============================================================
-  // 4. 消息预处理
-  // ============================================================
+  // 消息预处理
   let messages = body.messages;
-  
-  // 提示词注入（分组独立配置）
   if (features.promptInject) {
     messages = await injectSystemPrompt(body.messages, features.promptInject);
   }
   const updatedMessages = messages.map((msg) => ({ ...msg }));
 
-  // 截断检测注入（分组独立配置）
+  // 截断检测注入
   const truncationConfig = features.truncation;
   if (truncationConfig?.enable) {
     const lastMessage = updatedMessages.at(-1);
@@ -153,20 +142,29 @@ export async function chatCompletionHandler(
     }
   }
 
-  // ============================================================
-  // 5. 工具注入
-  // ============================================================
+  // 工具注入
   const toolSupport = modelConfig.supportsTools ?? true;
   const toolRoutingStrategy = features.toolRoutingStrategy;
-  
-  // 从分组配置获取要注入的工具
   const selectedTools = features.tools;
-  const hasLocalTools = toolSupport && selectedTools.length > 0;
+  
+  // 从请求体中提取工具名称（前端可能只传名称）
+  const requestToolNames: string[] = [];
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (typeof tool === "object" && tool?.function?.name) {
+        requestToolNames.push(tool.function.name);
+      }
+    }
+  }
+  
+  // 合并分组工具和请求工具
+  const allToolNames = [...new Set([...selectedTools, ...requestToolNames])];
+  const hasLocalTools = toolSupport && allToolNames.length > 0;
   const injectLocalTools = hasLocalTools && toolRoutingStrategy !== "passthrough";
   
-  // 获取选中工具的 OpenAI 格式
+  // 从 ToolRegistry 获取完整工具定义
   const openAiTools = injectLocalTools
-    ? runtime.toolRegistry.getToolsByNames(selectedTools)
+    ? runtime.toolRegistry.getToolsByNames(allToolNames)
     : undefined;
 
   // 构建请求体
@@ -174,10 +172,15 @@ export async function chatCompletionHandler(
     ...body,
     messages: updatedMessages,
     model: modelConfig.model,
+    stream: shouldRequestStream,  // 根据流式模式决策设置 stream，而非客户端原始值
   };
 
+  // 使用完整工具定义替换请求体中的简化格式
   if (openAiTools && openAiTools.length > 0) {
-    baseBody.tools = [...(Array.isArray(body.tools) ? body.tools : []), ...openAiTools];
+    baseBody.tools = openAiTools;
+  } else if (Array.isArray(body.tools) && body.tools.length > 0) {
+    // 如果本地没有工具定义，保留原始请求（传递给下游）
+    baseBody.tools = body.tools;
   }
 
   // 处理额外请求体
@@ -186,16 +189,13 @@ export async function chatCompletionHandler(
     typeof extraBodyCandidate === "object" && extraBodyCandidate !== null ? extraBodyCandidate : {};
   const finalBody = applyOverrides(baseBody, provider, modelConfig, extraBody as Record<string, unknown>);
 
-  // 温度优先级：分组温度 > 参数覆写 > 下游透传
-  // 分组温度在最后覆盖，确保最高优先级
+  // 分组温度优先级最高
   if (routeTemperature !== undefined) {
     finalBody.temperature = routeTemperature;
   }
 
-  // ============================================================
-  // 6. 缓存检查
-  // ============================================================
-  const cacheEnabled = features.enableCache && runtime.cacheStore && body.cache !== false;
+  // 缓存检查（故障转移时不使用缓存）
+  const cacheEnabled = !isFailoverAttempt && features.enableCache && runtime.cacheStore && body.cache !== false;
   let cacheKey: string | null = null;
 
   if (cacheEnabled && runtime.cacheStore) {
@@ -211,11 +211,9 @@ export async function chatCompletionHandler(
     const cached = runtime.cacheStore.get(cacheKey);
 
     if (cached) {
-      // 缓存数据格式：{ response: OpenAIResponse, usage: UsageInfo }
       const cachedResponse = cached.response as OpenAIResponse;
       const cachedUsage = cached.usage as UsageInfo | undefined;
 
-      // 发射缓存命中事件
       runtime.eventEmitter.emit("request:cache:hit", {
         model: requestedModelId,
         provider: provider.name,
@@ -223,7 +221,6 @@ export async function chatCompletionHandler(
         cachedTokens: cachedUsage?.completion_tokens ?? 0,
       });
 
-      // 缓存命中日志
       log.info({
         requestId: randomUUID(),
         model: requestedModelId,
@@ -232,30 +229,57 @@ export async function chatCompletionHandler(
         cachedTokens: cachedUsage?.completion_tokens ?? 0,
       }, "Cache hit, returning cached response");
 
-      if (parsedGroupId) {
-        runtime.statsStore.recordCall(parsedGroupId.name, true);
-      }
-
-      // 更新响应体中的 usage，添加 cached_tokens 标识
       if (cachedUsage) {
         cachedResponse.usage = {
           ...cachedUsage,
-          cached_tokens: cachedUsage.completion_tokens,
+          cached_tokens: cachedUsage.total_tokens,
         };
       }
 
-      // 统一格式：根据请求类型返回
-      if (body.stream) {
-        return sendStreamingResponse(reply, cachedResponse, modelConfig.model);
+      // 如果客户端请求流式输出，转换为 SSE 流式格式
+      if (shouldRespondStream) {
+        const cachedContent = cachedResponse.choices?.[0]?.message?.content ?? "";
+        const cachedId = cachedResponse.id ?? `cache-${Date.now()}`;
+        const cachedModel = cachedResponse.model ?? finalBody.model as string;
+
+        // 发送 SSE 流式响应
+        reply.raw.setHeader("Content-Type", "text/event-stream");
+        reply.raw.setHeader("Cache-Control", "no-cache");
+        reply.raw.setHeader("Connection", "keep-alive");
+
+        // 第一个 chunk：包含 role 和 content 开头
+        reply.raw.write(`data: ${JSON.stringify({
+          id: cachedId,
+          object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model: cachedModel,
+          choices: [{ index: 0, delta: { role: "assistant", content: cachedContent }, finish_reason: null }]
+        })}\n\n`);
+
+        // 第二个 chunk：结束标记
+        reply.raw.write(`data: ${JSON.stringify({
+          id: cachedId,
+          object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model: cachedModel,
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: cachedUsage ? {
+            ...cachedUsage,
+            cached_tokens: cachedUsage.total_tokens,
+          } : undefined
+        })}\n\n`);
+
+        reply.raw.write("data: [DONE]\n\n");
+        reply.raw.end();
+
+        return { success: true, response: cachedResponse, usage: cachedUsage, fromCache: true };
       }
-      return reply.send(cachedResponse);
+
+      return { success: true, response: cachedResponse, usage: cachedUsage, fromCache: true };
     }
   }
 
-  // ============================================================
-  // 7. 调用上游 API
-  // ============================================================
-  // 创建请求上下文（用于插件钩子）
+  // 创建请求上下文
   const requestContext: RequestContext = {
     requestId: randomUUID(),
     body: finalBody as Record<string, unknown>,
@@ -266,22 +290,20 @@ export async function chatCompletionHandler(
     data: new Map(),
   };
 
-  // 发射请求开始事件
   runtime.eventEmitter.emit("request:start", {
     requestId: requestContext.requestId,
     model: requestedModelId,
     provider: provider.name,
     group: parsedGroupId?.name,
+    failoverAttempt: isFailoverAttempt,
   });
 
-  // 缓存未命中事件（cacheEnabled 和 cacheKey 在上面已检查）
   runtime.eventEmitter.emit("request:cache:miss", {
     model: requestedModelId,
     provider: provider.name,
     group: parsedGroupId?.name,
   });
 
-  // 记录请求日志
   log.info({
     requestId: requestContext.requestId,
     model: requestedModelId,
@@ -293,37 +315,28 @@ export async function chatCompletionHandler(
     streamMode,
     messages: updatedMessages.length,
     tools: openAiTools?.length ?? 0,
+    failoverAttempt: isFailoverAttempt,
   }, "LLM request started");
 
-  // 执行 beforeRequest 钩子
   await runtime.executeBeforeRequestHooks(requestContext);
 
   try {
-    // 流式转发：转发上游流式响应并收集完整响应
+    // 流式转发
     if (shouldRequestStream && shouldRespondStream) {
       const stream = callChatCompletionStream(provider, keyState.key, finalBody);
       const result = await forwardStreamResponse(reply, stream, modelConfig.model);
-      
-      // 在流式响应完成后记录统计
-      if (parsedGroupId) {
-        runtime.statsStore.recordCall(parsedGroupId.name, result.success);
-      }
-      
-      // 缓存完整响应（包含 usage 信息）
+
       if (result.success && result.response && cacheEnabled && cacheKey && runtime.cacheStore) {
-        // 构造 usage 信息：优先使用上游返回的，否则本地估算
         const responseContent = result.response.choices?.[0]?.message?.content ?? "";
         let cacheUsage: UsageInfo;
-        
+
         if (result.response.usage) {
-          // 上游返回了 usage，直接使用
           cacheUsage = {
             prompt_tokens: result.response.usage.prompt_tokens,
             completion_tokens: result.response.usage.completion_tokens,
             total_tokens: result.response.usage.total_tokens,
           };
         } else {
-          // 本地估算
           const promptTokens = estimateTokensFromMessages(updatedMessages);
           const completionTokens = estimateTokensFromString(responseContent, modelConfig.model);
           cacheUsage = {
@@ -332,14 +345,13 @@ export async function chatCompletionHandler(
             total_tokens: promptTokens + completionTokens,
           };
         }
-        
+
         runtime.cacheStore.set(cacheKey, {
           response: result.response,
           usage: cacheUsage,
         } as unknown as Record<string, unknown>);
       }
-      
-      // 发射请求完成事件
+
       runtime.eventEmitter.emit("request:complete", {
         requestId: requestContext.requestId,
         model: requestedModelId,
@@ -348,7 +360,8 @@ export async function chatCompletionHandler(
         success: result.success,
         stream: true,
       });
-      return;
+
+      return { success: result.success, response: result.response };
     }
 
     // 非流式请求
@@ -359,9 +372,7 @@ export async function chatCompletionHandler(
       result = (await callChatCompletion(provider, keyState.key, finalBody)) as unknown as OpenAIResponse;
     }
 
-    // ============================================================
-    // 8. 工具调用处理
-    // ============================================================
+    // 工具调用处理
     if (injectLocalTools || (body.tools && Array.isArray(body.tools) && body.tools.length > 0)) {
       const toolResult = await handleToolCalls({
         result,
@@ -375,16 +386,12 @@ export async function chatCompletionHandler(
       });
 
       if ("error" in toolResult) {
-        // 执行错误钩子
         await runtime.executeErrorHooks(requestContext, new Error(toolResult.error));
-        return reply.status(toolResult.status).send({ error: toolResult.error });
+        return { success: false, error: toolResult.error, statusCode: toolResult.status };
       }
       result = toolResult.result;
     }
 
-    // ============================================================
-    // 9. 后处理
-    // ============================================================
     // 截断检测处理
     const responseContent = result.choices?.[0]?.message?.content;
     if (truncationConfig?.enable && responseContent) {
@@ -434,20 +441,17 @@ export async function chatCompletionHandler(
       runtime.keyStore.applyCost(keyState.alias, 0);
     }
 
-    // 缓存结果（包含 usage 信息）
+    // 缓存结果
     if (cacheEnabled && cacheKey && runtime.cacheStore) {
-      // 构造 usage 信息：优先使用上游返回的，否则本地估算
       let cacheUsage: UsageInfo;
-      
+
       if (result.usage) {
-        // 上游返回了 usage，直接使用
         cacheUsage = {
           prompt_tokens: result.usage.prompt_tokens,
           completion_tokens: result.usage.completion_tokens,
           total_tokens: result.usage.total_tokens,
         };
       } else {
-        // 本地估算
         const promptTokens = estimateTokensFromMessages(updatedMessages);
         const completionTokens = responseContent ? estimateTokensFromString(responseContent, modelConfig.model) : 1;
         cacheUsage = {
@@ -456,19 +460,13 @@ export async function chatCompletionHandler(
           total_tokens: promptTokens + completionTokens,
         };
       }
-      
+
       runtime.cacheStore.set(cacheKey, {
         response: result,
         usage: cacheUsage,
       } as unknown as Record<string, unknown>);
     }
 
-    // 记录统计
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, true);
-    }
-
-    // 发射请求完成事件
     runtime.eventEmitter.emit("request:complete", {
       requestId: requestContext.requestId,
       model: requestedModelId,
@@ -479,10 +477,8 @@ export async function chatCompletionHandler(
       usage,
     });
 
-    // 执行 afterRequest 钩子
     await runtime.executeAfterRequestHooks(requestContext, result);
 
-    // 记录请求完成日志
     const duration = Date.now() - requestContext.startTime;
     log.info({
       requestId: requestContext.requestId,
@@ -496,32 +492,12 @@ export async function chatCompletionHandler(
       finishReason: result.choices?.[0]?.finish_reason,
     }, "LLM request completed");
 
-    // ============================================================
-    // 10. 返回响应
-    // ============================================================
-    if (shouldRespondStream) {
-      return sendStreamingResponse(reply, result, modelConfig.model);
-    }
-
-    return reply.send(result);
+    return { success: true, response: result, usage };
   } catch (err) {
-    // 记录失败统计
-    if (parsedGroupId) {
-      runtime.statsStore.recordCall(parsedGroupId.name, false);
-    }
-
-    // 发射请求错误事件
-    runtime.eventEmitter.emit("request:error", {
-      requestId: requestContext.requestId,
-      model: requestedModelId,
-      provider: provider.name,
-      group: parsedGroupId?.name,
-      error: err instanceof Error ? err.message : String(err),
-    });
-
-    // 记录错误日志
     const duration = Date.now() - requestContext.startTime;
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const statusCode = getErrorStatusCode(err);
+
     log.error({
       requestId: requestContext.requestId,
       model: requestedModelId,
@@ -532,8 +508,221 @@ export async function chatCompletionHandler(
       error: errorMessage,
     }, "LLM request failed");
 
-    // 执行错误钩子
+    runtime.eventEmitter.emit("request:error", {
+      requestId: requestContext.requestId,
+      model: requestedModelId,
+      provider: provider.name,
+      group: parsedGroupId?.name,
+      error: errorMessage,
+    });
+
     await runtime.executeErrorHooks(requestContext, err as Error);
-    throw err;
+
+    return { success: false, error: errorMessage, statusCode };
   }
+}
+
+/**
+ * Chat Completion 处理器
+ * @description 处理 /v1/chat/completions 请求，支持故障转移
+ */
+export async function chatCompletionHandler(
+  request: FastifyRequest<{ Body: ChatCompletionBody }>,
+  reply: FastifyReply
+): Promise<void> {
+  const runtime = request.server.runtime;
+  const body = request.body;
+
+  // ============================================================
+  // 1. 参数校验与模型解析
+  // ============================================================
+  const requestedModelId = body.model;
+  if (!requestedModelId || !Array.isArray(body.messages)) {
+    return reply.status(400).send({ error: "invalid request: model and messages are required" });
+  }
+
+  // 检查是否为分组模型
+  const isGroup = runtime.modelRegistry.isGroup(requestedModelId);
+
+  if (!isGroup) {
+    // 非分组模型，直接执行单次请求
+    const result = await executeSingleModelRequest({
+      targetModelId: requestedModelId,
+      requestedModelId,
+      parsedGroupId: null,
+      body,
+      runtime,
+      reply,
+    });
+
+    if (!result.success) {
+      return reply.status(result.statusCode ?? 500).send({ error: result.error });
+    }
+
+    // 缓存命中时直接发送响应（非流式）
+    if (result.fromCache && result.response && !reply.sent) {
+      return reply.send(result.response);
+    }
+
+    // 检查是否已发送流式响应
+    if (result.response) {
+      const provider = runtime.modelRegistry.getProvider(requestedModelId.split("/")[0] ?? "");
+      const streamMode: StreamMode = provider?.streamMode ?? "none";
+      const clientWantsStream = body.stream === true;
+      const { shouldRespondStream } = decideStreamMode(streamMode, clientWantsStream);
+
+      if (!shouldRespondStream && !reply.sent) {
+        return reply.send(result.response);
+      }
+    }
+    return;
+  }
+
+  // ============================================================
+  // 2. 分组模型处理
+  // ============================================================
+  const parsedGroupId = parseGroupId(requestedModelId);
+  // getGroup 期望格式为 group/{name} 或纯分组名
+  const groupConfig = runtime.modelRegistry.getGroup(`group/${parsedGroupId.name}`);
+
+  if (!groupConfig) {
+    runtime.statsStore.recordCall(parsedGroupId.name, false);
+    return reply.status(400).send({ error: "group not found" });
+  }
+
+  // 检查是否启用故障转移策略（兼容旧配置中的 failover 字段）
+  const failoverEnabled = groupConfig.strategy === "failover" || groupConfig.failover === true;
+
+  if (!failoverEnabled) {
+    // 非故障转移模式，使用原有策略选择路由
+    // pickGroupRoute 期望格式为 group/{name} 或纯分组名
+    const route = runtime.modelRegistry.pickGroupRoute(`group/${parsedGroupId.name}`);
+    if (!route) {
+      runtime.statsStore.recordCall(parsedGroupId.name, false);
+      return reply.status(400).send({ error: "group route not found" });
+    }
+
+    const result = await executeSingleModelRequest({
+      targetModelId: route.modelId,
+      routeTemperature: route.temperature,
+      requestedModelId,
+      parsedGroupId,
+      body,
+      runtime,
+      reply,
+    });
+
+    if (!result.success) {
+      runtime.statsStore.recordCall(parsedGroupId.name, false);
+      return reply.status(result.statusCode ?? 500).send({ error: result.error });
+    }
+
+    runtime.statsStore.recordCall(parsedGroupId.name, true);
+
+    // 缓存命中时直接发送响应
+    if (result.fromCache && result.response && !reply.sent) {
+      return reply.send(result.response);
+    }
+
+    if (result.response && !reply.sent) {
+      const modelConfig = runtime.modelRegistry.getModel(route.modelId);
+      if (modelConfig) {
+        const provider = runtime.modelRegistry.getProvider(modelConfig.provider);
+        const streamMode: StreamMode = provider?.streamMode ?? "none";
+        const clientWantsStream = body.stream === true;
+        const { shouldRespondStream } = decideStreamMode(streamMode, clientWantsStream);
+
+        if (!shouldRespondStream) {
+          return reply.send(result.response);
+        }
+      }
+    }
+    return;
+  }
+
+  // ============================================================
+  // 3. 故障转移策略处理
+  // ============================================================
+  const routes = runtime.modelRegistry.getGroupRoutes(`group/${parsedGroupId.name}`);
+  if (routes.length === 0) {
+    runtime.statsStore.recordCall(parsedGroupId.name, false);
+    return reply.status(400).send({ error: "group has no routes" });
+  }
+
+  // 故障转移：按顺序尝试所有路由，失败时切换到下一个
+  const errors: string[] = [];
+
+  for (let i = 0; i < routes.length; i++) {
+    const route = routes[i];
+    const isFailoverAttempt = i > 0;
+
+    log.info({
+      model: requestedModelId,
+      targetRoute: route.modelId,
+      attemptIndex: i,
+      totalRoutes: routes.length,
+      isFailoverAttempt,
+    }, "Failover attempt");
+
+    const result = await executeSingleModelRequest({
+      targetModelId: route.modelId,
+      routeTemperature: route.temperature,
+      requestedModelId,
+      parsedGroupId,
+      body,
+      runtime,
+      reply,
+      isFailoverAttempt,
+    });
+
+    if (result.success) {
+      runtime.statsStore.recordCall(parsedGroupId.name, true);
+
+      // 缓存命中时直接发送响应
+      if (result.fromCache && result.response && !reply.sent) {
+        return reply.send(result.response);
+      }
+
+      if (result.response && !reply.sent) {
+        const modelConfig = runtime.modelRegistry.getModel(route.modelId);
+        if (modelConfig) {
+          const provider = runtime.modelRegistry.getProvider(modelConfig.provider);
+          const streamMode: StreamMode = provider?.streamMode ?? "none";
+          const clientWantsStream = body.stream === true;
+          const { shouldRespondStream } = decideStreamMode(streamMode, clientWantsStream);
+
+          if (!shouldRespondStream) {
+            return reply.send(result.response);
+          }
+        }
+      }
+      return;
+    }
+
+    errors.push(`${route.modelId}: ${result.error}`);
+
+    // 如果不是最后一次尝试，继续下一个模型
+    if (i < routes.length - 1) {
+      log.warn({
+        model: requestedModelId,
+        failedRoute: route.modelId,
+        error: result.error,
+        nextAttempt: i + 1,
+      }, "Failover: route failed, trying next");
+    }
+  }
+
+  // 所有尝试都失败
+  runtime.statsStore.recordCall(parsedGroupId.name, false);
+
+  log.error({
+    model: requestedModelId,
+    attempts: routes.length,
+    errors,
+  }, "Failover: all routes failed");
+
+  return reply.status(500).send({
+    error: "all routes failed",
+    details: errors,
+  });
 }

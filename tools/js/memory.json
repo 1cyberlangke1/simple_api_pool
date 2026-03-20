@@ -1,0 +1,26 @@
+{
+  "name": "memory",
+  "description": "简单的基于文件的记忆工具，以日期为文件名存储和读取记忆内容",
+  "category": "记忆",
+  "tags": ["文件", "记忆", "持久化"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["save", "load", "list"],
+        "description": "操作类型: save (保存), load (读取), list (列出所有记忆文件)"
+      },
+      "content": {
+        "type": "string",
+        "description": "要保存的记忆内容 (仅 save 操作需要)"
+      },
+      "date": {
+        "type": "string",
+        "description": "日期 (格式: YYYY-MM-DD)，不指定则使用今天"
+      }
+    },
+    "required": ["action"]
+  },
+  "code": "// 文件记忆工具\n// 输入: action (操作类型), content (内容), date (日期)\n// 输出: 操作结果\n\nconst { action, content, date } = args;\n\n// 格式化日期为文件名\nfunction formatDate(d) {\n  var year = d.getFullYear();\n  var month = String(d.getMonth() + 1).padStart(2, '0');\n  var day = String(d.getDate()).padStart(2, '0');\n  return year + '-' + month + '-' + day;\n}\n\n// 获取目标日期\nvar targetDate = date || formatDate(new Date());\nvar filename = 'memory_' + targetDate + '.txt';\n\nswitch (action) {\n  case 'save': {\n    if (!content) {\n      throw new Error('保存操作需要提供 content 参数');\n    }\n    \n    // 如果文件已存在，追加内容\n    var existingContent = '';\n    if (fs.exists(filename)) {\n      existingContent = fs.readFile(filename) + '\\n';\n    }\n    \n    // 添加时间戳\n    var timestamp = new Date().toISOString();\n    var newContent = existingContent + '[' + timestamp + ']\\n' + content + '\\n';\n    \n    fs.writeFile(filename, newContent);\n    \n    return {\n      success: true,\n      message: '记忆已保存到 ' + filename,\n      filename: filename,\n      timestamp: timestamp\n    };\n  }\n  \n  case 'load': {\n    if (!fs.exists(filename)) {\n      return {\n        success: false,\n        message: '没有找到 ' + targetDate + ' 的记忆',\n        content: null\n      };\n    }\n    \n    var loadedContent = fs.readFile(filename);\n    return {\n      success: true,\n      filename: filename,\n      date: targetDate,\n      content: loadedContent\n    };\n  }\n  \n  case 'list': {\n    // 列出所有记忆文件\n    var files = fs.listDir('.');\n    var memoryFiles = files\n      .filter(function(f) { return f.startsWith('memory_') && f.endsWith('.txt'); })\n      .sort()\n      .reverse();\n    \n    return {\n      success: true,\n      files: memoryFiles,\n      count: memoryFiles.length\n    };\n  }\n  \n  default:\n    throw new Error('不支持的操作: ' + action);\n}"
+}

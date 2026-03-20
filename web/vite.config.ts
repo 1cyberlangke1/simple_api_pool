@@ -45,6 +45,18 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("axios")) return "axios";
+          if (id.includes("vue-router")) return "vue-router";
+          if (id.includes("pinia")) return "pinia";
+          if (id.includes("@vue") || id.includes("vue/")) return "vue-core";
+        },
+      },
+    },
   },
   test: {
     environment: "happy-dom",

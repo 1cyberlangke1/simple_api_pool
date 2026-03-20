@@ -9,72 +9,72 @@
     <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
       <!-- 提供商选择 -->
       <el-form-item label="提供商" prop="provider">
-        <div class="provider-row">
-          <el-select
-            v-model="form.provider"
-            placeholder="选择提供商"
-            style="flex: 1"
-            :disabled="!!editingModel"
-            @change="onProviderChange"
-          >
-            <el-option
-              v-for="p in providers"
-              :key="p.name"
-              :label="p.name"
-              :value="p.name"
-            />
-          </el-select>
-          <el-button
-            v-if="!editingModel && form.provider"
-            :loading="loadingUpstream"
-            @click="fetchUpstreamModels"
-          >
-            拉取上游模型
-          </el-button>
-        </div>
+        <el-select
+          v-model="form.provider"
+          placeholder="选择提供商"
+          style="width: 100%"
+          :disabled="!!editingModel"
+          @change="onProviderChange"
+        >
+          <el-option
+            v-for="p in providers"
+            :key="p.name"
+            :label="p.name"
+            :value="p.name"
+          />
+        </el-select>
       </el-form-item>
 
       <!-- 模型名称 -->
       <el-form-item label="模型名称" prop="name">
         <div class="model-input-row">
-          <el-select
-            v-if="upstreamModels.length > 0 && !editingModel"
-            v-model="form.name"
-            filterable
-            allow-create
-            placeholder="选择或输入模型名称"
+          <el-input
+            v-model="modelSearchKeyword"
+            placeholder="输入模型名称或关键词搜索"
+            clearable
             style="flex: 1"
-            @change="onModelChange"
+            @keyup.enter="searchUpstreamModels"
           >
-            <el-option
+            <template #append>
+              <el-button
+                v-if="!editingModel && form.provider"
+                :loading="loadingUpstream"
+                @click="searchUpstreamModels"
+              >
+                <el-icon><Search /></el-icon>
+                搜索
+              </el-button>
+            </template>
+          </el-input>
+        </div>
+        <div class="form-hint" v-if="!editingModel">
+          选择提供商后输入关键词搜索，或直接输入完整模型名
+        </div>
+      </el-form-item>
+
+      <!-- 搜索结果 -->
+      <el-form-item v-if="upstreamModels.length > 0 && !editingModel" label="搜索结果">
+        <div class="search-results">
+          <el-scrollbar max-height="240px">
+            <div
               v-for="m in upstreamModels"
               :key="m.id"
-              :label="m.id"
-              :value="m.id"
+              :class="['search-result-item', { active: form.name === m.id }]"
+              @click="selectModel(m.id)"
             >
-              <span>{{ m.id }}</span>
-              <span v-if="m.owned_by" class="owned-by">({{ m.owned_by }})</span>
-            </el-option>
-          </el-select>
-          <el-input
-            v-else
-            v-model="form.name"
-            placeholder="如 gpt-4o-mini"
-            :disabled="!!editingModel"
-            @input="onModelChange"
-          />
-          <el-button
-            v-if="form.name"
-            :loading="loadingPrice"
-            type="primary"
-            plain
-            @click="fetchSuggestedPrice"
-            style="margin-left: 8px"
-          >
-            <el-icon><Search /></el-icon>
-            查询价格
-          </el-button>
+              <div class="result-name">{{ m.id }}</div>
+              <div v-if="m.owned_by" class="result-owner">{{ m.owned_by }}</div>
+            </div>
+          </el-scrollbar>
+          <div class="search-footer">
+            共 {{ upstreamModels.length }} 个模型
+          </div>
         </div>
+      </el-form-item>
+
+      <!-- 选中的模型 -->
+      <el-form-item v-if="form.name" label="已选模型">
+        <el-tag closable @close="form.name = ''">{{ form.name }}</el-tag>
       </el-form-item>
 
       <!-- 上游模型 -->
@@ -99,6 +99,18 @@
           <el-radio value="USD">美元 (USD)</el-radio>
           <el-radio value="CNY">人民币 (CNY)</el-radio>
         </el-radio-group>
+        <el-button
+          v-if="form.name"
+          :loading="loadingPrice"
+          type="primary"
+          plain
+          size="small"
+          @click="fetchSuggestedPrice"
+          style="margin-left: 16px"
+        >
+          <el-icon><Search /></el-icon>
+          查询价格
+        </el-button>
         <span v-if="exchangeRate" class="rate-hint">
           当前汇率: 1 USD = {{ exchangeRate.rate.toFixed(4) }} CNY
         </span>
@@ -265,6 +277,7 @@ const suggestedPrices = ref<ModelPriceResult[]>([]);
 const advancedPanelActive = ref<string[]>([]);
 const requestOverridesError = ref("");
 const extraBodyError = ref("");
+const modelSearchKeyword = ref("");
 
 const form = reactive({
   provider: "",
@@ -314,6 +327,14 @@ watch(
   { immediate: true }
 );
 
+// 监听搜索关键词变化，自动更新 form.name
+watch(modelSearchKeyword, (val) => {
+  // 编辑模式下不自动更新
+  if (!props.editingModel) {
+    form.name = val.trim();
+  }
+});
+
 /**
  * 加载模型数据到表单
  * @param model 模型配置
@@ -334,6 +355,9 @@ function loadModelData(model: ModelConfig) {
 
   advancedPanelActive.value =
     model.requestOverrides || model.extraBody ? ["overrides"] : [];
+
+  // 编辑模式下显示模型名称
+  modelSearchKeyword.value = model.name;
 
   Object.assign(form, {
     provider: model.provider,
@@ -357,6 +381,7 @@ function resetForm() {
   advancedPanelActive.value = [];
   requestOverridesError.value = "";
   extraBodyError.value = "";
+  modelSearchKeyword.value = "";
 
   Object.assign(form, {
     provider: "",
@@ -383,23 +408,47 @@ function handleClose() {
 }
 
 /**
- * 获取上游模型列表
+ * 搜索上游模型（带关键词过滤）
  */
-async function fetchUpstreamModels() {
-  if (!form.provider) return;
+async function searchUpstreamModels() {
+  if (!form.provider) {
+    ElMessage.warning("请先选择提供商");
+    return;
+  }
 
   loadingUpstream.value = true;
   try {
     const { data } = await getUpstreamModels(form.provider);
-    upstreamModels.value = data.models || [];
-    if (upstreamModels.value.length > 0) {
-      ElMessage.success(`获取到 ${upstreamModels.value.length} 个模型`);
+    const allModels = data.models || [];
+
+    // 根据关键词过滤
+    const keyword = modelSearchKeyword.value.trim().toLowerCase();
+    if (keyword) {
+      upstreamModels.value = allModels.filter((m: { id: string }) =>
+        m.id.toLowerCase().includes(keyword)
+      );
     } else {
-      ElMessage.warning("上游没有返回模型列表");
+      upstreamModels.value = allModels;
+    }
+
+    if (upstreamModels.value.length > 0) {
+      ElMessage.success(`找到 ${upstreamModels.value.length} 个匹配模型`);
+    } else {
+      ElMessage.info("未找到匹配的模型");
     }
   } finally {
     loadingUpstream.value = false;
   }
+}
+
+/**
+ * 选择模型
+ * @param modelId 模型 ID
+ */
+function selectModel(modelId: string) {
+  modelSearchKeyword.value = modelId;
+  form.name = modelId;
+  suggestedPrices.value = [];
 }
 
 /**
@@ -540,12 +589,9 @@ function formatExtraBody() {
 function onProviderChange() {
   upstreamModels.value = [];
   suggestedPrices.value = [];
+  modelSearchKeyword.value = "";
   form.name = "";
   form.model = "";
-}
-
-function onModelChange() {
-  suggestedPrices.value = [];
 }
 
 /**
@@ -620,6 +666,50 @@ async function handleSubmit() {
   width: 100%;
 }
 
+.search-results {
+  width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: var(--card-radius-sm);
+  overflow: hidden;
+}
+
+.search-result-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background-color 0.2s;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover {
+  background-color: var(--bg-secondary);
+}
+
+.search-result-item.active {
+  background-color: var(--primary-light);
+}
+
+.result-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.result-owner {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.search-footer {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: var(--bg-secondary);
+}
+
 .owned-by {
   margin-left: 8px;
   font-size: 12px;
@@ -665,15 +755,6 @@ async function handleSubmit() {
 
 /* 移动端适配 */
 @media (max-width: 768px) {
-  .provider-row {
-    flex-wrap: wrap;
-  }
-
-  .provider-row .el-button {
-    width: 100%;
-    margin-top: 8px;
-  }
-
   .model-input-row {
     flex-wrap: wrap;
   }

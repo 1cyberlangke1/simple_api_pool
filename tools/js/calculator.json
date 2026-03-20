@@ -1,0 +1,26 @@
+{
+  "name": "calculator",
+  "description": "执行基本数学运算，支持加减乘除和幂运算",
+  "category": "工具",
+  "tags": ["数学", "计算"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "number",
+        "description": "第一个操作数"
+      },
+      "b": {
+        "type": "number",
+        "description": "第二个操作数"
+      },
+      "operator": {
+        "type": "string",
+        "enum": ["+", "-", "*", "/", "**", "%"],
+        "description": "运算符: + (加), - (减), * (乘), / (除), ** (幂), % (取模)"
+      }
+    },
+    "required": ["a", "b", "operator"]
+  },
+  "code": "// 计算器工具\n// 输入: a (数字), b (数字), operator (运算符)\n// 输出: 计算结果\n\nconst { a, b, operator } = args;\n\n// 验证输入\nif (typeof a !== 'number' || typeof b !== 'number') {\n  throw new Error('a 和 b 必须是数字');\n}\n\n// 根据运算符执行计算\nvar result;\nswitch (operator) {\n  case '+':\n    result = a + b;\n    break;\n  case '-':\n    result = a - b;\n    break;\n  case '*':\n    result = a * b;\n    break;\n  case '/':\n    if (b === 0) {\n      throw new Error('除数不能为零');\n    }\n    result = a / b;\n    break;\n  case '**':\n    result = Math.pow(a, b);\n    break;\n  case '%':\n    if (b === 0) {\n      throw new Error('取模的除数不能为零');\n    }\n    result = a % b;\n    break;\n  default:\n    throw new Error('不支持的运算符: ' + operator);\n}\n\nreturn {\n  expression: a + ' ' + operator + ' ' + b,\n  result: result,\n  operator: operator\n};"
+}

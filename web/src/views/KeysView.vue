@@ -2,9 +2,11 @@
   <div class="keys-view">
     <el-card>
       <template #header>
-        <div class="card-header">
-          <span>API Key 管理</span>
-          <div class="header-buttons">
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>API Key 管理</span>
+          </div>
+          <div class="header-buttons page-header__actions">
             <el-input
               v-model="searchText"
               placeholder="搜索别名/提供商"
@@ -12,6 +14,7 @@
               clearable
               size="small"
               class="search-input"
+              @input="handleSearchChange"
             />
             <el-button type="success" @click="showBatchImportDialog" class="action-btn">
               <el-icon><Upload /></el-icon>
@@ -43,20 +46,20 @@
         class="desktop-table"
       >
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="alias" label="别名" width="180" />
+        <el-table-column prop="alias" label="别名" min-width="160" />
         <el-table-column prop="provider" label="提供商" width="100" />
-        <el-table-column label="Key" width="200">
+        <el-table-column label="Key" min-width="180">
           <template #default="{ row }">
             <span class="key-mask">{{ maskKey(row.key) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="model" label="限定模型" width="120">
+        <el-table-column prop="model" label="限定模型" min-width="120">
           <template #default="{ row }">
             <el-tag v-if="row.model" size="small">{{ row.model }}</el-tag>
             <span v-else class="text-muted">全部</span>
           </template>
         </el-table-column>
-        <el-table-column label="配额" width="140">
+        <el-table-column label="配额" min-width="120">
           <template #default="{ row }">
             <el-tag :type="getQuotaTagType(row.quota.type)" size="small">
               {{ getQuotaLabel(row.quota) }}
@@ -100,52 +103,91 @@
         </el-table-column>
       </el-table>
 
+      <!-- 分页 -->
+      <div class="pagination-wrapper" v-if="totalKeys > 0">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="totalKeys"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
+
       <!-- 移动端卡片列表 -->
-      <div class="mobile-keys-list" v-loading="loading">
-        <div v-for="key in filteredKeys" :key="key.alias" class="mobile-key-item">
-          <div class="key-header">
-            <div class="key-main">
-              <span class="key-alias">{{ key.alias }}</span>
+      <div class="data-card-list" v-loading="loading">
+        <div v-for="key in filteredKeys" :key="key.alias" class="data-card">
+          <div class="data-card__header">
+            <div class="data-card__title">
+              <span>{{ key.alias }}</span>
               <el-tag size="small" type="info">{{ key.provider }}</el-tag>
             </div>
-            <div class="key-actions">
-              <el-button type="primary" text size="small" @click="showEditDialog(key)">
-                编辑
-              </el-button>
-              <el-popconfirm title="确定删除此 Key？" @confirm="handleDelete(key.alias)">
-                <template #reference>
-                  <el-button type="danger" text size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
+          </div>
+          <div class="data-card__body">
+            <div class="data-card__body-row" style="font-family: monospace; font-size: 12px;">
+              {{ maskKey(key.key) }}
+              <el-tag v-if="key.model" size="small">{{ key.model }}</el-tag>
+            </div>
+            <div class="data-card__body-row">
+              <el-tag :type="getQuotaTagType(key.quota.type)" size="small">
+                {{ getQuotaLabel(key.quota) }}
+              </el-tag>
+              <template v-if="key.quota.type === 'daily'">
+                <el-progress
+                  :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
+                  :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
+                  :stroke-width="6"
+                  style="flex: 1; min-width: 60px;"
+                />
+                <span class="data-card__label">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
+              </template>
+              <template v-else-if="key.quota.type === 'total'">
+                <el-progress
+                  :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
+                  :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
+                  :stroke-width="6"
+                  style="flex: 1; min-width: 60px;"
+                />
+                <span class="data-card__label">${{ (key.remainingTotal || 0).toFixed(4) }}</span>
+              </template>
             </div>
           </div>
-          <div class="key-info">
-            <span class="key-mask">{{ maskKey(key.key) }}</span>
-            <el-tag v-if="key.model" size="small">{{ key.model }}</el-tag>
-          </div>
-          <div class="key-quota">
-            <el-tag :type="getQuotaTagType(key.quota.type)" size="small">
-              {{ getQuotaLabel(key.quota) }}
-            </el-tag>
-            <template v-if="key.quota.type === 'daily'">
-              <el-progress
-                :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
-                :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
-                :stroke-width="6"
-              />
-              <span class="progress-text">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
-            </template>
-            <template v-else-if="key.quota.type === 'total'">
-              <el-progress
-                :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
-                :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
-                :stroke-width="6"
-              />
-              <span class="progress-text">${{ (key.remainingTotal || 0).toFixed(4) }}</span>
-            </template>
+          <div class="data-card__footer">
+            <el-button type="primary" text size="small" @click="showEditDialog(key)">
+              编辑
+            </el-button>
+            <el-popconfirm title="确定删除此 Key？" @confirm="handleDelete(key.alias)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </div>
         </div>
-        <el-empty v-if="filteredKeys.length === 0 && !loading" description="暂无 Key" />
+        <div v-if="filteredKeys.length === 0 && !loading" class="page-empty">
+          <div class="page-empty__icon">
+            <el-icon :size="24"><Plus /></el-icon>
+          </div>
+          <p class="page-empty__title">暂无 Key</p>
+          <p class="page-empty__desc">添加 API Key 来开始管理</p>
+          <div class="page-empty__action">
+            <el-button type="primary" @click="showAddDialog">新增 Key</el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 移动端分页 -->
+      <div class="pagination-wrapper pagination-mobile" v-if="totalKeys > 0">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="totalKeys"
+          layout="total, prev, pager, next"
+          :small="true"
+          @current-change="handlePageChange"
+        />
       </div>
     </el-card>
 
@@ -195,12 +237,19 @@ const selectedKeys = ref<KeyState[]>([]);
 const editingKey = ref<KeyState | null>(null);
 const searchText = ref("");
 
+const { getQuotaLabel, getQuotaTagType } = useQuota();
+const { maskKey } = useKey();
+
+// 分页配置
+const pageSize = ref(20);
+const currentPage = ref(1);
+
 /**
- * 过滤后的 Key 列表（根据搜索条件）
+ * 搜索过滤后的 Key 列表
  */
-const filteredKeys = computed(() => {
+const searchedKeys = computed(() => {
   if (!searchText.value.trim()) return keys.value;
-  
+
   const search = searchText.value.toLowerCase();
   return keys.value.filter((key) => {
     return (
@@ -210,8 +259,41 @@ const filteredKeys = computed(() => {
   });
 });
 
-const { getQuotaLabel, getQuotaTagType } = useQuota();
-const { maskKey } = useKey();
+/**
+ * 分页后的 Key 列表
+ */
+const filteredKeys = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return searchedKeys.value.slice(start, end);
+});
+
+/**
+ * 总条目数
+ */
+const totalKeys = computed(() => searchedKeys.value.length);
+
+/**
+ * 页码变化处理
+ */
+function handlePageChange(page: number) {
+  currentPage.value = page;
+}
+
+/**
+ * 每页条数变化处理
+ */
+function handleSizeChange(size: number) {
+  pageSize.value = size;
+  currentPage.value = 1; // 重置到第一页
+}
+
+/**
+ * 搜索变化时重置分页
+ */
+function handleSearchChange() {
+  currentPage.value = 1;
+}
 
 onMounted(() => {
   fetchKeys();
@@ -295,13 +377,7 @@ async function handleBatchDelete() {
 .keys-view {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: var(--page-gap);
 }
 
 .header-buttons {
@@ -329,30 +405,30 @@ async function handleBatchDelete() {
   margin-left: 8px;
 }
 
-/* 移动端卡片列表默认隐藏 */
-.mobile-keys-list {
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0 0;
+}
+
+.pagination-mobile {
   display: none;
 }
 
-/* ============================================================
-   响应式媒体查询
-   ============================================================ */
-
 /* 平板端 (< 1024px) */
 @media (max-width: 1024px) {
+  .header-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .search-input {
-    width: 140px;
+    width: min(100%, 240px);
   }
 }
 
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
-  .card-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
   .header-buttons {
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -367,74 +443,16 @@ async function handleBatchDelete() {
     display: none;
   }
 
-  /* 显示移动端列表 */
-  .mobile-keys-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  /* 隐藏桌面端表格 */
   .desktop-table {
     display: none;
   }
-}
 
-/* 移动端卡片样式 */
-.mobile-key-item {
-  padding: 12px;
-  background: var(--border-light);
-  border-radius: 8px;
-  transition: background-color 0.3s;
-}
-
-.mobile-key-item .key-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 8px;
-}
-
-.mobile-key-item .key-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.mobile-key-item .key-alias {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.mobile-key-item .key-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.mobile-key-item .key-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.mobile-key-item .key-quota {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* 小屏手机 (< 480px) */
-@media (max-width: 480px) {
-  .action-btn {
-    padding: 8px 12px;
+  .pagination-wrapper:not(.pagination-mobile) {
+    display: none;
   }
 
-  .mobile-key-item .key-actions {
-    flex-direction: column;
-    gap: 2px;
+  .pagination-mobile {
+    justify-content: center;
   }
 }
 </style>

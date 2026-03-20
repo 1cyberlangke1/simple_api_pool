@@ -40,6 +40,39 @@ export async function buildApp(runtime: AppRuntime, onConfigUpdate?: (config: Ap
   // 加载工具
   await runtime.loadTools();
 
+  // API 认证中间件（用于 /v1/* 路由，排除 /v1/models）
+  const apiAuth = runtime.config.server.apiAuth;
+  if (apiAuth?.enabled && apiAuth.tokens && apiAuth.tokens.length > 0) {
+    app.addHook("onRequest", async (request, reply) => {
+      // 只对 /v1/* 路由进行认证检查，但排除 /v1/models（公开端点）
+      if (!request.url.startsWith("/v1/")) {
+        return;
+      }
+      // /v1/models 是公开端点，不需要认证
+      if (request.url === "/v1/models" || request.url.startsWith("/v1/models?")) {
+        return;
+      }
+
+      const authType = apiAuth.type ?? "bearer";
+      let providedToken: string | undefined;
+
+      if (authType === "bearer") {
+        const authHeader = request.headers.authorization;
+        if (authHeader?.startsWith("Bearer ")) {
+          providedToken = authHeader.slice(7);
+        }
+      } else {
+        // api-key 方式
+        providedToken = request.headers["x-api-key"] as string | undefined;
+      }
+
+      // 检查令牌是否在允许的令牌列表中
+      if (!providedToken || !apiAuth.tokens!.includes(providedToken)) {
+        return reply.status(401).send({ error: "Unauthorized", message: "Invalid or missing API token" });
+      }
+    });
+  }
+
   // 注册 API 路由
 
   // Health check

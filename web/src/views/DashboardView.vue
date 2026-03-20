@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard">
+  <div class="dashboard section-stack">
     <!-- 统计卡片 -->
     <el-row :gutter="20">
       <el-col :xs="24" :sm="12" :md="6">
@@ -29,9 +29,11 @@
     <!-- 调用统计图表 -->
     <el-card class="chart-card">
       <template #header>
-        <div class="card-header">
-          <span>调用统计（最近 24 小时）</span>
-          <div class="chart-actions">
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>调用统计（最近 24 小时）</span>
+          </div>
+          <div class="chart-actions page-header__actions">
             <ConnectionStatus :state="sseState" />
             <el-select
               v-model="chartHours"
@@ -60,9 +62,13 @@
     <!-- 服务状态 -->
     <el-card class="health-card">
       <template #header>
-        <div class="card-header">
-          <span>服务状态</span>
-          <ConnectionStatus :state="sseState" />
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>服务状态</span>
+          </div>
+          <div class="page-header__actions compact-toolbar">
+            <ConnectionStatus :state="sseState" />
+          </div>
         </div>
       </template>
       <el-descriptions :column="descColumn" border>
@@ -95,9 +101,11 @@
     <!-- Key 状态概览 -->
     <el-card class="keys-card">
       <template #header>
-        <div class="card-header">
-          <span>Key 状态概览</span>
-          <div class="keys-header-actions">
+        <div class="card-header page-header">
+          <div class="page-header__meta">
+            <span>Key 状态概览</span>
+          </div>
+          <div class="keys-header-actions page-header__actions">
             <el-input
               v-model="keySearch"
               placeholder="搜索别名/提供商/模型"
@@ -112,40 +120,48 @@
       </template>
       
       <!-- 移动端卡片列表 -->
-      <div class="mobile-keys-list">
-        <div v-for="key in paginatedKeys" :key="key.alias" class="mobile-key-item">
-          <div class="key-header">
-            <span class="key-alias">{{ key.alias }}</span>
+      <div class="data-card-list mobile-keys-list">
+        <div v-for="key in paginatedKeys" :key="key.alias" class="data-card">
+          <div class="data-card__header">
+            <div class="data-card__title">
+              <span>{{ key.alias }}</span>
+            </div>
             <el-tag :type="getQuotaTagType(key.quota.type)" size="small">
               {{ getQuotaLabel(key.quota) }}
             </el-tag>
           </div>
-          <div class="key-info">
-            <span>{{ key.provider }}</span>
-            <span v-if="key.model">{{ key.model }}</span>
-          </div>
-          <div class="key-usage">
-            <template v-if="key.quota.type === 'daily'">
-              <el-progress
-                :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
-                :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
-              />
-              <span class="progress-text">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
-            </template>
-            <template v-else-if="key.quota.type === 'total'">
-              <el-progress
-                :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
-                :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
-              />
-              <span class="progress-text">${{ (key.remainingTotal || 0).toFixed(4) }} 剩余</span>
-            </template>
-            <template v-else>
-              <span class="progress-text">无限制</span>
-            </template>
+          <div class="data-card__body">
+            <div class="data-card__body-row">
+              <span class="data-card__label">{{ key.provider }}</span>
+              <span v-if="key.model">{{ key.model }}</span>
+            </div>
+            <div class="data-card__body-row">
+              <template v-if="key.quota.type === 'daily'">
+                <el-progress
+                  :percentage="Math.min(((key.usedToday || 0) / (key.quota.limit || 1)) * 100, 100)"
+                  :status="(key.usedToday || 0) >= (key.quota.limit || 1) ? 'exception' : undefined"
+                  :stroke-width="6"
+                  style="flex: 1; min-width: 60px;"
+                />
+                <span class="data-card__label">{{ key.usedToday || 0 }} / {{ key.quota.limit || 0 }}</span>
+              </template>
+              <template v-else-if="key.quota.type === 'total'">
+                <el-progress
+                  :percentage="Math.min(((key.remainingTotal || 0) / (key.quota.limit || 1)) * 100, 100)"
+                  :status="(key.remainingTotal || 0) <= 0 ? 'exception' : undefined"
+                  :stroke-width="6"
+                  style="flex: 1; min-width: 60px;"
+                />
+                <span class="data-card__label">${{ (key.remainingTotal || 0).toFixed(4) }} 剩余</span>
+              </template>
+              <template v-else>
+                <span class="data-card__label">无限制</span>
+              </template>
+            </div>
           </div>
         </div>
       </div>
-      
+
       <!-- 桌面端表格 -->
       <el-table :data="paginatedKeys" stripe class="desktop-table">
         <el-table-column prop="alias" label="别名" width="120" />
@@ -199,7 +215,7 @@
           :page-size="pageSize"
           :total="filteredKeys.length"
           layout="prev, pager, next"
-          small
+          size="small"
         />
       </div>
     </el-card>
@@ -251,6 +267,7 @@ const formattedUptime = ref("--");
 
 /** 描述列表列数（响应式） */
 const descColumn = ref(2);
+const windowWidth = ref(window.innerWidth);
 
 /**
  * 格式化运行时间为可读字符串
@@ -291,7 +308,8 @@ function updateUptime(): void {
  */
 function updateResponsive(): void {
   const width = window.innerWidth;
-  descColumn.value = width < 768 ? 1 : 2;
+  windowWidth.value = width;
+  descColumn.value = width < 900 ? 1 : 2;
 }
 
 const keys = ref<KeyState[]>([]);
@@ -377,7 +395,6 @@ function connectSSE(): void {
   const token = localStorage.getItem("admin_token");
   if (!token) {
     sseState.value = "error";
-    console.error("[SSE] No authentication token");
     return;
   }
   const url = new URL("/admin/sse/stats", window.location.origin);
@@ -392,8 +409,7 @@ function connectSSE(): void {
 
   eventSource.onerror = () => {
     sseState.value = "error";
-    console.error("[SSE] Connection error");
-    
+
     // 自动重连
     if (reconnectTimer) clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connectSSE, RECONNECT_INTERVAL);
@@ -614,6 +630,7 @@ async function fetchConfig() {
   display: flex;
   align-items: center;
   gap: 12px;
+  justify-content: flex-end;
 }
 
 .chart-select {
@@ -709,6 +726,8 @@ async function fetchConfig() {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .search-input {
@@ -741,12 +760,22 @@ async function fetchConfig() {
 
 /* 平板端 (< 1024px) */
 @media (max-width: 1024px) {
+  .dashboard {
+    gap: 20px;
+  }
+
   .search-input {
-    width: 140px;
+    width: min(100%, 220px);
   }
 
   .chart-select {
     width: 100px;
+  }
+
+  .keys-header-actions,
+  .chart-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 

@@ -5,90 +5,90 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify from "fastify";
-import {
-  registerJsToolsRoutes,
-  getEnabledJsTools,
-} from "../src/routes/admin/js_tools_routes.js";
+import { registerJsToolsRoutes } from "../src/routes/admin/js_tools_routes.js";
 
 // Mock JsToolStore
 const mockTools = new Map<string, any>();
 
-vi.mock("../src/core/js_tool_store.js", () => ({
-  JsToolStore: vi.fn().mockImplementation(() => ({
-    getAll: vi.fn((enabledOnly: boolean) => {
-      const tools = Array.from(mockTools.values());
-      return enabledOnly ? tools.filter((t: any) => t.enabled) : tools;
-    }),
-    getById: vi.fn((id: string) => mockTools.get(id)),
-    getByName: vi.fn((name: string) => {
-      for (const tool of mockTools.values()) {
-        if (tool.name === name) return tool;
-      }
-      return null;
-    }),
-    create: vi.fn((data: any) => {
-      const id = `tool-${Date.now()}`;
-      const tool = {
-        id,
-        ...data,
-        enabled: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      mockTools.set(id, tool);
-      return tool;
-    }),
-    update: vi.fn((id: string, data: any) => {
-      const existing = mockTools.get(id);
-      if (!existing) return null;
-      const updated = { ...existing, ...data, updatedAt: new Date().toISOString() };
-      mockTools.set(id, updated);
-      return updated;
-    }),
-    delete: vi.fn((id: string) => {
-      if (!mockTools.has(id)) return false;
-      mockTools.delete(id);
-      return true;
-    }),
-  })),
-}));
+const mockJsToolStore = {
+  getAll: vi.fn((enabledOnly: boolean) => {
+    const tools = Array.from(mockTools.values());
+    return enabledOnly ? tools.filter((t: any) => t.enabled) : tools;
+  }),
+  getById: vi.fn((id: string) => mockTools.get(id)),
+  getByName: vi.fn((name: string) => {
+    for (const tool of mockTools.values()) {
+      if (tool.name === name) return tool;
+    }
+    return null;
+  }),
+  create: vi.fn((data: any) => {
+    const id = `tool-${Date.now()}`;
+    const tool = {
+      id,
+      ...data,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    mockTools.set(id, tool);
+    return tool;
+  }),
+  update: vi.fn((id: string, data: any) => {
+    const existing = mockTools.get(id);
+    if (!existing) return null;
+    const updated = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    mockTools.set(id, updated);
+    return updated;
+  }),
+  delete: vi.fn((id: string) => {
+    if (!mockTools.has(id)) return false;
+    mockTools.delete(id);
+    return true;
+  }),
+};
 
-// Mock JsSandbox
-vi.mock("../src/core/js_sandbox.js", () => ({
-  JsSandbox: vi.fn().mockImplementation(() => ({
-    validateCode: vi.fn((code: string) => {
-      // 简单验证：检查是否包含危险关键字
-      const dangerousPatterns = [
-        /eval\s*\(/,
-        /Function\s*\(/,
-        /require\s*\(/,
-        /import\s+/,
-        /process\./,
-        /child_process/,
-      ];
+const mockJsSandbox = {
+  validateCode: vi.fn((code: string) => {
+    // 简单验证：检查是否包含危险关键字
+    const dangerousPatterns = [
+      /eval\s*\(/,
+      /Function\s*\(/,
+      /require\s*\(/,
+      /import\s+/,
+      /process\./,
+      /child_process/,
+    ];
 
-      const issues: string[] = [];
-      for (const pattern of dangerousPatterns) {
-        if (pattern.test(code)) {
-          issues.push(`Dangerous pattern found: ${pattern}`);
-        }
+    const issues: string[] = [];
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(code)) {
+        issues.push(`Dangerous pattern found: ${pattern}`);
       }
+    }
 
-      return {
-        safe: issues.length === 0,
-        issues: issues.length > 0 ? issues : undefined,
-      };
-    }),
-    execute: vi.fn(async (code: string, args: Record<string, unknown>) => {
-      // 简单模拟执行
-      if (code.includes("return")) {
-        const fn = new Function("args", code);
-        return { result: fn(args) };
-      }
-      return { result: null };
-    }),
-  })),
-}));
+    return {
+      safe: issues.length === 0,
+      issues: issues.length > 0 ? issues : undefined,
+    };
+  }),
+  execute: vi.fn(async (code: string, args: Record<string, unknown>) => {
+    // 简单模拟执行
+    if (code.includes("return")) {
+      const fn = new Function("args", code);
+      return { success: true, result: fn(args) };
+    }
+    return { success: true, result: null };
+  }),
+};
+
+// Mock AppRuntime
+const mockRuntime = {
+  jsToolStore: mockJsToolStore,
+  jsSandbox: mockJsSandbox,
+  refreshJsTool: vi.fn(),
+  removeJsTool: vi.fn(),
+};
 
 describe("js_tools_routes", () => {
   const adminToken = "test-admin-token";
@@ -96,7 +96,11 @@ describe("js_tools_routes", () => {
 
   beforeEach(async () => {
     mockTools.clear();
+    vi.clearAllMocks();
+
     app = Fastify();
+    // 装饰 runtime 到 app 实例
+    app.decorate("runtime", mockRuntime);
     registerJsToolsRoutes(app, adminToken);
     await app.ready();
   });
@@ -180,7 +184,7 @@ describe("js_tools_routes", () => {
   });
 
   describe("POST /api/js-tools", () => {
-    it("should create a new tool", async () => {
+    it("should create a new tool and refresh registry", async () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/js-tools",
@@ -195,6 +199,8 @@ describe("js_tools_routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json().name).toBe("new_tool");
+      // 验证刷新方法被调用
+      expect(mockRuntime.refreshJsTool).toHaveBeenCalledWith("new_tool");
     });
 
     it("should reject without name", async () => {
@@ -265,7 +271,7 @@ describe("js_tools_routes", () => {
   });
 
   describe("PUT /api/js-tools/:id", () => {
-    it("should update existing tool", async () => {
+    it("should update existing tool and refresh registry", async () => {
       mockTools.set("tool-1", {
         id: "tool-1",
         name: "old_name",
@@ -285,6 +291,8 @@ describe("js_tools_routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json().description).toBe("New description");
+      // 验证刷新方法被调用
+      expect(mockRuntime.refreshJsTool).toHaveBeenCalled();
     });
 
     it("should return 404 for non-existent tool", async () => {
@@ -335,7 +343,7 @@ describe("js_tools_routes", () => {
   });
 
   describe("DELETE /api/js-tools/:id", () => {
-    it("should delete existing tool", async () => {
+    it("should delete existing tool and remove from registry", async () => {
       mockTools.set("tool-1", { id: "tool-1", name: "to_delete", code: "return 1;" });
 
       const response = await app.inject({
@@ -346,6 +354,8 @@ describe("js_tools_routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ status: "ok" });
+      // 验证移除方法被调用
+      expect(mockRuntime.removeJsTool).toHaveBeenCalledWith("to_delete");
     });
 
     it("should return 404 for non-existent tool", async () => {
@@ -428,29 +438,42 @@ describe("js_tools_routes", () => {
     });
   });
 
-  describe("getEnabledJsTools", () => {
-    it("should return only enabled tools", () => {
+  describe("JS Tool Registry Sync", () => {
+    it("should call refreshJsTool when tool is enabled", async () => {
       mockTools.set("tool-1", {
         id: "tool-1",
-        name: "enabled_tool",
-        description: "Enabled",
+        name: "test_tool",
         code: "return 1;",
-        inputSchema: { type: "object" },
         enabled: true,
       });
-      mockTools.set("tool-2", {
-        id: "tool-2",
-        name: "disabled_tool",
-        description: "Disabled",
-        code: "return 2;",
-        inputSchema: { type: "object" },
-        enabled: false,
+
+      // 模拟更新启用状态
+      const response = await app.inject({
+        method: "PUT",
+        url: "/api/js-tools/tool-1",
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { enabled: true },
       });
 
-      const tools = getEnabledJsTools();
+      expect(response.statusCode).toBe(200);
+      expect(mockRuntime.refreshJsTool).toHaveBeenCalledWith("test_tool");
+    });
 
-      expect(tools).toHaveLength(1);
-      expect(tools[0].name).toBe("enabled_tool");
+    it("should call removeJsTool when tool is deleted", async () => {
+      mockTools.set("tool-1", {
+        id: "tool-1",
+        name: "deleted_tool",
+        code: "return 1;",
+      });
+
+      const response = await app.inject({
+        method: "DELETE",
+        url: "/api/js-tools/tool-1",
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockRuntime.removeJsTool).toHaveBeenCalledWith("deleted_tool");
     });
   });
 });

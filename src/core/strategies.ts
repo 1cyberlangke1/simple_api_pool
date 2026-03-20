@@ -297,6 +297,68 @@ export class WeightedGroupStrategy implements IModelGroupStrategy {
 }
 
 /**
+ * 故障转移分组策略
+ * @description 按顺序选择路由，失败时自动切换到下一个路由重试
+ * @behavior 适合需要高可用性的场景，失败自动降级
+ */
+export class FailoverGroupStrategy implements IModelGroupStrategy {
+  readonly name: ModelGroupStrategy = "failover";
+
+  private currentIndex = 0;
+  private attemptedIndices = new Set<number>();
+
+  /**
+   * 选择下一个可用的路由
+   * @param routes 路由配置数组
+   * @returns 当前路由配置，所有路由都尝试过后返回 null
+   */
+  select(routes: GroupRouteConfig[]): GroupRouteConfig | null {
+    if (routes.length === 0) return null;
+
+    // 如果所有路由都已尝试过，返回 null
+    if (this.attemptedIndices.size >= routes.length) {
+      return null;
+    }
+
+    // 找到下一个未尝试的路由
+    while (this.attemptedIndices.has(this.currentIndex)) {
+      this.currentIndex = (this.currentIndex + 1) % routes.length;
+    }
+
+    const route = routes[this.currentIndex];
+    this.attemptedIndices.add(this.currentIndex);
+    return route;
+  }
+
+  /**
+   * 报告请求失败
+   * @description 标记当前路由失败，下次 select 会返回下一个路由
+   */
+  reportFailure(): void {
+    // 当前路由已标记失败（在 select 时已加入 attemptedIndices）
+    // 移动到下一个索引
+    this.currentIndex = (this.currentIndex + 1);
+  }
+
+  /**
+   * 报告请求成功
+   * @description 重置失败状态，下次请求从第一个路由开始
+   */
+  reportSuccess(): void {
+    this.reset();
+  }
+
+  /**
+   * 重置策略状态
+   * @description 清空已尝试的路由，从第一个重新开始
+   */
+  reset(): void {
+    this.currentIndex = 0;
+    this.attemptedIndices.clear();
+  }
+}
+
+/**
  * 创建分组策略实例
  * @param strategy 策略名称
  * @returns 策略实例
@@ -311,6 +373,8 @@ export function createGroupStrategy(strategy: ModelGroupStrategy): IModelGroupSt
       return new ExhaustGroupStrategy();
     case "weighted":
       return new WeightedGroupStrategy();
+    case "failover":
+      return new FailoverGroupStrategy();
     default:
       return new RoundRobinGroupStrategy();
   }

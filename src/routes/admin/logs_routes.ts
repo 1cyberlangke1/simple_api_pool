@@ -6,7 +6,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { adminAuth } from "./auth.js";
-import { LogStore, type LogFileInfo } from "../../core/log_store.js";
+import type { LogFileInfo } from "../../core/log_store.js";
 
 /**
  * 日志查询参数
@@ -17,44 +17,21 @@ interface LogQueryParams {
   limit?: number;
 }
 
-// 全局 LogStore 实例
-let globalLogStore: LogStore | null = null;
-
-/**
- * 获取 LogStore 实例
- */
-function getLogStore(): LogStore {
-  if (!globalLogStore) {
-    const logDir = process.env.LOG_DIR ?? "./logs";
-    const maxSize = parseInt(process.env.LOG_MAX_SIZE ?? "10485760", 10);
-    globalLogStore = new LogStore({
-      logDir,
-      maxSize,
-      enabled: maxSize > 0,
-    });
-  }
-  return globalLogStore;
-}
-
 /**
  * 注册日志管理路由
  * @param app Fastify 实例
  * @param adminToken 管理员 Token
- * @param logStore 可选的日志存储实例，如果不提供则自动创建
  */
 export function registerLogsRoutes(
   app: FastifyInstance,
   adminToken: string,
-  logStore?: LogStore
 ): void {
-    // 使用传入的实例或获取全局实例
-    const store = logStore ?? getLogStore();
-  
     // 获取日志文件列表
     app.get(
       "/api/logs",
       { preHandler: adminAuth(adminToken) },
       async (_request: FastifyRequest, reply: FastifyReply) => {
+        const store = app.runtime.logStore;
         const files = store.getLogFiles();
         return reply.send({
           files,
@@ -71,6 +48,7 @@ export function registerLogsRoutes(
         request: FastifyRequest<{ Querystring: LogQueryParams }>,
         reply: FastifyReply
       ) => {
+        const store = app.runtime.logStore;
         const { date, offset = 0, limit = 1000 } = request.query;
   
         if (!date) {
@@ -101,13 +79,35 @@ export function registerLogsRoutes(
       "/api/logs/config",
       { preHandler: adminAuth(adminToken) },
       async (_request: FastifyRequest, reply: FastifyReply) => {
+        const store = app.runtime.logStore;
+        const logConfig = app.runtime.config.log;
         const files = store.getLogFiles();
         const totalSize = files.reduce((sum: number, f: LogFileInfo) => sum + f.size, 0);
   
         return reply.send({
-          enabled: true,
+          enabled: logConfig?.enabled ?? true,
+          maxSizeMB: logConfig?.maxSizeMB ?? 10,
+          keepDays: logConfig?.keepDays ?? 30,
           totalFiles: files.length,
           totalSize,
+        });
+      }
+    );
+  
+    // 清理旧日志
+    app.post(
+      "/api/logs/clean",
+      { preHandler: adminAuth(adminToken) },
+      async (_request: FastifyRequest, reply: FastifyReply) => {
+        const store = app.runtime.logStore;
+        const logConfig = app.runtime.config.log;
+        const keepDays = logConfig?.keepDays ?? 30;
+        
+        store.cleanOldLogs(keepDays);
+        
+        return reply.send({
+          success: true,
+          message: `Cleaned logs older than ${keepDays} days`,
         });
       }
     );

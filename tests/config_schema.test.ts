@@ -352,6 +352,67 @@ describe("ConfigSchema", () => {
     });
   });
 
+  describe("dbPath security validation", () => {
+    it("should accept valid relative path", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "./config/cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(true);
+    });
+
+    it("should accept relative path without ./ prefix", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "config/cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(true);
+    });
+
+    it("should reject path with directory traversal (..)", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "../config/cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+      expect(result.errors?.some(e => e.includes("..") || e.includes("相对路径"))).toBe(true);
+    });
+
+    it("should reject path with nested directory traversal", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "./config/../etc/passwd";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject path with user directory reference (~)", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "~/data/cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+      expect(result.errors?.some(e => e.includes("~") || e.includes("相对路径"))).toBe(true);
+    });
+
+    it("should reject Unix absolute path", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "/etc/passwd";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+      expect(result.errors?.some(e => e.includes("绝对路径") || e.includes("相对路径"))).toBe(true);
+    });
+
+    it("should reject Windows absolute path with backslash", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "C:\\Windows\\System32\\cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject Windows absolute path with forward slash", () => {
+      const config = createValidConfig();
+      config.cache.dbPath = "D:/data/cache.sqlite";
+      const result = validateConfig(config);
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe("validatePartialConfig", () => {
     it("should validate empty partial config", () => {
       const result = validatePartialConfig({});

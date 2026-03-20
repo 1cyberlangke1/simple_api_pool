@@ -28,12 +28,19 @@
           客户端将通过 <code>group/名称</code> 来使用此分组，如 <code>group/default</code>
         </div>
       </el-form-item>
+
       <el-form-item label="负载策略" prop="strategy">
         <el-select v-model="form.strategy" style="width: 100%">
           <el-option label="轮流使用（推荐）" value="round_robin">
             <div class="option-detail">
               <span class="option-label">轮流使用</span>
               <span class="option-desc">按顺序依次使用每个模型，平均分配请求</span>
+            </div>
+          </el-option>
+          <el-option label="故障转移" value="failover">
+            <div class="option-detail">
+              <span class="option-label">故障转移</span>
+              <span class="option-desc">按优先级顺序尝试，失败自动切换下一个模型</span>
             </div>
           </el-option>
           <el-option label="用完再换" value="exhaust">
@@ -65,9 +72,38 @@
       <el-form-item label="模型列表">
         <div class="routes-config">
           <div class="config-header">
-            <span>选择要加入此分组的模型，可以设置不同的参数</span>
+            <span v-if="form.strategy === 'failover'">
+              <el-tag type="warning" size="small">故障转移模式</el-tag>
+              按列表顺序优先使用前面的模型，失败时自动切换下一个
+            </span>
+            <span v-else-if="form.strategy === 'weighted'">
+              <el-tag type="info" size="small">权重模式</el-tag>
+              根据每个模型的权重比例分配请求
+            </span>
+            <span v-else>选择要加入此分组的模型，可以设置不同的参数</span>
           </div>
           <div v-for="(route, idx) in form.routes" :key="idx" class="route-row">
+            <!-- 排序按钮 -->
+            <div class="sort-buttons">
+              <el-button
+                :icon="ArrowUp"
+                circle
+                size="small"
+                :disabled="idx === 0"
+                @click="moveRouteUp(idx)"
+              />
+              <el-button
+                :icon="ArrowDown"
+                circle
+                size="small"
+                :disabled="idx === form.routes.length - 1"
+                @click="moveRouteDown(idx)"
+              />
+            </div>
+            <!-- 优先级标识（故障转移模式） -->
+            <el-tag v-if="form.strategy === 'failover'" size="small" :type="getPriorityTagType(idx)">
+              {{ idx + 1 }}
+            </el-tag>
             <el-select
               v-model="route.modelId"
               placeholder="选择模型"
@@ -230,10 +266,10 @@
 <script setup lang="ts">
 /**
  * 分组表单对话框
- * @description 创建和编辑分组配置
+ * @description 创建和编辑分组配置，支持故障转移和模型排序
  */
 import { ref, reactive, computed, watch } from "vue";
-import { Plus, Delete, QuestionFilled } from "@element-plus/icons-vue";
+import { Plus, Delete, QuestionFilled, ArrowUp, ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
   addGroup,
@@ -269,7 +305,7 @@ const truncationEnabled = ref(false);
 
 const form = reactive({
   name: "",
-  strategy: "round_robin" as "exhaust" | "round_robin" | "random" | "weighted",
+  strategy: "round_robin" as "exhaust" | "round_robin" | "random" | "weighted" | "failover",
   routes: [] as RouteForm[],
   features: {
     tools: [] as string[],
@@ -302,6 +338,17 @@ const dialogWidth = computed(() => {
   return window.innerWidth < 768 ? "95%" : "750px";
 });
 
+/**
+ * 获取优先级标签类型
+ * @param idx 路由索引
+ * @returns 标签类型
+ */
+function getPriorityTagType(idx: number): "danger" | "warning" | "info" {
+  if (idx === 0) return "danger";
+  if (idx === 1) return "warning";
+  return "info";
+}
+
 watch(
   () => props.editingGroup,
   (group) => {
@@ -317,7 +364,8 @@ watch(
 function loadGroupData(group: GroupConfig) {
   Object.assign(form, {
     name: group.name,
-    strategy: group.strategy || "round_robin",
+    // 兼容旧配置：如果 failover 为 true，使用 failover 策略
+    strategy: group.failover ? "failover" : (group.strategy || "round_robin"),
     routes: group.routes.map((r) => ({
       modelId: r.modelId,
       temperature: r.temperature,
@@ -367,6 +415,28 @@ function addRoute() {
 
 function removeRoute(idx: number) {
   form.routes.splice(idx, 1);
+}
+
+/**
+ * 上移路由
+ * @param idx 路由索引
+ */
+function moveRouteUp(idx: number) {
+  if (idx <= 0) return;
+  const temp = form.routes[idx];
+  form.routes[idx] = form.routes[idx - 1];
+  form.routes[idx - 1] = temp;
+}
+
+/**
+ * 下移路由
+ * @param idx 路由索引
+ */
+function moveRouteDown(idx: number) {
+  if (idx >= form.routes.length - 1) return;
+  const temp = form.routes[idx];
+  form.routes[idx] = form.routes[idx + 1];
+  form.routes[idx + 1] = temp;
 }
 
 async function handleSubmit() {
@@ -456,10 +526,26 @@ function buildFeatures(): GroupFeatureConfig {
   margin-bottom: 4px;
 }
 
+.config-header .el-tag {
+  margin-right: 6px;
+}
+
 .route-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sort-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sort-buttons .el-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
 }
 
 .form-hint {
@@ -543,6 +629,17 @@ function buildFeatures(): GroupFeatureConfig {
     flex-wrap: wrap;
   }
 
+  .sort-buttons {
+    flex-direction: row;
+    order: -1;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .route-row .el-tag {
+    order: -1;
+  }
+
   .route-row .el-select {
     width: 100% !important;
     min-width: unset !important;
@@ -553,7 +650,7 @@ function buildFeatures(): GroupFeatureConfig {
     min-width: unset !important;
   }
 
-  .route-row .el-button {
+  .route-row .el-button:last-child {
     width: 100%;
     margin-top: 8px;
   }

@@ -110,6 +110,19 @@ export class ToolRegistry implements ToolHandler, IToolRegistry {
   }
 
   /**
+   * 更新或注册工具
+   * @description 如果工具已存在则更新，否则注册新工具
+   * @param tool 工具定义
+   * @param handler 执行处理器
+   */
+  updateOrRegister(tool: ToolDefinition, handler: (args: unknown) => Promise<unknown>): void {
+    // 先尝试注销已存在的同名工具
+    this.unregister(tool.name);
+    // 注册新工具
+    this.register(tool, handler);
+  }
+
+  /**
    * 获取 OpenAI tools 结构
    * @returns OpenAI 格式的工具数组
    */

@@ -6,6 +6,16 @@ import type {
 } from "./types.js";
 import { isKeyAvailable } from "./types.js";
 import { createKeyStrategy } from "./strategies.js";
+import { KeyUsageStore } from "./key_usage_store.js";
+
+/**
+ * 获取当前日期字符串
+ * @returns YYYY-MM-DD 格式
+ */
+function getCurrentDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 /**
  * Key 管理器
@@ -18,14 +28,40 @@ export class KeyStore {
   private providerKeys: Map<string, string[]> = new Map();
   /** 策略实例缓存 */
   private strategies: Map<string, IKeySelectionStrategy> = new Map();
+  /** 持久化存储（可选） */
+  private usageStore: KeyUsageStore | null = null;
 
   /**
    * 初始化 KeyStore
    * @param keyConfigs Key 配置数组
+   * @param usageStore 可选的使用状态持久化存储
    */
-  constructor(keyConfigs: KeyConfig[]) {
+  constructor(keyConfigs: KeyConfig[], usageStore?: KeyUsageStore) {
+    this.usageStore = usageStore ?? null;
+
+    // 加载持久化状态
+    const persistedUsage = usageStore ? usageStore.getAll() : [];
+    const usageMap = new Map(persistedUsage.map((u) => [u.alias, u]));
+
+    const today = getCurrentDate();
+
     for (const config of keyConfigs) {
       this.addKey(config);
+
+      // 恢复持久化状态
+      const persisted = usageMap.get(config.alias);
+      if (persisted && config.quota.type !== "infinite") {
+        const key = this.keys.get(config.alias)!;
+        // 恢复 total 消耗
+        if (config.quota.type === "total") {
+          key.usage.totalCost = persisted.totalCost;
+        }
+        // 恢复 daily 计数（检查日期是否过期）
+        if (config.quota.type === "daily") {
+          key.usage.dailyCount = persisted.dailyResetDate === today ? persisted.dailyCount : 0;
+          key.dailyResetDate = today;
+        }
+      }
     }
   }
 
@@ -111,6 +147,10 @@ export class KeyStore {
 
     this.keys.delete(alias);
     this.removeFromProviderIndex(alias, state.provider);
+
+    // 删除持久化数据
+    this.usageStore?.delete(alias);
+
     return true;
   }
 
@@ -165,13 +205,31 @@ export class KeyStore {
     state.lastUsedAt = Date.now();
 
     const { quota, usage } = state;
+    const today = getCurrentDate();
 
     switch (quota.type) {
       case "daily":
+        // 检查日期是否变化，需要重置计数
+        if (state.dailyResetDate !== today) {
+          usage.dailyCount = 0;
+          state.dailyResetDate = today;
+        }
         usage.dailyCount++;
+        // 持久化 daily 状态
+        this.usageStore?.set(alias, {
+          dailyCount: usage.dailyCount,
+          dailyResetDate: today,
+          totalCost: usage.totalCost,
+        });
         break;
       case "total":
         usage.totalCost += cost;
+        // 持久化 total 状态
+        this.usageStore?.set(alias, {
+          dailyCount: usage.dailyCount,
+          dailyResetDate: state.dailyResetDate ?? today,
+          totalCost: usage.totalCost,
+        });
         if (usage.totalCost >= quota.limit) {
           // 配额耗尽，删除 Key
           this.deleteKey(alias);

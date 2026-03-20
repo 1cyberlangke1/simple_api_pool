@@ -22,6 +22,8 @@ export interface KeyConfig {
 export interface KeyState extends KeyConfig {
   usedToday: number;
   remainingTotal: number | null;
+  /** 每日计数重置日期 (YYYY-MM-DD) */
+  dailyResetDate?: string;
 }
 
 /**
@@ -130,7 +132,19 @@ export interface GroupFeatureConfig {
 
 export interface GroupConfig {
   name: string;
-  strategy?: "round_robin" | "random" | "exhaust" | "weighted";
+  /** 
+   * 负载策略
+   * - round_robin: 轮流使用
+   * - random: 随机选择
+   * - exhaust: 用完再换
+   * - weighted: 按权重分配
+   * - failover: 故障转移，失败自动切换
+   */
+  strategy?: "round_robin" | "random" | "exhaust" | "weighted" | "failover";
+  /** @deprecated 已合并到 strategy 中，保留用于兼容旧配置 */
+  failover?: boolean;
+  /** @deprecated 已合并到 strategy 中，保留用于兼容旧配置 */
+  failoverMaxRetries?: number;
   routes: GroupRouteConfig[];
   /** 功能配置（独立配置，不继承全局） */
   features?: GroupFeatureConfig;
@@ -220,12 +234,40 @@ export interface CacheConfig {
 }
 
 /**
+ * 日志配置
+ * @description 控制日志文件的大小限制和清理策略
+ */
+export interface LogConfig {
+  /** 是否启用日志记录 */
+  enabled: boolean;
+  /** 单个日志文件最大大小（MB） */
+  maxSizeMB: number;
+  /** 日志保留天数 */
+  keepDays: number;
+  /** 日志目录路径 */
+  logDir?: string;
+}
+
+/**
  * 插件配置
  */
 export interface PluginConfig {
   name: string;
   enabled: boolean;
   options?: Record<string, unknown>;
+}
+
+/**
+ * API 认证配置
+ * @description OpenAI 兼容接口的认证配置
+ */
+export interface ApiAuthConfig {
+  /** 是否启用认证 */
+  enabled: boolean;
+  /** 认证类型 */
+  type?: "bearer" | "api-key";
+  /** 访问令牌列表 */
+  tokens?: string[];
 }
 
 /**
@@ -244,6 +286,8 @@ export interface AppConfig {
       /** IP 白名单 */
       ipWhitelist?: string[];
     };
+    /** API 认证配置 */
+    apiAuth?: ApiAuthConfig;
   };
   providers: ProviderConfig[];
   models: ModelConfig[];
@@ -251,6 +295,8 @@ export interface AppConfig {
   keys: KeyConfig[];
   tools: ToolsConfig;
   cache: CacheConfig;
+  /** 日志配置 */
+  log?: LogConfig;
   /** 插件配置 */
   plugins?: PluginConfig[];
   /** 扩展配置 */
@@ -483,6 +529,15 @@ export const getExchangeRate = (base?: string, target?: string) =>
   });
 
 /**
+ * 手动设置汇率
+ * @param base 基础货币
+ * @param target 目标货币
+ * @param rate 汇率
+ */
+export const setExchangeRate = (base: string, target: string, rate: number) =>
+  api.post<ExchangeRateData>("/exchange-rate", { base, target, rate });
+
+/**
  * 强制刷新汇率
  */
 export const refreshExchangeRate = () =>
@@ -700,9 +755,47 @@ export interface JsToolValidation {
   issues: string[];
 }
 
-export const getJsTools = () => api.get<JsTool[]>("/js-tools");
+/**
+ * 文件工具定义
+ */
+export interface FileJsTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  code: string;
+  category?: string;
+  tags?: string[];
+  allowNetwork?: boolean;
+  allowedDomains?: string[];
+  filePath: string;
+  loadedAt: number;
+}
 
-export const getJsTool = (id: string) => api.get<JsTool>(`/js-tools/${id}`);
+/**
+ * 统一工具列表响应
+ */
+export interface JsToolListResponse {
+  dbTools: Array<JsTool & { source: "database" }>;
+  fileTools: Array<FileJsTool & { source: "file" }>;
+}
+
+/**
+ * 文件工具创建请求
+ */
+export interface CreateFileToolRequest {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  code: string;
+  category?: string;
+  tags?: string[];
+  allowNetwork?: boolean;
+  allowedDomains?: string[];
+}
+
+export const getJsTools = () => api.get<JsToolListResponse>("/js-tools");
+
+export const getJsTool = (id: string) => api.get<JsTool | FileJsTool>(`/js-tools/${id}`);
 
 export const createJsTool = (data: CreateJsToolRequest) => api.post<JsTool>("/js-tools", data);
 
@@ -716,3 +809,36 @@ export const testJsTool = (id: string, args: Record<string, unknown>) =>
 
 export const validateJsCode = (code: string) =>
   api.post<JsToolValidation>("/js-tools/validate", { code });
+
+// ============================================================
+// 文件工具 API
+// ============================================================
+
+export const getFileTools = () => api.get<Array<FileJsTool & { source: "file" }>>("/file-tools");
+
+export const createFileTool = (data: CreateFileToolRequest) =>
+  api.post<FileJsTool>("/file-tools", data);
+
+export const deleteFileTool = (name: string) =>
+  api.delete<{ status: string }>(`/file-tools/${encodeURIComponent(name)}`);
+
+export const reloadFileTools = () =>
+  api.post<{ status: string; count: number }>("/file-tools/reload");
+
+// ============================================================
+// JS 工具示例 API
+// ============================================================
+
+export interface JsToolExample {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  code: string;
+  category: string;
+  tags: string[];
+}
+
+export const getJsToolExamples = () => api.get<JsToolExample[]>("/js-tools/examples");
+
+export const importJsToolExample = (name: string) =>
+  api.post<JsTool>("/js-tools/import", { name });

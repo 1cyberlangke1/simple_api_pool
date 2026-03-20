@@ -393,7 +393,7 @@ defineExpose({
 
 <style scoped>
 .settings-card {
-  max-height: 400px;
+  max-height: min(420px, calc(100vh - 220px));
   display: flex;
   flex-direction: column;
 }
@@ -494,6 +494,12 @@ defineExpose({
 
 :deep(.el-collapse-item__header) {
   font-weight: 500;
+}
+
+@media (max-width: 1024px) {
+  .settings-card {
+    max-height: none;
+  }
 }
 
 /* 移动端响应式 */
