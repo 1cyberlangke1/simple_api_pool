@@ -61,11 +61,18 @@ export function getGroupFeatures(groupId: string | null, runtime: { config: AppC
 /**
  * 解析分组 ID
  * @description 从请求的分组 ID 中提取实际分组名和是否请求缓存
- * @param groupId 请求的分组 ID（可能包含 -cache 后缀）
+ * @param groupId 请求的分组 ID（格式：group/{name} 或 group/{name}-cache）
  * @returns 解析结果
  */
 export function parseGroupId(groupId: string): { name: string; wantsCache: boolean } {
-  const wantsCache = groupId.endsWith("-cache");
-  const name = wantsCache ? groupId.slice(0, -6) : groupId;
+  // 去掉 group/ 前缀（如果存在）
+  let name = groupId.startsWith("group/") ? groupId.slice(6) : groupId;
+  
+  // 检查是否请求缓存版本
+  const wantsCache = name.endsWith("-cache");
+  if (wantsCache) {
+    name = name.slice(0, -6);
+  }
+  
   return { name, wantsCache };
 }

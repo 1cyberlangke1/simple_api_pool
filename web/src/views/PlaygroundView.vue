@@ -36,6 +36,15 @@
               <el-icon><Delete /></el-icon>
               <span class="btn-text">清空对话</span>
             </el-button>
+            <!-- 移动端调试信息按钮 -->
+            <el-button
+              v-if="isMobile && (lastRequestBody || lastResponse)"
+              class="mobile-debug-btn"
+              @click="showMobileDebug = true"
+            >
+              <el-icon><Document /></el-icon>
+              <span class="btn-text">调试</span>
+            </el-button>
             <!-- 移动端设置按钮 -->
             <el-button class="mobile-settings-btn" @click="showMobileSettings = true">
               <el-icon><Setting /></el-icon>
@@ -102,7 +111,16 @@
         :available-tools="availableTools"
         @update:messages="messages = $event"
       />
+    </el-drawer>
 
+    <!-- 移动端调试信息抽屉 -->
+    <el-drawer
+      v-model="showMobileDebug"
+      direction="rtl"
+      :size="360"
+      title="调试信息"
+      class="mobile-debug-drawer"
+    >
       <!-- 请求体 JSON -->
       <el-card v-if="lastRequestBody" class="json-card">
         <template #header>
@@ -124,6 +142,8 @@
         </template>
         <pre class="json-content">{{ lastResponse }}</pre>
       </el-card>
+
+      <el-empty v-if="!lastRequestBody && !lastResponse" description="暂无调试信息" />
     </el-drawer>
   </div>
 </template>
@@ -134,8 +154,8 @@
  * @description 提供对话测试界面，支持多轮对话和工具调用
  * @behavior 桌面端显示右侧设置面板，移动端使用抽屉式设置
  */
-import { ref, onMounted, onActivated } from "vue";
-import { Delete, Warning, Refresh, Setting } from "@element-plus/icons-vue";
+import { ref, onMounted, onActivated, computed } from "vue";
+import { Delete, Warning, Refresh, Setting, Document } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { getTools, type ToolInfo } from "@/api/types";
 import { sendChatRequest, sendChatStreamRequest, getModels, type ModelInfo } from "@/api/index";
@@ -158,6 +178,12 @@ const mobileSettingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(nul
 
 /** 移动端设置抽屉显示状态 */
 const showMobileSettings = ref(false);
+
+/** 移动端调试信息抽屉显示状态 */
+const showMobileDebug = ref(false);
+
+/** 是否为移动端 */
+const isMobile = computed(() => window.innerWidth < 768);
 
 onMounted(() => {
   fetchModels();
@@ -187,7 +213,7 @@ async function fetchModels() {
 async function fetchTools() {
   try {
     const { data } = await getTools();
-    availableTools.value = data;
+    availableTools.value = data.tools;
   } catch {
     // 错误已在拦截器中处理
   }
@@ -546,6 +572,11 @@ function copyResponse() {
   display: none;
 }
 
+/* 移动端调试按钮默认隐藏 */
+.mobile-debug-btn {
+  display: none;
+}
+
 /* ============================================================
    响应式媒体查询
    ============================================================ */
@@ -582,6 +613,11 @@ function copyResponse() {
 
   /* 显示移动端设置按钮 */
   .mobile-settings-btn {
+    display: inline-flex;
+  }
+
+  /* 显示移动端调试按钮 */
+  .mobile-debug-btn {
     display: inline-flex;
   }
 
@@ -630,13 +666,20 @@ function copyResponse() {
   padding: 16px;
 }
 
-.mobile-settings-drawer .json-card {
-  margin-top: 16px;
+/* 移动端调试抽屉样式 */
+.mobile-debug-drawer :deep(.el-drawer__body) {
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+  padding: 16px;
 }
 
-.mobile-settings-drawer .json-content {
+.mobile-debug-drawer .json-card {
+  margin-bottom: 16px;
+}
+
+.mobile-debug-drawer .json-content {
   font-size: 11px;
-  max-height: 200px;
+  max-height: 300px;
   overflow: auto;
 }
 </style>

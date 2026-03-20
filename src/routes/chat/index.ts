@@ -116,6 +116,14 @@ export async function chatCompletionHandler(
     return reply.status(429).send({ error: "no available key" });
   }
 
+  // 发射 Key 选择事件（用于 SSE 实时更新）
+  runtime.eventEmitter.emit("request:key:select", {
+    alias: keyState.alias,
+    provider: provider.name,
+    model: modelConfig.model,
+    group: parsedGroupId?.name,
+  });
+
   // ============================================================
   // 4. 消息预处理
   // ============================================================
@@ -198,21 +206,36 @@ export async function chatCompletionHandler(
     const cached = runtime.cacheStore.get(cacheKey);
 
     if (cached) {
+      // 缓存数据格式：{ response: OpenAIResponse, cachedTokens: number }
+      const cachedResponse = cached.response as OpenAIResponse;
+      const cachedTokens = (cached.cachedTokens as number) ?? 0;
+
+      // 发射缓存命中事件
+      runtime.eventEmitter.emit("request:cache:hit", {
+        model: requestedModelId,
+        provider: provider.name,
+        group: parsedGroupId?.name,
+        cachedTokens,
+      });
+
       // 缓存命中日志
       log.info({
         requestId: randomUUID(),
         model: requestedModelId,
         group: parsedGroupId?.name,
         cached: true,
+        cachedTokens,
       }, "Cache hit, returning cached response");
-      
+
       if (parsedGroupId) {
         runtime.statsStore.recordCall(parsedGroupId.name, true);
       }
+
+      // 统一格式：根据请求类型返回
       if (body.stream) {
-        return sendStreamingResponse(reply, cached as unknown as OpenAIResponse, modelConfig.model);
+        return sendStreamingResponse(reply, cachedResponse, modelConfig.model);
       }
-      return reply.send(cached);
+      return reply.send(cachedResponse);
     }
   }
 
@@ -229,6 +252,21 @@ export async function chatCompletionHandler(
     startTime: Date.now(),
     data: new Map(),
   };
+
+  // 发射请求开始事件
+  runtime.eventEmitter.emit("request:start", {
+    requestId: requestContext.requestId,
+    model: requestedModelId,
+    provider: provider.name,
+    group: parsedGroupId?.name,
+  });
+
+  // 缓存未命中事件（cacheEnabled 和 cacheKey 在上面已检查）
+  runtime.eventEmitter.emit("request:cache:miss", {
+    model: requestedModelId,
+    provider: provider.name,
+    group: parsedGroupId?.name,
+  });
 
   // 记录请求日志
   log.info({
@@ -248,14 +286,35 @@ export async function chatCompletionHandler(
   await runtime.executeBeforeRequestHooks(requestContext);
 
   try {
-    // 流式转发：直接转发上游流式响应
+    // 流式转发：转发上游流式响应并收集完整响应
     if (shouldRequestStream && shouldRespondStream) {
       const stream = callChatCompletionStream(provider, keyState.key, finalBody);
-      const success = await forwardStreamResponse(reply, stream);
+      const result = await forwardStreamResponse(reply, stream, modelConfig.model);
+      
       // 在流式响应完成后记录统计
       if (parsedGroupId) {
-        runtime.statsStore.recordCall(parsedGroupId.name, success);
+        runtime.statsStore.recordCall(parsedGroupId.name, result.success);
       }
+      
+      // 缓存完整响应（统一格式）
+      if (result.success && result.response && cacheEnabled && cacheKey && runtime.cacheStore) {
+        const responseContent = result.response.choices?.[0]?.message?.content ?? "";
+        const cachedTokens = estimateTokensFromString(responseContent, modelConfig.model);
+        runtime.cacheStore.set(cacheKey, {
+          response: result.response,
+          cachedTokens,
+        } as unknown as Record<string, unknown>);
+      }
+      
+      // 发射请求完成事件
+      runtime.eventEmitter.emit("request:complete", {
+        requestId: requestContext.requestId,
+        model: requestedModelId,
+        provider: provider.name,
+        group: parsedGroupId?.name,
+        success: result.success,
+        stream: true,
+      });
       return;
     }
 
@@ -342,15 +401,30 @@ export async function chatCompletionHandler(
       runtime.keyStore.applyCost(keyState.alias, 0);
     }
 
-    // 缓存结果
+    // 缓存结果（统一格式，包含 token 数量）
     if (cacheEnabled && cacheKey && runtime.cacheStore) {
-      runtime.cacheStore.set(cacheKey, result as unknown as Record<string, unknown>);
+      const cachedTokens = estimateTokensFromString(responseContent, modelConfig.model);
+      runtime.cacheStore.set(cacheKey, {
+        response: result,
+        cachedTokens,
+      } as unknown as Record<string, unknown>);
     }
 
     // 记录统计
     if (parsedGroupId) {
       runtime.statsStore.recordCall(parsedGroupId.name, true);
     }
+
+    // 发射请求完成事件
+    runtime.eventEmitter.emit("request:complete", {
+      requestId: requestContext.requestId,
+      model: requestedModelId,
+      provider: provider.name,
+      group: parsedGroupId?.name,
+      success: true,
+      stream: shouldRespondStream,
+      usage,
+    });
 
     // 执行 afterRequest 钩子
     await runtime.executeAfterRequestHooks(requestContext, result);
@@ -382,6 +456,15 @@ export async function chatCompletionHandler(
     if (parsedGroupId) {
       runtime.statsStore.recordCall(parsedGroupId.name, false);
     }
+
+    // 发射请求错误事件
+    runtime.eventEmitter.emit("request:error", {
+      requestId: requestContext.requestId,
+      model: requestedModelId,
+      provider: provider.name,
+      group: parsedGroupId?.name,
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     // 记录错误日志
     const duration = Date.now() - requestContext.startTime;

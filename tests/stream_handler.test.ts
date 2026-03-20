@@ -244,7 +244,7 @@ describe("stream_handler", () => {
         };
       }
 
-      await forwardStreamResponse(reply as any, mockStream());
+      await forwardStreamResponse(reply as any, mockStream(), "gpt-4");
 
       expect(reply.writes).toHaveLength(4); // 3 chunks + [DONE]
       expect(reply.writes[reply.writes.length - 1]).toBe("data: [DONE]\n\n");
@@ -258,7 +258,7 @@ describe("stream_handler", () => {
         // no chunks
       }
 
-      await forwardStreamResponse(reply as any, emptyStream());
+      await forwardStreamResponse(reply as any, emptyStream(), "gpt-4");
 
       expect(reply.writes).toHaveLength(1); // only [DONE]
       expect(reply.writes[0]).toBe("data: [DONE]\n\n");
@@ -292,7 +292,7 @@ describe("stream_handler", () => {
         };
       }
 
-      await forwardStreamResponse(reply as any, mockStream());
+      await forwardStreamResponse(reply as any, mockStream(), "gpt-4");
 
       const toolCallWrite = reply.writes.find((w) => w.includes("tool_calls"));
       expect(toolCallWrite).toBeDefined();
@@ -312,7 +312,7 @@ describe("stream_handler", () => {
         };
       }
 
-      await forwardStreamResponse(reply as any, mockStream());
+      await forwardStreamResponse(reply as any, mockStream(), "gpt-4");
 
       const usageWrite = reply.writes.find((w) => w.includes("total_tokens"));
       expect(usageWrite).toBeDefined();

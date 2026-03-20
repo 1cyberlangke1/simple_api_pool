@@ -10,9 +10,8 @@ import { logger } from "./core/logger.js";
 import { validateConfig } from "./core/config_schema.js";
 
 // Load config from JSON file
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const configPath = path.resolve(__dirname, "..", "config", "setting.json");
+// 使用 process.cwd() 确保编译后也能正确找到配置文件
+const configPath = path.resolve(process.cwd(), "config", "setting.json");
 
 // 检查配置文件是否存在
 if (!existsSync(configPath)) {
