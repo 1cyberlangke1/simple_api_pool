@@ -15,6 +15,8 @@ export interface KeyConfig {
   key: string;
   model?: string;
   quota: QuotaConfig;
+  /** 扩展元数据 */
+  metadata?: Record<string, unknown>;
 }
 
 export interface KeyState extends KeyConfig {
@@ -44,6 +46,8 @@ export interface ProviderConfig {
   streamMode?: StreamMode;
   /** 每日配额重置时间（格式 HH:MM） */
   resetTime?: string;
+  /** 扩展配置 */
+  extensions?: Record<string, unknown>;
 }
 
 export interface PricingConfig {
@@ -59,6 +63,8 @@ export interface ModelConfig {
   extraBody?: Record<string, unknown>;
   pricing?: PricingConfig;
   supportsTools?: boolean;
+  /** 扩展元数据 */
+  metadata?: Record<string, unknown>;
 }
 
 export interface GroupRouteConfig {
@@ -214,14 +220,29 @@ export interface CacheConfig {
 }
 
 /**
+ * 插件配置
+ */
+export interface PluginConfig {
+  name: string;
+  enabled: boolean;
+  options?: Record<string, unknown>;
+}
+
+/**
  * 应用配置
  */
 export interface AppConfig {
   server: {
     host: string;
     port: number;
+    /** 请求体大小限制（字节） */
+    bodyLimit?: number;
+    /** 关闭超时时间（毫秒） */
+    shutdownTimeout?: number;
     admin: {
       adminToken: string;
+      /** IP 白名单 */
+      ipWhitelist?: string[];
     };
   };
   providers: ProviderConfig[];
@@ -230,6 +251,10 @@ export interface AppConfig {
   keys: KeyConfig[];
   tools: ToolsConfig;
   cache: CacheConfig;
+  /** 插件配置 */
+  plugins?: PluginConfig[];
+  /** 扩展配置 */
+  extensions?: Record<string, unknown>;
 }
 
 // ============================================================
@@ -276,7 +301,13 @@ export const updateProvider = (name: string, provider: ProviderConfig) =>
   api.put<{ status: string }>(`/providers/${encodeURIComponent(name)}`, provider);
 
 export const deleteProvider = (name: string) =>
-  api.delete<{ status: string; deletedModels?: number; deletedKeys?: number }>(`/providers/${encodeURIComponent(name)}`);
+  api.delete<{
+    status: string;
+    deletedModels?: number;
+    deletedKeys?: number;
+    deletedGroupRoutes?: number;
+    deletedGroups?: number;
+  }>(`/providers/${encodeURIComponent(name)}`);
 
 export const getUpstreamModels = (providerName: string) =>
   api.get<{ models: Array<{ id: string; owned_by?: string }> }>(`/providers/${encodeURIComponent(providerName)}/upstream-models`);
@@ -289,7 +320,11 @@ export const updateModel = (provider: string, name: string, model: ModelConfig) 
   api.put<{ status: string }>(`/models/${encodeURIComponent(provider)}/${encodeURIComponent(name)}`, model);
 
 export const deleteModel = (provider: string, name: string) =>
-  api.delete<{ status: string }>(`/models/${encodeURIComponent(provider)}/${encodeURIComponent(name)}`);
+  api.delete<{
+    status: string;
+    deletedGroupRoutes?: number;
+    deletedGroups?: number;
+  }>(`/models/${encodeURIComponent(provider)}/${encodeURIComponent(name)}`);
 
 // ============================================================
 // 模型能力查询 API
@@ -335,13 +370,42 @@ export const deleteGroup = (name: string) =>
 export interface ToolInfo {
   name: string;
   description?: string;
-  inputSchema?: Record<string, unknown>;
+  parameters?: Record<string, unknown>;
+}
+
+/**
+ * 工具列表响应
+ */
+export interface ToolsListResponse {
+  tools: ToolInfo[];
+  count: number;
+}
+
+/**
+ * 工具调用结果
+ */
+export interface ToolCallResult {
+  success: boolean;
+  result?: unknown;
+  error?: string;
 }
 
 /**
  * 获取已加载的工具列表
  */
-export const getTools = () => api.get<ToolInfo[]>("/tools");
+export const getTools = () => api.get<ToolsListResponse>("/tools");
+
+/**
+ * 获取单个工具详情
+ */
+export const getTool = (name: string) =>
+  api.get<ToolInfo>(`/tools/${encodeURIComponent(name)}`);
+
+/**
+ * 调用工具（测试用）
+ */
+export const callTool = (name: string, args?: unknown) =>
+  api.post<ToolCallResult>(`/tools/${encodeURIComponent(name)}/call`, { args });
 
 // ============================================================
 // 模型价格查询 API
@@ -582,6 +646,17 @@ export const getLogList = () => api.get<LogListResponse>("/logs");
 
 export const getLogContent = (date: string, level?: string, limit?: number) =>
   api.get<LogContentRawResponse>("/logs/content", { params: { date, level, limit } });
+
+/**
+ * 日志配置响应
+ */
+export interface LogConfigResponse {
+  enabled: boolean;
+  totalFiles: number;
+  totalSize: number;
+}
+
+export const getLogConfig = () => api.get<LogConfigResponse>("/logs/config");
 
 // ============================================================
 // JS 工具 API

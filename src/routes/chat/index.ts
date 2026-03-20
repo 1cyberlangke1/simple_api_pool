@@ -250,11 +250,13 @@ export async function chatCompletionHandler(
   try {
     // 流式转发：直接转发上游流式响应
     if (shouldRequestStream && shouldRespondStream) {
-      if (parsedGroupId) {
-        runtime.statsStore.recordCall(parsedGroupId.name, true);
-      }
       const stream = callChatCompletionStream(provider, keyState.key, finalBody);
-      return forwardStreamResponse(reply, stream);
+      const success = await forwardStreamResponse(reply, stream);
+      // 在流式响应完成后记录统计
+      if (parsedGroupId) {
+        runtime.statsStore.recordCall(parsedGroupId.name, success);
+      }
+      return;
     }
 
     // 非流式请求
@@ -376,6 +378,11 @@ export async function chatCompletionHandler(
 
     return reply.send(result);
   } catch (err) {
+    // 记录失败统计
+    if (parsedGroupId) {
+      runtime.statsStore.recordCall(parsedGroupId.name, false);
+    }
+
     // 记录错误日志
     const duration = Date.now() - requestContext.startTime;
     const errorMessage = err instanceof Error ? err.message : String(err);
