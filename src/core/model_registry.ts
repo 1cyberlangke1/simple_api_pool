@@ -123,7 +123,7 @@ export class ModelRegistry {
 
   /**
    * 从分组中选择路由
-   * @param groupId 分组 ID（支持 -cache 后缀）
+   * @param groupId 分组 ID（支持 -cache 后缀，支持 group/ 前缀或纯分组名）
    * @returns 分组路由配置，根据策略选择
    */
   pickGroupRoute(groupId: string): GroupRouteConfig | null {
@@ -133,7 +133,12 @@ export class ModelRegistry {
       actualGroupId = groupId.slice(0, -6);
     }
     
-    const group = this.groups.get(actualGroupId);
+    // 处理 group/ 前缀（如果没有则添加）
+    const groupKey = actualGroupId.startsWith("group/") 
+      ? actualGroupId 
+      : `group/${actualGroupId}`;
+    
+    const group = this.groups.get(groupKey);
     if (!group || group.routes.length === 0) return null;
     const strategy = group.strategy ?? "round_robin";
 
@@ -142,7 +147,7 @@ export class ModelRegistry {
     }
 
     if (strategy === "exhaust") {
-      return this.pickExhaustRoute(actualGroupId, group.routes);
+      return this.pickExhaustRoute(groupKey, group.routes);
     }
 
     if (strategy === "weighted") {
@@ -150,7 +155,7 @@ export class ModelRegistry {
     }
 
     // round_robin (default)
-    return this.pickRoundRobinRoute(actualGroupId, group.routes);
+    return this.pickRoundRobinRoute(groupKey, group.routes);
   }
 
   /**
@@ -164,12 +169,12 @@ export class ModelRegistry {
   /**
    * 耗尽策略选择路由
    */
-  private pickExhaustRoute(groupId: string, routes: GroupRouteConfig[]): GroupRouteConfig | null {
-    const active = this.groupActive.get(groupId);
+  private pickExhaustRoute(groupKey: string, routes: GroupRouteConfig[]): GroupRouteConfig | null {
+    const active = this.groupActive.get(groupKey);
     if (active) return active;
     const first = routes[0];
     if (first) {
-      this.groupActive.set(groupId, first);
+      this.groupActive.set(groupKey, first);
     }
     return first ?? null;
   }
@@ -210,10 +215,10 @@ export class ModelRegistry {
   /**
    * 轮询选择路由
    */
-  private pickRoundRobinRoute(groupId: string, routes: GroupRouteConfig[]): GroupRouteConfig | null {
-    const idx = this.groupIndex.get(groupId) ?? 0;
+  private pickRoundRobinRoute(groupKey: string, routes: GroupRouteConfig[]): GroupRouteConfig | null {
+    const idx = this.groupIndex.get(groupKey) ?? 0;
     const route = routes[idx % routes.length];
-    this.groupIndex.set(groupId, (idx + 1) % routes.length);
+    this.groupIndex.set(groupKey, (idx + 1) % routes.length);
     return route ?? null;
   }
 
@@ -222,10 +227,12 @@ export class ModelRegistry {
    * @param groupId 分组 ID
    */
   reportRouteFailure(groupId: string): void {
-    const group = this.groups.get(groupId);
+    // 确保 groupKey 格式正确
+    const groupKey = groupId.startsWith("group/") ? groupId : `group/${groupId}`;
+    const group = this.groups.get(groupKey);
     if (!group || group.strategy !== "exhaust") return;
 
-    const current = this.groupActive.get(groupId);
+    const current = this.groupActive.get(groupKey);
     if (!current) return;
 
     // 找到当前路由的索引
@@ -236,7 +243,7 @@ export class ModelRegistry {
     const nextIdx = (currentIdx + 1) % group.routes.length;
     const nextRoute = group.routes[nextIdx];
     if (nextRoute) {
-      this.groupActive.set(groupId, nextRoute);
+      this.groupActive.set(groupKey, nextRoute);
     }
   }
 
@@ -246,8 +253,10 @@ export class ModelRegistry {
    */
   resetRouteState(groupId?: string): void {
     if (groupId) {
-      this.groupIndex.delete(groupId);
-      this.groupActive.delete(groupId);
+      // 确保 groupKey 格式正确
+      const groupKey = groupId.startsWith("group/") ? groupId : `group/${groupId}`;
+      this.groupIndex.delete(groupKey);
+      this.groupActive.delete(groupKey);
     } else {
       this.groupIndex.clear();
       this.groupActive.clear();
