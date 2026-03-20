@@ -99,7 +99,7 @@
         "name": "weather",
         "transport": "stdio",
         "command": "node",
-        "args": ["./tools/mcp/weather_stdio.ts"]
+        "args": ["./tests/mcp/weather_stdio.ts"]
       },
       {
         "type": "mcp",

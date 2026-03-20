@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * 模拟天气 MCP 服务器 (stdio 传输)
+ * 模拟天气 MCP 服务器 (stdio 传输) - 测试用
+ * 
+ * 用途: 用于测试 MCP 协议集成，非生产环境使用
+ * 用户应配置外部 MCP 服务器而非本地编写
+ * 
  * 输入: 通过 stdin 接收 JSON-RPC 请求
  * 输出: 通过 stdout 返回 JSON-RPC 响应
  * 行为: 提供模拟天气查询工具
