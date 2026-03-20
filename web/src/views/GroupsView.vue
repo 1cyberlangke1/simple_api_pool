@@ -254,8 +254,19 @@ async function handleDelete(name: string) {
    响应式媒体查询
    ============================================================ */
 
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .groups-view {
+    gap: 16px;
+  }
+}
+
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
+  .groups-view {
+    gap: 12px;
+  }
+
   .btn-text {
     display: none;
   }
@@ -270,6 +281,25 @@ async function handleDelete(name: string) {
   /* 隐藏桌面端表格 */
   .desktop-table {
     display: none;
+  }
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .groups-view {
+    gap: 8px;
+  }
+
+  .mobile-item {
+    padding: 10px;
+  }
+
+  .mobile-item .route-tag {
+    font-size: 11px;
+  }
+
+  .mobile-item .temp-text {
+    font-size: 10px;
   }
 }
 

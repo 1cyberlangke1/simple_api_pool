@@ -7,6 +7,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { KeyConfig } from "../../core/types.js";
 import { adminAuth } from "./auth.js";
+import { createModuleLogger, type Logger } from "../../core/logger.js";
+
+const log: Logger = createModuleLogger("keys");
 
 /**
  * 注册 Key 管理路由
@@ -52,6 +55,9 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
       // 同步到配置文件
       app.runtime.config.keys = app.runtime.keyStore.listKeys();
       app.onConfigUpdate?.(app.runtime.config);
+      // 发射配置变更事件，通知前端刷新
+      app.runtime.eventEmitter.emit("config:key:changed", { action: "add", alias: request.body.alias, provider: request.body.provider });
+      log.info({ alias: request.body.alias, provider: request.body.provider, quotaType: request.body.quota.type }, "Key added");
       return reply.send({ status: "ok" });
     }
   );
@@ -72,6 +78,11 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
         // 同步到配置文件
         app.runtime.config.keys = app.runtime.keyStore.listKeys();
         app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:key:changed", { action: "update", alias: request.params.alias, provider: request.body.provider });
+        log.info({ alias: request.params.alias, provider: request.body.provider }, "Key updated");
+      } else {
+        log.warn({ alias: request.params.alias }, "Key not found for update");
       }
       return reply.send({ status: ok ? "ok" : "not_found" });
     }
@@ -92,6 +103,11 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
         // 同步到配置文件
         app.runtime.config.keys = app.runtime.keyStore.listKeys();
         app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:key:changed", { action: "delete", alias: request.params.alias });
+        log.info({ alias: request.params.alias }, "Key deleted");
+      } else {
+        log.warn({ alias: request.params.alias }, "Key not found for deletion");
       }
       return reply.send({ status: ok ? "ok" : "not_found" });
     }
@@ -173,10 +189,16 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
       // 同步到配置文件
       app.runtime.config.keys = app.runtime.keyStore.listKeys();
       app.onConfigUpdate?.(app.runtime.config);
+      const successCount = results.filter((r) => r.status === "success").length;
+      // 发射配置变更事件，通知前端刷新
+      if (successCount > 0) {
+        app.runtime.eventEmitter.emit("config:key:changed", { action: "add", count: successCount, provider });
+      }
+      log.info({ provider, total: keyList.length, success: successCount }, "Keys batch imported");
       return reply.send({
         status: "ok",
         total: keyList.length,
-        success: results.filter((r) => r.status === "success").length,
+        success: successCount,
         results,
       });
     }
@@ -208,10 +230,16 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
       // 同步到配置文件
       app.runtime.config.keys = app.runtime.keyStore.listKeys();
       app.onConfigUpdate?.(app.runtime.config);
+      const deletedCount = results.filter((r) => r.status === "success").length;
+      // 发射配置变更事件，通知前端刷新
+      if (deletedCount > 0) {
+        app.runtime.eventEmitter.emit("config:key:changed", { action: "delete", count: deletedCount });
+      }
+      log.info({ total: aliases.length, deleted: deletedCount }, "Keys batch deleted");
       return reply.send({
         status: "ok",
         total: aliases.length,
-        deleted: results.filter((r) => r.status === "success").length,
+        deleted: deletedCount,
         results,
       });
     }

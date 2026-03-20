@@ -170,17 +170,19 @@ watch(stream, (val) => emit("update:streamMode", val));
 
 /**
  * 获取角色标签类型
+ * @param role 消息角色
+ * @returns ElTag type 属性值（undefined 表示默认 primary 样式）
  */
 function getRoleTagType(
   role: string
-): "" | "success" | "warning" | "info" | "danger" {
-  const types: Record<string, "" | "success" | "warning" | "info" | "danger"> = {
+): "success" | "warning" | "info" | "danger" | undefined {
+  const types: Record<string, "success" | "warning" | "info" | "danger" | undefined> = {
     system: "info",
-    user: "",
+    user: undefined, // 使用默认样式
     assistant: "success",
     tool: "warning",
   };
-  return types[role] || "";
+  return types[role];
 }
 
 /**

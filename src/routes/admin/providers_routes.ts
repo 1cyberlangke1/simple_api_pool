@@ -7,6 +7,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { ProviderConfig } from "../../core/types.js";
 import { adminAuth } from "./auth.js";
+import { createModuleLogger, type Logger } from "../../core/logger.js";
+
+const log: Logger = createModuleLogger("providers");
 
 /**
  * 注册提供商管理路由
@@ -40,13 +43,26 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
     async (request: FastifyRequest<{ Body: ProviderConfig }>, reply: FastifyReply) => {
       const existing = app.runtime.config.providers.find((p) => p.name === request.body.name);
       if (existing) {
+        log.warn({ providerName: request.body.name }, "Provider already exists");
         return reply.status(400).send({ error: "provider already exists" });
       }
       app.runtime.config.providers.push(request.body);
-      // 刷新运行时以更新 modelRegistry
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({ status: "ok" });
+      try {
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:provider:changed", { action: "add", name: request.body.name });
+        log.info({ providerName: request.body.name, baseUrl: request.body.baseUrl }, "Provider added");
+        return reply.send({ status: "ok" });
+      } catch (err) {
+        // 回滚：从数组中移除
+        const idx = app.runtime.config.providers.findIndex((p) => p.name === request.body.name);
+        if (idx !== -1) {
+          app.runtime.config.providers.splice(idx, 1);
+        }
+        log.error({ providerName: request.body.name, error: err instanceof Error ? err.message : String(err) }, "Failed to add provider");
+        return reply.status(400).send({ error: err instanceof Error ? err.message : "Validation failed" });
+      }
     }
   );
 
@@ -64,13 +80,24 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
     async (request: FastifyRequest<{ Params: { name: string }; Body: ProviderConfig }>, reply: FastifyReply) => {
       const idx = app.runtime.config.providers.findIndex((p) => p.name === request.params.name);
       if (idx === -1) {
+        log.warn({ providerName: request.params.name }, "Provider not found for update");
         return reply.status(404).send({ error: "provider not found" });
       }
+      const oldConfig = app.runtime.config.providers[idx];
       app.runtime.config.providers[idx] = request.body;
-      // 刷新运行时以更新 modelRegistry
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({ status: "ok" });
+      try {
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:provider:changed", { action: "update", name: request.params.name });
+        log.info({ providerName: request.params.name, baseUrl: request.body.baseUrl }, "Provider updated");
+        return reply.send({ status: "ok" });
+      } catch (err) {
+        // 回滚：恢复旧配置
+        app.runtime.config.providers[idx] = oldConfig;
+        log.error({ providerName: request.params.name, error: err instanceof Error ? err.message : String(err) }, "Failed to update provider");
+        return reply.status(400).send({ error: err instanceof Error ? err.message : "Validation failed" });
+      }
     }
   );
 
@@ -92,6 +119,7 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
       const providerName = request.params.name;
       const idx = app.runtime.config.providers.findIndex((p) => p.name === providerName);
       if (idx === -1) {
+        log.warn({ providerName }, "Provider not found for deletion");
         return reply.status(404).send({ error: "provider not found" });
       }
       // 删除提供商
@@ -116,16 +144,42 @@ export function registerProvidersRoutes(app: FastifyInstance, adminToken: string
       // 删除空的分组（路由全部被清理）
       const deletedGroups = app.runtime.config.groups.filter((g) => g.routes.length === 0).length;
       app.runtime.config.groups = app.runtime.config.groups.filter((g) => g.routes.length > 0);
-      // 刷新运行时以更新 modelRegistry 和 keyStore
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({
-        status: "ok",
-        deletedModels: deletedModelsCount,
-        deletedKeys: keysToDelete.length,
-        deletedGroupRoutes,
-        deletedGroups,
-      });
+      try {
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:provider:changed", { action: "delete", name: providerName });
+        if (deletedModelsCount > 0) {
+          app.runtime.eventEmitter.emit("config:model:changed", { action: "delete", count: deletedModelsCount });
+        }
+        if (keysToDelete.length > 0) {
+          app.runtime.eventEmitter.emit("config:key:changed", { action: "delete", count: keysToDelete.length });
+        }
+        if (deletedGroupRoutes > 0 || deletedGroups > 0) {
+          app.runtime.eventEmitter.emit("config:group:changed", { action: "update", deletedRoutes: deletedGroupRoutes, deletedGroups });
+        }
+        log.info(
+          { providerName, deletedModels: deletedModelsCount, deletedKeys: keysToDelete.length, deletedGroupRoutes, deletedGroups },
+          "Provider deleted"
+        );
+        return reply.send({
+          status: "ok",
+          deletedModels: deletedModelsCount,
+          deletedKeys: keysToDelete.length,
+          deletedGroupRoutes,
+          deletedGroups,
+        });
+      } catch (err) {
+        log.error({ providerName, error: err instanceof Error ? err.message : String(err) }, "Failed to reset after provider deletion");
+        // 即使验证失败，提供商也已从内存删除，返回成功
+        return reply.send({
+          status: "ok",
+          deletedModels: deletedModelsCount,
+          deletedKeys: keysToDelete.length,
+          deletedGroupRoutes,
+          deletedGroups,
+        });
+      }
     }
   );
 

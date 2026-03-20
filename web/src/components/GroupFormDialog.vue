@@ -80,14 +80,16 @@
                 :value="m"
               />
             </el-select>
-            <el-tooltip content="温度越高，回答越有创意；越低越稳定" placement="top">
+            <el-tooltip content="留空则透传下游温度；温度越高回答越有创意，越低越稳定" placement="top">
               <el-input-number
                 v-model="route.temperature"
                 :min="0"
                 :max="2"
                 :step="0.1"
-                placeholder="温度"
-                style="width: 120px"
+                :precision="1"
+                placeholder="透传"
+                :controls="false"
+                style="width: 100px"
               />
             </el-tooltip>
             <el-input-number
@@ -244,7 +246,7 @@ import {
 
 interface RouteForm {
   modelId: string;
-  temperature: number;
+  temperature?: number;
   weight?: number;
 }
 
@@ -318,7 +320,7 @@ function loadGroupData(group: GroupConfig) {
     strategy: group.strategy || "round_robin",
     routes: group.routes.map((r) => ({
       modelId: r.modelId,
-      temperature: r.temperature ?? 0.7,
+      temperature: r.temperature,
       weight: r.weight,
     })),
     features: {
@@ -344,7 +346,7 @@ function resetForm() {
   Object.assign(form, {
     name: "",
     strategy: "round_robin",
-    routes: [{ modelId: "", temperature: 0.7 }],
+    routes: [{ modelId: "" }],
     features: { tools: [], toolRoutingStrategy: undefined },
   });
 
@@ -360,7 +362,7 @@ function resetForm() {
 }
 
 function addRoute() {
-  form.routes.push({ modelId: "", temperature: 0.7 });
+  form.routes.push({ modelId: "" });
 }
 
 function removeRoute(idx: number) {
@@ -384,7 +386,7 @@ async function handleSubmit() {
       strategy: form.strategy,
       routes: validRoutes.map((r) => ({
         modelId: r.modelId,
-        temperature: r.temperature,
+        ...(r.temperature !== undefined ? { temperature: r.temperature } : {}),
         ...(r.weight !== undefined && r.weight > 0 ? { weight: r.weight } : {}),
       })),
       ...(Object.keys(features).length > 0 ? { features } : {}),

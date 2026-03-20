@@ -392,6 +392,18 @@ defineExpose({
 </script>
 
 <style scoped>
+.settings-card {
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-card :deep(.el-card__body) {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
 .card-header {
   display: flex;
   align-items: center;

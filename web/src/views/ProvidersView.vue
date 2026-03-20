@@ -167,15 +167,20 @@ function getStreamModeLabel(mode?: StreamMode): string {
   return labels[mode || "none"] || "默认";
 }
 
+/**
+ * 获取流式模式标签类型
+ * @param mode 流式模式
+ * @returns ElTag type 属性值
+ */
 function getStreamModeTagType(
   mode?: StreamMode
-): "" | "success" | "warning" | "info" {
-  const types: Record<StreamMode, "" | "success" | "warning" | "info"> = {
-    none: "",
+): "success" | "warning" | "info" | undefined {
+  const types: Record<StreamMode, "success" | "warning" | "info" | undefined> = {
+    none: undefined,
     fake_stream: "warning",
     fake_non_stream: "success",
   };
-  return types[mode || "none"] || "";
+  return types[mode || "none"];
 }
 </script>
 
@@ -201,8 +206,19 @@ function getStreamModeTagType(
    响应式媒体查询
    ============================================================ */
 
+/* 平板端 (< 1024px) */
+@media (max-width: 1024px) {
+  .providers-view {
+    gap: 16px;
+  }
+}
+
 /* 移动端 (< 768px) */
 @media (max-width: 768px) {
+  .providers-view {
+    gap: 12px;
+  }
+
   .btn-text {
     display: none;
   }
@@ -217,6 +233,25 @@ function getStreamModeTagType(
   /* 隐藏桌面端表格 */
   .desktop-table {
     display: none;
+  }
+}
+
+/* 小屏手机 (< 480px) */
+@media (max-width: 480px) {
+  .providers-view {
+    gap: 8px;
+  }
+
+  .mobile-item {
+    padding: 10px;
+  }
+
+  .mobile-item .item-name {
+    font-size: 13px;
+  }
+
+  .mobile-item .item-url {
+    font-size: 11px;
   }
 }
 

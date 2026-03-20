@@ -98,6 +98,21 @@ export async function sendStreamingResponse(reply: FastifyReply, result: OpenAIR
       choices: [{ delta: {}, index: 0, finish_reason: result.choices?.[0]?.finish_reason ?? "stop" }],
     })}\n\n`
   );
+
+  // 发送 usage（如果有，包含 cached_tokens）
+  if (result.usage) {
+    reply.raw.write(
+      `data: ${JSON.stringify({
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model: modelName,
+        choices: [],
+        usage: result.usage,
+      })}\n\n`
+    );
+  }
+
   reply.raw.write("data: [DONE]\n\n");
 
   reply.raw.end();

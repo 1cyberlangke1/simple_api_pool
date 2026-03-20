@@ -23,6 +23,18 @@ export type RequestEvent =
   | "request:complete"
   | "request:error";
 
+/**
+ * 配置变更事件类型
+ * @description 当 providers/models/keys/groups 配置发生变更时触发
+ */
+export type ConfigEvent =
+  | "config:provider:changed"
+  | "config:model:changed"
+  | "config:key:changed"
+  | "config:group:changed";
+
+export type AppEvent = RequestEvent | ConfigEvent;
+
 export type EventHandler<T = unknown> = (event: T) => void | Promise<void>;
 
 // ============================================================
@@ -86,10 +98,10 @@ export interface ToolCallEvent {
 
 /**
  * 事件发射器接口
- * @description 用于订阅和发布请求生命周期事件
+ * @description 用于订阅和发布请求生命周期事件及配置变更事件
  */
 export interface IEventEmitter {
-  on<E extends RequestEvent>(event: E, handler: EventHandler): void;
-  off<E extends RequestEvent>(event: E, handler: EventHandler): void;
-  emit<E extends RequestEvent>(event: E, data: unknown): Promise<void>;
+  on<E extends AppEvent>(event: E, handler: EventHandler): void;
+  off<E extends AppEvent>(event: E, handler: EventHandler): void;
+  emit<E extends AppEvent>(event: E, data: unknown): Promise<void>;
 }

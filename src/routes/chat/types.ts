@@ -29,6 +29,8 @@ export interface UsageInfo {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** 缓存命中时的 token 数（扩展字段） */
+  cached_tokens?: number;
 }
 
 /**

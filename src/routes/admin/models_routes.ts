@@ -8,6 +8,9 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { ModelConfig } from "../../core/types.js";
 import { adminAuth } from "./auth.js";
 import { modelPricingService } from "../../core/model_pricing.js";
+import { createModuleLogger, type Logger } from "../../core/logger.js";
+
+const log: Logger = createModuleLogger("models");
 
 /**
  * 注册模型管理路由
@@ -43,13 +46,28 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         (m) => m.name === request.body.name && m.provider === request.body.provider
       );
       if (existing) {
+        log.warn({ modelName: request.body.name, provider: request.body.provider }, "Model already exists");
         return reply.status(400).send({ error: "model already exists" });
       }
       app.runtime.config.models.push(request.body);
-      // 刷新运行时以更新 modelRegistry
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({ status: "ok" });
+      try {
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:model:changed", { action: "add", name: request.body.name, provider: request.body.provider });
+        log.info({ modelName: request.body.name, provider: request.body.provider, model: request.body.model }, "Model added");
+        return reply.send({ status: "ok" });
+      } catch (err) {
+        // 回滚：从数组中移除
+        const idx = app.runtime.config.models.findIndex(
+          (m) => m.name === request.body.name && m.provider === request.body.provider
+        );
+        if (idx !== -1) {
+          app.runtime.config.models.splice(idx, 1);
+        }
+        log.error({ modelName: request.body.name, provider: request.body.provider, error: err instanceof Error ? err.message : String(err) }, "Failed to add model");
+        return reply.status(400).send({ error: err instanceof Error ? err.message : "Validation failed" });
+      }
     }
   );
 
@@ -73,13 +91,24 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         (m) => m.name === request.params.name && m.provider === request.params.provider
       );
       if (idx === -1) {
+        log.warn({ modelName: request.params.name, provider: request.params.provider }, "Model not found for update");
         return reply.status(404).send({ error: "model not found" });
       }
+      const oldModel = app.runtime.config.models[idx];
       app.runtime.config.models[idx] = request.body;
-      // 刷新运行时以更新 modelRegistry
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
-      return reply.send({ status: "ok" });
+      try {
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:model:changed", { action: "update", name: request.params.name, provider: request.params.provider });
+        log.info({ modelName: request.params.name, provider: request.params.provider, newModel: request.body.model }, "Model updated");
+        return reply.send({ status: "ok" });
+      } catch (err) {
+        // 回滚：恢复旧配置
+        app.runtime.config.models[idx] = oldModel;
+        log.error({ modelName: request.params.name, provider: request.params.provider, error: err instanceof Error ? err.message : String(err) }, "Failed to update model");
+        return reply.status(400).send({ error: err instanceof Error ? err.message : "Validation failed" });
+      }
     }
   );
 
@@ -90,6 +119,7 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
    * @param name 模型名称
    * @returns 操作状态
    * @throws 404 如果模型不存在
+   * @throws 400 如果是最后一个模型
    * @behavior 同时清理分组中引用该模型的路由
    */
   app.delete<{ Params: { provider: string; name: string } }>(
@@ -104,9 +134,19 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         (m) => m.name === request.params.name && m.provider === request.params.provider
       );
       if (idx === -1) {
+        log.warn({ modelId }, "Model not found for deletion");
         return reply.status(404).send({ error: "model not found" });
       }
+      
+      // 检查是否为最后一个模型
+      if (app.runtime.config.models.length === 1) {
+        log.warn({ modelId }, "Cannot delete the last model");
+        return reply.status(400).send({ error: "Cannot delete the last model" });
+      }
+
+      // 先删除模型
       app.runtime.config.models.splice(idx, 1);
+      
       // 清理分组中引用该模型的路由
       let deletedGroupRoutes = 0;
       for (const group of app.runtime.config.groups) {
@@ -114,12 +154,26 @@ export function registerModelsRoutes(app: FastifyInstance, adminToken: string): 
         group.routes = group.routes.filter((r) => r.modelId !== modelId);
         deletedGroupRoutes += originalLength - group.routes.length;
       }
+      
       // 删除空的分组（路由全部被清理）
       const deletedGroups = app.runtime.config.groups.filter((g) => g.routes.length === 0).length;
       app.runtime.config.groups = app.runtime.config.groups.filter((g) => g.routes.length > 0);
-      // 刷新运行时以更新 modelRegistry
-      app.runtime.reset(app.runtime.config);
-      app.onConfigUpdate?.(app.runtime.config);
+
+      try {
+        // 刷新运行时以更新 modelRegistry
+        app.runtime.reset(app.runtime.config);
+        app.onConfigUpdate?.(app.runtime.config);
+        // 发射配置变更事件，通知前端刷新
+        app.runtime.eventEmitter.emit("config:model:changed", { action: "delete", name: request.params.name, provider: request.params.provider });
+        if (deletedGroupRoutes > 0 || deletedGroups > 0) {
+          app.runtime.eventEmitter.emit("config:group:changed", { action: "update", deletedRoutes: deletedGroupRoutes, deletedGroups });
+        }
+        log.info({ modelId, deletedGroupRoutes, deletedGroups }, "Model deleted");
+      } catch (err) {
+        // reset 失败时记录错误但仍然返回成功（模型已从内存中删除）
+        log.error({ modelId, error: err instanceof Error ? err.message : String(err) }, "Failed to reset runtime after model deletion");
+      }
+      
       return reply.send({ status: "ok", deletedGroupRoutes, deletedGroups });
     }
   );

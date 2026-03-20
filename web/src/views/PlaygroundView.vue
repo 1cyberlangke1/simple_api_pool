@@ -38,12 +38,12 @@
             </el-button>
             <!-- 移动端调试信息按钮 -->
             <el-button
-              v-if="isMobile && (lastRequestBody || lastResponse)"
+              v-if="isMobile"
               class="mobile-debug-btn"
               @click="showMobileDebug = true"
             >
               <el-icon><Document /></el-icon>
-              <span class="btn-text">调试</span>
+              <span class="btn-text">请求响应</span>
             </el-button>
             <!-- 移动端设置按钮 -->
             <el-button class="mobile-settings-btn" @click="showMobileSettings = true">
@@ -339,6 +339,8 @@ async function sendStreamRequest(body: Record<string, unknown>) {
   const rawChunks: string[] = [];
   // 收集所有非标准字段
   const extraFields: Record<string, string> = {};
+  // 收集 usage 字段
+  let streamUsage: Record<string, unknown> | undefined;
 
   messages.value.push({ role: "assistant", content: "", extraFields: {} });
 
@@ -357,6 +359,12 @@ async function sendStreamRequest(body: Record<string, unknown>) {
 
         try {
           const parsed = JSON.parse(data);
+          
+          // 收集 usage 字段（缓存命中时会有）
+          if (parsed.usage) {
+            streamUsage = parsed.usage as Record<string, unknown>;
+          }
+          
           const delta = parsed.choices?.[0]?.delta;
           if (delta) {
             let hasUpdate = false;
@@ -402,6 +410,7 @@ async function sendStreamRequest(body: Record<string, unknown>) {
     stream: true,
     content: assistantContent,
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
+    usage: streamUsage,
     rawChunks: rawChunks.length,
     raw: rawChunks.join("\n")
   }, null, 2);
@@ -522,7 +531,7 @@ function copyResponse() {
   width: 220px;
 }
 
-/* 右侧面板 - 关键修复：防止被挤压 */
+/* 右侧面板 - 可滚动，防止被挤压 */
 .side-panel {
   width: 480px;
   flex-shrink: 0; /* 防止被压缩 */
@@ -531,6 +540,12 @@ function copyResponse() {
   gap: 16px;
   overflow-y: auto;
   max-height: calc(100vh - 120px);
+  padding-right: 4px; /* 滚动条空间 */
+}
+
+/* 请求设置面板 */
+.side-panel > :first-child {
+  flex-shrink: 0;
 }
 
 .json-card {
@@ -543,7 +558,7 @@ function copyResponse() {
   background: var(--bg-color);
   border-radius: 8px;
   font-size: 11px;
-  max-height: 250px;
+  max-height: 200px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;

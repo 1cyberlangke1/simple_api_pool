@@ -174,7 +174,6 @@ export async function chatCompletionHandler(
     ...body,
     messages: updatedMessages,
     model: modelConfig.model,
-    temperature: routeTemperature ?? body.temperature,
   };
 
   if (openAiTools && openAiTools.length > 0) {
@@ -186,6 +185,12 @@ export async function chatCompletionHandler(
   const extraBody =
     typeof extraBodyCandidate === "object" && extraBodyCandidate !== null ? extraBodyCandidate : {};
   const finalBody = applyOverrides(baseBody, provider, modelConfig, extraBody as Record<string, unknown>);
+
+  // 温度优先级：分组温度 > 参数覆写 > 下游透传
+  // 分组温度在最后覆盖，确保最高优先级
+  if (routeTemperature !== undefined) {
+    finalBody.temperature = routeTemperature;
+  }
 
   // ============================================================
   // 6. 缓存检查
@@ -206,16 +211,16 @@ export async function chatCompletionHandler(
     const cached = runtime.cacheStore.get(cacheKey);
 
     if (cached) {
-      // 缓存数据格式：{ response: OpenAIResponse, cachedTokens: number }
+      // 缓存数据格式：{ response: OpenAIResponse, usage: UsageInfo }
       const cachedResponse = cached.response as OpenAIResponse;
-      const cachedTokens = (cached.cachedTokens as number) ?? 0;
+      const cachedUsage = cached.usage as UsageInfo | undefined;
 
       // 发射缓存命中事件
       runtime.eventEmitter.emit("request:cache:hit", {
         model: requestedModelId,
         provider: provider.name,
         group: parsedGroupId?.name,
-        cachedTokens,
+        cachedTokens: cachedUsage?.completion_tokens ?? 0,
       });
 
       // 缓存命中日志
@@ -224,11 +229,19 @@ export async function chatCompletionHandler(
         model: requestedModelId,
         group: parsedGroupId?.name,
         cached: true,
-        cachedTokens,
+        cachedTokens: cachedUsage?.completion_tokens ?? 0,
       }, "Cache hit, returning cached response");
 
       if (parsedGroupId) {
         runtime.statsStore.recordCall(parsedGroupId.name, true);
+      }
+
+      // 更新响应体中的 usage，添加 cached_tokens 标识
+      if (cachedUsage) {
+        cachedResponse.usage = {
+          ...cachedUsage,
+          cached_tokens: cachedUsage.completion_tokens,
+        };
       }
 
       // 统一格式：根据请求类型返回
@@ -296,13 +309,33 @@ export async function chatCompletionHandler(
         runtime.statsStore.recordCall(parsedGroupId.name, result.success);
       }
       
-      // 缓存完整响应（统一格式）
+      // 缓存完整响应（包含 usage 信息）
       if (result.success && result.response && cacheEnabled && cacheKey && runtime.cacheStore) {
+        // 构造 usage 信息：优先使用上游返回的，否则本地估算
         const responseContent = result.response.choices?.[0]?.message?.content ?? "";
-        const cachedTokens = estimateTokensFromString(responseContent, modelConfig.model);
+        let cacheUsage: UsageInfo;
+        
+        if (result.response.usage) {
+          // 上游返回了 usage，直接使用
+          cacheUsage = {
+            prompt_tokens: result.response.usage.prompt_tokens,
+            completion_tokens: result.response.usage.completion_tokens,
+            total_tokens: result.response.usage.total_tokens,
+          };
+        } else {
+          // 本地估算
+          const promptTokens = estimateTokensFromMessages(updatedMessages);
+          const completionTokens = estimateTokensFromString(responseContent, modelConfig.model);
+          cacheUsage = {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+          };
+        }
+        
         runtime.cacheStore.set(cacheKey, {
           response: result.response,
-          cachedTokens,
+          usage: cacheUsage,
         } as unknown as Record<string, unknown>);
       }
       
@@ -401,12 +434,32 @@ export async function chatCompletionHandler(
       runtime.keyStore.applyCost(keyState.alias, 0);
     }
 
-    // 缓存结果（统一格式，包含 token 数量）
+    // 缓存结果（包含 usage 信息）
     if (cacheEnabled && cacheKey && runtime.cacheStore) {
-      const cachedTokens = estimateTokensFromString(responseContent, modelConfig.model);
+      // 构造 usage 信息：优先使用上游返回的，否则本地估算
+      let cacheUsage: UsageInfo;
+      
+      if (result.usage) {
+        // 上游返回了 usage，直接使用
+        cacheUsage = {
+          prompt_tokens: result.usage.prompt_tokens,
+          completion_tokens: result.usage.completion_tokens,
+          total_tokens: result.usage.total_tokens,
+        };
+      } else {
+        // 本地估算
+        const promptTokens = estimateTokensFromMessages(updatedMessages);
+        const completionTokens = responseContent ? estimateTokensFromString(responseContent, modelConfig.model) : 1;
+        cacheUsage = {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+        };
+      }
+      
       runtime.cacheStore.set(cacheKey, {
         response: result,
-        cachedTokens,
+        usage: cacheUsage,
       } as unknown as Record<string, unknown>);
     }
 

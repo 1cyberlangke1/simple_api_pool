@@ -428,6 +428,29 @@ function connectSSE(): void {
   eventSource.addEventListener("request:error", (e: MessageEvent) => {
     console.log("[SSE] Request error:", e.data);
   });
+
+  // 监听配置变更事件，实时刷新统计数据
+  eventSource.addEventListener("config:provider:changed", (e: MessageEvent) => {
+    console.log("[SSE] Provider config changed:", e.data);
+    fetchConfig();
+  });
+
+  eventSource.addEventListener("config:model:changed", (e: MessageEvent) => {
+    console.log("[SSE] Model config changed:", e.data);
+    fetchConfig();
+  });
+
+  eventSource.addEventListener("config:key:changed", (e: MessageEvent) => {
+    console.log("[SSE] Key config changed:", e.data);
+    fetchKeys();
+    fetchConfig();
+  });
+
+  eventSource.addEventListener("config:group:changed", (e: MessageEvent) => {
+    console.log("[SSE] Group config changed:", e.data);
+    fetchConfig();
+    fetchHealth();
+  });
 }
 
 /**

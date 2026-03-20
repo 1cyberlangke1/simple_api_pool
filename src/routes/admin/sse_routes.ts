@@ -5,7 +5,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply, preValidationAsyncHookHandler } from "fastify";
-import type { RequestEvent } from "../../core/events.js";
+import type { RequestEvent, ConfigEvent } from "../../core/events.js";
 import { createModuleLogger } from "../../core/logger.js";
 
 const log = createModuleLogger("sse");
@@ -88,7 +88,7 @@ export function registerSSERoutes(app: FastifyInstance, adminToken: string): voi
   }
 
   // 订阅后端事件系统
-  const eventTypes: RequestEvent[] = [
+  const requestEventTypes: RequestEvent[] = [
     "request:start",
     "request:complete",
     "request:error",
@@ -97,9 +97,22 @@ export function registerSSERoutes(app: FastifyInstance, adminToken: string): voi
     "request:key:select",
   ];
 
-  const eventHandlers = new Map<RequestEvent, (data: unknown) => void>();
+  const configEventTypes: ConfigEvent[] = [
+    "config:provider:changed",
+    "config:model:changed",
+    "config:key:changed",
+    "config:group:changed",
+  ];
 
-  for (const eventType of eventTypes) {
+  const eventHandlers = new Map<RequestEvent | ConfigEvent, (data: unknown) => void>();
+
+  for (const eventType of requestEventTypes) {
+    const handler = (data: unknown) => broadcast(eventType, data);
+    eventHandlers.set(eventType, handler);
+    app.runtime.eventEmitter.on(eventType, handler);
+  }
+
+  for (const eventType of configEventTypes) {
     const handler = (data: unknown) => broadcast(eventType, data);
     eventHandlers.set(eventType, handler);
     app.runtime.eventEmitter.on(eventType, handler);

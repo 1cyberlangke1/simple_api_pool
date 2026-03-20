@@ -360,7 +360,7 @@ async function copyEndpoint() {
  */
 function updateResponsive(): void {
   const width = window.innerWidth;
-  descColumn.value = width < 768 ? 1 : 1;
+  descColumn.value = width < 768 ? 1 : 2;
 }
 
 onMounted(async () => {
@@ -651,6 +651,32 @@ function handleToolSave(tool: McpTool) {
   .endpoint-info {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .endpoint-url {
+    font-size: 11px;
+  }
+
+  .code-block {
+    font-size: 10px;
+    padding: 6px;
+  }
+
+  .mobile-item {
+    padding: 10px;
+  }
+
+  .mobile-item .item-name {
+    font-size: 13px;
+  }
+
+  .mobile-item .item-config {
+    font-size: 11px;
+  }
+
+  :deep(.el-tabs__item) {
+    font-size: 13px;
+    padding: 0 10px;
   }
 }
 
