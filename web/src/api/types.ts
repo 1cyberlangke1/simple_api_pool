@@ -806,6 +806,7 @@ export interface FileJsTool {
   tags?: string[];
   allowNetwork?: boolean;
   allowedDomains?: string[];
+  enabled?: boolean;
   filePath: string;
   loadedAt: number;
 }
@@ -830,6 +831,7 @@ export interface CreateFileToolRequest {
   tags?: string[];
   allowNetwork?: boolean;
   allowedDomains?: string[];
+  enabled?: boolean;
 }
 
 export const getJsTools = () => api.get<JsToolListResponse>("/js-tools");

@@ -19,8 +19,7 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="启用状态">
-            <el-switch v-model="form.enabled" :disabled="isFileTool" />
-            <span v-if="isFileTool" class="form-hint" style="margin-left: 8px;">文件工具默认启用</span>
+            <el-switch v-model="form.enabled" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -209,14 +208,6 @@ const dialogTop = computed(() => {
   return window.innerHeight < 600 ? "2vh" : "5vh";
 });
 
-/**
- * 判断是否为文件工具
- * @returns 文件工具返回 true，数据库工具返回 false
- */
-const isFileTool = computed(() => {
-  return props.editingTool?.source === "file";
-});
-
 watch(
   () => props.editingTool,
   (tool) => {
@@ -239,7 +230,7 @@ function loadToolData(tool: EditingTool) {
     name: tool.name,
     description: tool.description,
     code: tool.code,
-    // 文件工具没有 enabled 字段，默认为 true
+    // 数据库工具和文件工具都有 enabled 字段，没有则默认为 true
     enabled: 'enabled' in tool ? tool.enabled : true,
   });
 

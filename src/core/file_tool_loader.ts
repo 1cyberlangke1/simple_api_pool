@@ -29,6 +29,8 @@ export interface JsonToolFile {
   allowNetwork?: boolean;
   /** 允许的域名列表 */
   allowedDomains?: string[];
+  /** 是否启用（默认 true） */
+  enabled?: boolean;
 }
 
 /**
@@ -135,6 +137,7 @@ export class FileToolLoader {
       // 存储工具定义
       const loadedTool: LoadedFileTool = {
         ...toolDef,
+        enabled: toolDef.enabled ?? true, // 默认启用
         filePath,
         loadedAt: Date.now(),
       };
