@@ -219,8 +219,8 @@ async function fetchModels() {
   try {
     const { data } = await getModels();
     models.value = data;
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error("获取模型列表失败:", error);
   }
 }
 
@@ -228,8 +228,8 @@ async function fetchTools() {
   try {
     const { data } = await getTools();
     availableTools.value = data.tools.map((t) => t.name);
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error("获取工具列表失败:", error);
   }
 }
 
@@ -248,8 +248,8 @@ async function handleDelete(name: string) {
     await deleteGroup(name);
     ElMessage.success("删除成功");
     await fetchGroups();
-  } catch {
-    // 错误已在拦截器中处理
+  } catch (error) {
+    console.error("删除分组失败:", error);
   }
 }
 </script>

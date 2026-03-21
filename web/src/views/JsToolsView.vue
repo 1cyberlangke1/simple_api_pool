@@ -339,8 +339,8 @@ async function fetchExamples() {
   try {
     const { data } = await getJsToolExamples();
     examples.value = data;
-  } catch {
-    // 示例加载失败不影响主流程
+  } catch (error) {
+    console.error("获取工具示例失败:", error);
   }
 }
 
@@ -401,8 +401,8 @@ async function handleDelete(id: string) {
     await deleteJsTool(id);
     ElMessage.success("删除成功");
     await fetchTools();
-  } catch {
-    // 错误已在拦截器中处理
+  } catch (error) {
+    console.error("删除工具失败:", error);
   }
 }
 
@@ -411,8 +411,8 @@ async function handleDeleteFileTool(name: string) {
     await deleteFileTool(name);
     ElMessage.success("删除成功");
     await fetchTools();
-  } catch {
-    // 错误已在拦截器中处理
+  } catch (error) {
+    console.error("删除文件工具失败:", error);
   }
 }
 
@@ -421,8 +421,8 @@ async function reloadFileTools() {
     const { data } = await reloadFileToolsApi();
     ElMessage.success(`已重载 ${data.count} 个文件工具`);
     await fetchTools();
-  } catch {
-    // 错误已在拦截器中处理
+  } catch (error) {
+    console.error("重载文件工具失败:", error);
   }
 }
 

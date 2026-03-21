@@ -341,12 +341,13 @@ async function handleSubmit() {
           enabled: form.enabled,
         });
       } else {
-        // 更新文件工具（文件工具没有 enabled 字段）
+        // 更新文件工具
         await createFileTool({
           name: form.name,
           description: form.description,
           inputSchema,
           code: form.code,
+          enabled: form.enabled,
         });
       }
       ElMessage.success("更新成功");

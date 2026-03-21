@@ -19,8 +19,8 @@ export function useCurrency() {
     try {
       const { data } = await getExchangeRate("USD", "CNY");
       exchangeRate.value = data;
-    } catch {
-      // 忽略错误
+    } catch (error) {
+      console.error("获取汇率失败:", error);
     } finally {
       loading.value = false;
     }
@@ -38,7 +38,8 @@ export function useCurrency() {
       exchangeRate.value = data;
       ElMessage.success(`汇率已设置为 1 USD = ${rate} CNY`);
       return true;
-    } catch {
+    } catch (error) {
+      console.error("设置汇率失败:", error);
       ElMessage.error("设置汇率失败");
       return false;
     } finally {

@@ -319,8 +319,8 @@ async function fetchProviders() {
   try {
     const { data } = await getProviders();
     providers.value = data;
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error("获取供应商列表失败:", error);
   }
 }
 
@@ -347,8 +347,8 @@ async function handleDelete(alias: string) {
     await deleteKey(alias);
     ElMessage.success("删除成功");
     await fetchKeys();
-  } catch {
-    // 错误已在拦截器中处理
+  } catch (error) {
+    console.error("删除 Key 失败:", error);
   }
 }
 
@@ -367,8 +367,11 @@ async function handleBatchDelete() {
     ElMessage.success(`成功删除 ${data.deleted}/${data.total} 个 Key`);
     selectedKeys.value = [];
     await fetchKeys();
-  } catch {
-    // 用户取消或错误已在拦截器中处理
+  } catch (error) {
+    // 用户取消不显示错误
+    if (error !== "cancel" && error !== "close") {
+      console.error("批量删除失败:", error);
+    }
   }
 }
 </script>
