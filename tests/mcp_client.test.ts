@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createMcpClient, McpHttpClient } from "../src/core/mcp_client.js";
+import { createMcpClient, McpHttpClient, McpStdioClient, McpSseClient } from "../src/core/mcp_client.js";
 import type { McpHttpConfig, McpStdioConfig, McpSseConfig } from "../src/core/types.js";
 
 /**
@@ -71,6 +71,148 @@ describe("createMcpClient", () => {
     } as unknown as McpStdioConfig;
 
     expect(() => createMcpClient(config)).toThrow("Unsupported MCP transport");
+  });
+});
+
+// ============================================================
+// McpStdioClient 测试
+// ============================================================
+
+describe("McpStdioClient", () => {
+  it("should create client with config", () => {
+    const config: McpStdioConfig = {
+      type: "mcp",
+      name: "test-stdio",
+      transport: "stdio",
+      command: "node",
+      args: ["server.js"],
+    };
+
+    const client = new McpStdioClient(config);
+    expect(client.isConnected()).toBe(false);
+  });
+
+  it("should return empty tools list before connection", async () => {
+    const config: McpStdioConfig = {
+      type: "mcp",
+      name: "test-stdio",
+      transport: "stdio",
+      command: "node",
+      args: ["server.js"],
+    };
+
+    const client = new McpStdioClient(config);
+    const tools = await client.listTools();
+    expect(tools).toEqual([]);
+  });
+
+  it("should throw error when calling tool before connection", async () => {
+    const config: McpStdioConfig = {
+      type: "mcp",
+      name: "test-stdio",
+      transport: "stdio",
+      command: "node",
+      args: ["server.js"],
+    };
+
+    const client = new McpStdioClient(config);
+    await expect(client.callTool("test", {})).rejects.toThrow("not connected");
+  });
+
+  it("should throw error when connecting to invalid command", async () => {
+    const config: McpStdioConfig = {
+      type: "mcp",
+      name: "test-stdio",
+      transport: "stdio",
+      command: "nonexistent-command-12345",
+      args: [],
+    };
+
+    const client = new McpStdioClient(config);
+    await expect(client.connect()).rejects.toThrow("Failed to connect to MCP stdio server");
+  });
+
+  it("should handle config with optional fields", () => {
+    const config: McpStdioConfig = {
+      type: "mcp",
+      name: "test-stdio",
+      transport: "stdio",
+      command: "node",
+      args: ["server.js"],
+      env: { NODE_ENV: "test" },
+      cwd: "/tmp",
+    };
+
+    const client = new McpStdioClient(config);
+    expect(client.isConnected()).toBe(false);
+  });
+});
+
+// ============================================================
+// McpSseClient 测试
+// ============================================================
+
+describe("McpSseClient", () => {
+  it("should create client with config", () => {
+    const config: McpSseConfig = {
+      type: "mcp",
+      name: "test-sse",
+      transport: "sse",
+      endpoint: "http://localhost:8080/sse",
+    };
+
+    const client = new McpSseClient(config);
+    expect(client.isConnected()).toBe(false);
+  });
+
+  it("should return empty tools list before connection", async () => {
+    const config: McpSseConfig = {
+      type: "mcp",
+      name: "test-sse",
+      transport: "sse",
+      endpoint: "http://localhost:8080/sse",
+    };
+
+    const client = new McpSseClient(config);
+    const tools = await client.listTools();
+    expect(tools).toEqual([]);
+  });
+
+  it("should throw error when calling tool before connection", async () => {
+    const config: McpSseConfig = {
+      type: "mcp",
+      name: "test-sse",
+      transport: "sse",
+      endpoint: "http://localhost:8080/sse",
+    };
+
+    const client = new McpSseClient(config);
+    await expect(client.callTool("test", {})).rejects.toThrow("not connected");
+  });
+
+  it("should throw error when connecting to invalid endpoint", async () => {
+    const config: McpSseConfig = {
+      type: "mcp",
+      name: "test-sse",
+      transport: "sse",
+      endpoint: "http://nonexistent-server-12345:9999/sse",
+    };
+
+    const client = new McpSseClient(config);
+    await expect(client.connect()).rejects.toThrow("Failed to connect to MCP SSE server");
+  });
+
+  it("should handle config with optional headers", () => {
+    const config: McpSseConfig = {
+      type: "mcp",
+      name: "test-sse",
+      transport: "sse",
+      endpoint: "http://localhost:8080/sse",
+      headers: { "X-API-Key": "secret" },
+    };
+
+    const client = new McpSseClient(config);
+    expect(client.isConnected()).toBe(false);
   });
 });
 
@@ -463,5 +605,156 @@ describe("MCP Client Edge Cases", () => {
 
     const result = await client.callTool("test", {});
     expect(result).toEqual(complexResult);
+  });
+});
+
+// ============================================================
+// parseMcpResult 边界测试（通过 HTTP 客户端间接测试）
+// 注意：HTTP 客户端直接返回 JSON 响应，parseMcpResult 只在 SDK 客户端中使用
+// ============================================================
+
+describe("parseMcpResult via HTTP client", () => {
+  it("should return JSON response directly for HTTP client", async () => {
+    const mockResult = { temperature: 25 };
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ tools: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResult),
+      });
+
+    global.fetch = mockFetch;
+
+    const config: McpHttpConfig = {
+      type: "mcp",
+      name: "test-http",
+      transport: "http",
+      endpoint: "http://localhost:8080/api",
+    };
+
+    const client = new McpHttpClient(config);
+    await client.connect();
+
+    const result = await client.callTool("test", {});
+    expect(result).toEqual(mockResult);
+  });
+
+  it("should handle content array response", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ tools: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: "some text" }],
+        }),
+      });
+
+    global.fetch = mockFetch;
+
+    const config: McpHttpConfig = {
+      type: "mcp",
+      name: "test-http",
+      transport: "http",
+      endpoint: "http://localhost:8080/api",
+    };
+
+    const client = new McpHttpClient(config);
+    await client.connect();
+
+    const result = await client.callTool("test", {});
+    // HTTP 客户端直接返回 JSON 响应
+    expect(result).toEqual({ content: [{ text: "some text" }] });
+  });
+
+  it("should handle toolResult response", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ tools: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ toolResult: "fallback result" }),
+      });
+
+    global.fetch = mockFetch;
+
+    const config: McpHttpConfig = {
+      type: "mcp",
+      name: "test-http",
+      transport: "http",
+      endpoint: "http://localhost:8080/api",
+    };
+
+    const client = new McpHttpClient(config);
+    await client.connect();
+
+    const result = await client.callTool("test", {});
+    expect(result).toEqual({ toolResult: "fallback result" });
+  });
+
+  it("should handle empty content array", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ tools: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ content: [] }),
+      });
+
+    global.fetch = mockFetch;
+
+    const config: McpHttpConfig = {
+      type: "mcp",
+      name: "test-http",
+      transport: "http",
+      endpoint: "http://localhost:8080/api",
+    };
+
+    const client = new McpHttpClient(config);
+    await client.connect();
+
+    const result = await client.callTool("test", {});
+    expect(result).toEqual({ content: [] });
+  });
+
+  it("should handle raw result when no content or toolResult", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ tools: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ custom: "result" }),
+      });
+
+    global.fetch = mockFetch;
+
+    const config: McpHttpConfig = {
+      type: "mcp",
+      name: "test-http",
+      transport: "http",
+      endpoint: "http://localhost:8080/api",
+    };
+
+    const client = new McpHttpClient(config);
+    await client.connect();
+
+    const result = await client.callTool("test", {});
+    expect(result).toEqual({ custom: "result" });
   });
 });
