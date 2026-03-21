@@ -44,15 +44,27 @@ Object.defineProperty(window, "matchMedia", {
 // Mock scrollTo
 window.scrollTo = vi.fn();
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-  length: 0,
-  key: vi.fn(),
-};
-Object.defineProperty(window, "localStorage", {
-  value: localStorageMock,
-});
+// Mock localStorage - 使用真实的 localStorage 以支持测试
+// 注意：测试中直接使用 localStorage.setItem/getItem
+
+/**
+ * withSetup 辅助函数
+ * @description 在组件上下文中执行 composable，解决生命周期钩子警告
+ * @param composable 要测试的 composable 函数
+ * @returns composable 返回值和 app 实例
+ */
+import { createApp, defineComponent, h } from "vue";
+
+export function withSetup<T>(composable: () => T): { result: T; app: ReturnType<typeof createApp> } {
+  let result!: T;
+  const App = defineComponent({
+    setup() {
+      result = composable();
+      return () => h("div");
+    },
+  });
+  const app = createApp(App);
+  const root = document.createElement("div");
+  app.mount(root);
+  return { result, app };
+}
