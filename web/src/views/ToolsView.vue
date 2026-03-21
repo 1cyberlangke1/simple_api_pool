@@ -233,7 +233,7 @@ const toolParams = computed(() => {
   if (schema.type !== "object" || !schema.properties) return [];
 
   const props = schema.properties as Record<string, Record<string, unknown>>;
-  const required = new Set(schema.required as string[] ?? []);
+  const required = new Set((schema.required as string[]) ?? []);
 
   return Object.entries(props).map(([name, prop]) => ({
     name,
@@ -266,8 +266,8 @@ async function fetchJsTools() {
     const { data } = await getJsTools();
     // 合并 dbTools 和 fileTools 为统一数组
     jsTools.value = [...(data.dbTools || []), ...(data.fileTools || [])];
-  } catch (error) {
-    console.error("获取 JS 工具列表失败:", error);
+  } catch {
+    // 获取 JS 工具列表失败，保持空列表
   }
 }
 
@@ -275,8 +275,8 @@ async function fetchJsExamples() {
   try {
     const { data } = await getJsToolExamples();
     jsExamples.value = data;
-  } catch (error) {
-    console.error("获取工具示例失败:", error);
+  } catch {
+    // 获取工具示例失败，保持空列表
   }
 }
 
@@ -285,8 +285,8 @@ async function fetchMcpTools() {
     const { data } = await getConfig();
     fullConfig.value = data;
     mcpTools.value = data.tools?.mcpTools ?? [];
-  } catch (error) {
-    console.error("获取 MCP 工具列表失败:", error);
+  } catch {
+    // 获取 MCP 工具列表失败，保持空列表
   }
 }
 
@@ -428,7 +428,6 @@ async function handleDeleteJsTool(id: string, name?: string) {
   } catch (error) {
     // 用户取消不显示错误
     if (error !== "cancel" && error !== "close") {
-      console.error("删除工具失败:", error);
       ElMessage.error("删除失败");
     }
   }
@@ -493,7 +492,6 @@ async function handleDeleteMcpTool(index: number) {
   } catch (error) {
     // 用户取消不显示错误
     if (error !== "cancel" && error !== "close") {
-      console.error("删除 MCP 工具失败:", error);
       ElMessage.error("删除失败");
     }
   }

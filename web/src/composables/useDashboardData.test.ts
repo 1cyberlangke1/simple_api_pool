@@ -98,14 +98,11 @@ describe("useDashboardData", () => {
     });
 
     it("应该处理请求错误", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(axios.get).mockRejectedValueOnce(new Error("Network error"));
 
       await dashboardData.fetchHealth();
 
       expect(dashboardData.health.status).toBe("error");
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
     });
   });
 
@@ -123,14 +120,11 @@ describe("useDashboardData", () => {
     });
 
     it("应该处理请求错误", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(getKeys).mockRejectedValueOnce(new Error("API error"));
 
       await dashboardData.fetchKeys();
 
       expect(dashboardData.keys.value).toEqual([]);
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
     });
   });
 
@@ -150,7 +144,6 @@ describe("useDashboardData", () => {
     });
 
     it("应该处理请求错误", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(getCacheStats).mockRejectedValueOnce(new Error("API error"));
 
       await dashboardData.fetchCacheStats();
@@ -160,7 +153,6 @@ describe("useDashboardData", () => {
         stats: [],
         dbSizeBytes: 0,
       });
-      consoleSpy.mockRestore();
     });
   });
 
@@ -190,7 +182,6 @@ describe("useDashboardData", () => {
     });
 
     it("应该处理请求错误", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(getStatsChart).mockRejectedValueOnce(new Error("API error"));
 
       await dashboardData.fetchChartStats();
@@ -201,7 +192,6 @@ describe("useDashboardData", () => {
         groupData: {},
         summary: [],
       });
-      consoleSpy.mockRestore();
     });
   });
 
@@ -235,14 +225,12 @@ describe("useDashboardData", () => {
     });
 
     it("应该处理请求错误", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(getConfig).mockRejectedValueOnce(new Error("API error"));
 
       await dashboardData.fetchConfig();
 
       // 状态应保持不变
       expect(dashboardData.stats.providers).toBe(0);
-      consoleSpy.mockRestore();
     });
   });
 

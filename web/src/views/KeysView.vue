@@ -70,15 +70,15 @@
           <template #default="{ row }">
             <template v-if="row.quota.type === 'daily'">
               <el-progress
-                :percentage="Math.min(((row.usedToday || 0) / row.quota.limit) * 100, 100)"
-                :status="(row.usedToday || 0) >= row.quota.limit ? 'exception' : undefined"
+                :percentage="Math.min(((row.usedToday || 0) / (row.quota.limit || 1)) * 100, 100)"
+                :status="(row.usedToday || 0) >= (row.quota.limit || 1) ? 'exception' : undefined"
                 :stroke-width="8"
               />
-              <span class="progress-text">{{ row.usedToday || 0 }} / {{ row.quota.limit }}</span>
+              <span class="progress-text">{{ row.usedToday || 0 }} / {{ row.quota.limit || 0 }}</span>
             </template>
             <template v-else-if="row.quota.type === 'total'">
               <el-progress
-                :percentage="Math.min(((row.remainingTotal || 0) / row.quota.limit) * 100, 100)"
+                :percentage="Math.min(((row.remainingTotal || 0) / (row.quota.limit || 1)) * 100, 100)"
                 :status="(row.remainingTotal || 0) <= 0 ? 'exception' : undefined"
                 :stroke-width="8"
               />
@@ -322,8 +322,8 @@ async function fetchProviders() {
   try {
     const { data } = await getProviders();
     providers.value = data;
-  } catch (error) {
-    console.error("获取供应商列表失败:", error);
+  } catch {
+    // 获取供应商列表失败，保持空列表
   }
 }
 
@@ -350,8 +350,8 @@ async function handleDelete(alias: string) {
     await deleteKey(alias);
     ElMessage.success("删除成功");
     await fetchKeys();
-  } catch (error) {
-    console.error("删除 Key 失败:", error);
+  } catch {
+    ElMessage.error("删除 Key 失败");
   }
 }
 
@@ -373,7 +373,7 @@ async function handleBatchDelete() {
   } catch (error) {
     // 用户取消不显示错误
     if (error !== "cancel" && error !== "close") {
-      console.error("批量删除失败:", error);
+      ElMessage.error("批量删除失败");
     }
   }
 }

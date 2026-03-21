@@ -107,8 +107,7 @@ export function useDashboardData(): UseDashboardDataReturn {
       health.groups = data.groups ?? [];
       // 同步更新统计
       stats.groups = health.groups.length;
-    } catch (error) {
-      console.error("获取健康状态失败:", error);
+    } catch {
       health.status = "error";
     }
   }
@@ -120,8 +119,7 @@ export function useDashboardData(): UseDashboardDataReturn {
     try {
       const response = await getKeys();
       keys.value = response.data;
-    } catch (error) {
-      console.error("获取 Key 列表失败:", error);
+    } catch {
       keys.value = [];
     }
   }
@@ -133,8 +131,7 @@ export function useDashboardData(): UseDashboardDataReturn {
     try {
       const response = await getCacheStats();
       cacheStats.value = response.data;
-    } catch (error) {
-      console.error("获取缓存统计失败:", error);
+    } catch {
       cacheStats.value = { enabled: false, stats: [], dbSizeBytes: 0 };
     }
   }
@@ -146,8 +143,7 @@ export function useDashboardData(): UseDashboardDataReturn {
     try {
       const response = await getStatsChart(chartHours.value);
       chartData.value = response.data;
-    } catch (error) {
-      console.error("获取图表数据失败:", error);
+    } catch {
       chartData.value = { timeline: [], groups: [], groupData: {}, summary: [] };
     }
   }
@@ -163,8 +159,8 @@ export function useDashboardData(): UseDashboardDataReturn {
       stats.models = config.models?.length ?? 0;
       stats.keys = config.keys?.length ?? 0;
       stats.groups = config.groups?.length ?? 0;
-    } catch (error) {
-      console.error("获取配置失败:", error);
+    } catch {
+      // 获取配置失败，保留默认值
     }
   }
 

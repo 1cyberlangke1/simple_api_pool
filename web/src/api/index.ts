@@ -140,7 +140,17 @@ export async function sendChatRequest(body: ChatRequestBody): Promise<ChatRespon
     } catch {
       errorData = { raw: errorBody };
     }
-    const err = new Error((errorData.error as { message?: string })?.message || errorData.error?.toString() || "Request failed") as Error & { response: unknown };
+    // 安全提取错误信息，处理对象类型的 error 字段
+    const errorInfo = errorData.error;
+    let errorMessage = "Request failed";
+    if (typeof errorInfo === "object" && errorInfo !== null && "message" in errorInfo) {
+      errorMessage = String((errorInfo as { message: string }).message);
+    } else if (typeof errorInfo === "string") {
+      errorMessage = errorInfo;
+    } else if (errorInfo !== undefined) {
+      errorMessage = JSON.stringify(errorInfo);
+    }
+    const err = new Error(errorMessage) as Error & { response: unknown };
     err.response = errorData;
     throw err;
   }
@@ -170,7 +180,17 @@ export async function sendChatStreamRequest(
     } catch {
       errorData = { raw: errorBody };
     }
-    const err = new Error((errorData.error as { message?: string })?.message || errorData.error?.toString() || "Request failed") as Error & { response: unknown };
+    // 安全提取错误信息，处理对象类型的 error 字段
+    const errorInfo = errorData.error;
+    let errorMessage = "Request failed";
+    if (typeof errorInfo === "object" && errorInfo !== null && "message" in errorInfo) {
+      errorMessage = String((errorInfo as { message: string }).message);
+    } else if (typeof errorInfo === "string") {
+      errorMessage = errorInfo;
+    } else if (errorInfo !== undefined) {
+      errorMessage = JSON.stringify(errorInfo);
+    }
+    const err = new Error(errorMessage) as Error & { response: unknown };
     err.response = errorData;
     throw err;
   }

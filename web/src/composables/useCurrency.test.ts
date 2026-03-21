@@ -143,17 +143,13 @@ describe("useCurrency", () => {
       expect(loading.value).toBe(false);
     });
 
-    it("获取失败时应该设置错误日志", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    it("获取失败时应该正常处理", async () => {
       vi.mocked(getExchangeRate).mockRejectedValue(new Error("Network error"));
       
       const { loading, fetchExchangeRate } = useCurrency();
       await fetchExchangeRate();
       
-      expect(consoleSpy).toHaveBeenCalled();
       expect(loading.value).toBe(false);
-      
-      consoleSpy.mockRestore();
     });
   });
 
@@ -171,15 +167,12 @@ describe("useCurrency", () => {
     });
 
     it("设置失败时应该返回 false", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(setExchangeRate).mockRejectedValue(new Error("Network error"));
       
       const { updateExchangeRate } = useCurrency();
       const result = await updateExchangeRate(7.5);
       
       expect(result).toBe(false);
-      
-      consoleSpy.mockRestore();
     });
   });
 });

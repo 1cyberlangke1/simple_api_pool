@@ -184,16 +184,16 @@
           <template #default="{ row }">
             <template v-if="row.quota.type === 'daily'">
               <el-progress
-                :percentage="Math.min(((row.usedToday || 0) / row.quota.limit) * 100, 100)"
-                :status="(row.usedToday || 0) >= row.quota.limit ? 'exception' : undefined"
+                :percentage="Math.min(((row.usedToday || 0) / (row.quota.limit || 1)) * 100, 100)"
+                :status="(row.usedToday || 0) >= (row.quota.limit || 1) ? 'exception' : undefined"
               />
               <span class="progress-text">
-                {{ row.usedToday || 0 }} / {{ row.quota.limit }}
+                {{ row.usedToday || 0 }} / {{ row.quota.limit || 0 }}
               </span>
             </template>
             <template v-else-if="row.quota.type === 'total'">
               <el-progress
-                :percentage="Math.min(((row.remainingTotal || 0) / row.quota.limit) * 100, 100)"
+                :percentage="Math.min(((row.remainingTotal || 0) / (row.quota.limit || 1)) * 100, 100)"
                 :status="(row.remainingTotal || 0) <= 0 ? 'exception' : undefined"
               />
               <span class="progress-text">

@@ -219,8 +219,8 @@ async function fetchModels() {
   try {
     const { data } = await getModels();
     models.value = data;
-  } catch (error) {
-    console.error("获取模型列表失败:", error);
+  } catch {
+    // 获取模型列表失败，保持空列表
   }
 }
 
@@ -228,8 +228,8 @@ async function fetchTools() {
   try {
     const { data } = await getTools();
     availableTools.value = data.tools.map((t) => t.name);
-  } catch (error) {
-    console.error("获取工具列表失败:", error);
+  } catch {
+    // 获取工具列表失败，保持空列表
   }
 }
 
@@ -248,8 +248,8 @@ async function handleDelete(name: string) {
     await deleteGroup(name);
     ElMessage.success("删除成功");
     await fetchGroups();
-  } catch (error) {
-    console.error("删除分组失败:", error);
+  } catch {
+    ElMessage.error("删除分组失败");
   }
 }
 </script>

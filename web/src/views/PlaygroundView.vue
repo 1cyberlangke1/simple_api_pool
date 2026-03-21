@@ -231,8 +231,8 @@ async function fetchModels() {
     if (data.data?.length > 0 && !selectedModel.value) {
       selectedModel.value = data.data[0].id;
     }
-  } catch (error) {
-    console.error("Failed to fetch models:", error);
+  } catch {
+    // 获取模型列表失败，保持空列表
   } finally {
     isLoadingModels.value = false;
   }
@@ -378,7 +378,6 @@ async function handleSend(content: string, images?: string[]) {
     });
     
     ElMessage.error(err.message || "请求失败");
-    console.error(error);
   } finally {
     isLoading.value = false;
   }

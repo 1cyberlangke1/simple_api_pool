@@ -96,27 +96,24 @@ export function useSSE<T extends keyof SSEEventMap>(
     eventSource.onopen = () => {
       connectionState.value = "connected";
       reconnectAttempts.value = 0;
-      console.log("[SSE] Connected");
     };
 
     // 连接错误
-    eventSource.onerror = (e) => {
-      error.value = e;
+    eventSource.onerror = () => {
+      error.value = new Error("SSE connection error");
       connectionState.value = "error";
-      console.error("[SSE] Connection error", e);
 
       if (autoReconnect && reconnectAttempts.value < maxReconnectAttempts) {
         reconnectAttempts.value++;
-        console.log(`[SSE] Reconnecting (${reconnectAttempts.value}/${maxReconnectAttempts})...`);
         reconnectTimer = setTimeout(connect, reconnectInterval);
       } else {
         connectionState.value = "disconnected";
       }
     };
 
-    // 注册通用消息处理
-    eventSource.onmessage = (e) => {
-      console.log("[SSE] Message:", e.data);
+    // 注册通用消息处理（保留结构但不打印日志）
+    eventSource.onmessage = () => {
+      // 消息由特定事件处理器处理
     };
 
     // 注册特定事件处理
@@ -128,8 +125,8 @@ export function useSSE<T extends keyof SSEEventMap>(
           for (const handler of handlers) {
             handler(data);
           }
-        } catch (err) {
-          console.error(`[SSE] Failed to parse event ${eventType}:`, err);
+        } catch {
+          // 解析失败，忽略该事件
         }
       });
     }
@@ -148,7 +145,6 @@ export function useSSE<T extends keyof SSEEventMap>(
       eventSource = null;
     }
     connectionState.value = "disconnected";
-    console.log("[SSE] Disconnected");
   }
 
   /**
@@ -179,8 +175,8 @@ export function useSSE<T extends keyof SSEEventMap>(
           try {
             const data = JSON.parse(e.data);
             handler(data);
-          } catch (err) {
-            console.error(`[SSE] Failed to parse event ${eventType}:`, err);
+          } catch {
+            // 解析失败，忽略该事件
           }
         };
         
