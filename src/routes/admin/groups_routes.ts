@@ -128,7 +128,6 @@ export function registerGroupsRoutes(app: FastifyInstance, adminToken: string): 
         return reply.status(404).send({ error: "group not found" });
       }
 
-      const deletedGroup = app.runtime.config.groups[idx];
       app.runtime.config.groups.splice(idx, 1);
 
       try {

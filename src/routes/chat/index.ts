@@ -6,7 +6,6 @@
 
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { StreamMode } from "../../core/types.js";
-import type { AppRuntime } from "../../app_state.js";
 import type { ChatCompletionBody, OpenAIResponse, UsageInfo } from "./types.js";
 import { decideStreamMode } from "./types.js";
 import { parseGroupId } from "./feature_flags.js";

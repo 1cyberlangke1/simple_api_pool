@@ -4,7 +4,7 @@
  * @module routes/chat/types
  */
 
-import type { ToolRoutingStrategy, StreamMode } from "../../core/types.js";
+import type { StreamMode } from "../../core/types.js";
 
 /**
  * OpenAI Chat Completion 请求体类型

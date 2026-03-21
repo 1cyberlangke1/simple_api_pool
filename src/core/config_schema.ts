@@ -161,15 +161,6 @@ const GroupConfigSchema = z.object({
 });
 
 /**
- * 本地工具 Schema
- */
-const LocalToolSchema = z.object({
-  type: z.literal("local"),
-  name: z.string().min(1),
-  modulePath: z.string().min(1),
-});
-
-/**
  * MCP stdio 传输 Schema
  */
 const McpStdioSchema = z.object({

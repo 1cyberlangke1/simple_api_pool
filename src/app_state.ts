@@ -3,10 +3,8 @@ import type {
   ProviderConfig,
   PluginDefinition,
   IPluginRuntime,
-  IEventEmitter,
   RequestContext,
   ToolDefinition,
-  LogConfig,
 } from "./core/types.js";
 import { KeyStore } from "./core/key_store.js";
 import { ModelRegistry } from "./core/model_registry.js";
@@ -17,11 +15,11 @@ import { GroupCacheManager } from "./core/group_cache.js";
 import { StatsStore } from "./core/stats_store.js";
 import { EventEmitter } from "./core/event_emitter.js";
 import { validateConfig } from "./core/config_schema.js";
-import { createModuleLogger, createPluginLogger, type Logger } from "./core/logger.js";
+import { createModuleLogger, createPluginLogger } from "./core/logger.js";
 import { JsSandbox } from "./core/js_sandbox.js";
 import { JsToolStore, type StoredJsTool } from "./core/js_tool_store.js";
 import { KeyUsageStore } from "./core/key_usage_store.js";
-import { LogStore, DEFAULT_LOG_MAX_SIZE } from "./core/log_store.js";
+import { LogStore } from "./core/log_store.js";
 import { FileToolLoader, type JsonToolFile, type LoadedFileTool } from "./core/file_tool_loader.js";
 
 /** 模块日志器 */

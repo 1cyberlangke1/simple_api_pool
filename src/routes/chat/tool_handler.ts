@@ -119,7 +119,7 @@ export interface ToolHandlerContext {
 export async function handleToolCalls(
   context: ToolHandlerContext
 ): Promise<{ result: OpenAIResponse } | { error: string; status: number }> {
-  const { result, toolRegistry, toolRoutingStrategy, requestTools } = context;
+  const { result, toolRegistry, toolRoutingStrategy, requestTools: _requestTools } = context;
   const toolCalls = result.choices?.[0]?.message?.tool_calls;
 
   // 没有工具调用，直接返回

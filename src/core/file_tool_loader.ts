@@ -159,7 +159,7 @@ export class FileToolLoader {
       this.watcher = fs.watch(
         this.toolsDir,
         { recursive: true, persistent: false },
-        (eventType, filename) => {
+        (_eventType, filename) => {
           if (!filename || !filename.endsWith(".json")) return;
 
           const filePath = path.join(this.toolsDir, filename);

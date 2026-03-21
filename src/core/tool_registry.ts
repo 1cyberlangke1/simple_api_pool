@@ -9,7 +9,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 import type { LocalToolConfig, McpToolConfig, ToolDefinition, ToolHandler, LocalToolModule, IToolRegistry } from "./types.js";
 import { createMcpClient, type IMcpClient } from "./mcp_client.js";
-import { ToolNotFoundError, McpClientError } from "./errors.js";
+import { ToolNotFoundError } from "./errors.js";
 import { createModuleLogger } from "./logger.js";
 
 const log = createModuleLogger("tool-registry");

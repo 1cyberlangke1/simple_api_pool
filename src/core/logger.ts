@@ -42,17 +42,6 @@ export interface ILogWriter {
   writeLine(line: string): void;
 }
 
-/** 全局日志写入器 */
-let globalLogWriter: ILogWriter | null = null;
-
-/**
- * 设置全局日志写入器
- * @param writer 日志写入器实例
- */
-export function setLogWriter(writer: ILogWriter | null): void {
-  globalLogWriter = writer;
-}
-
 /**
  * 创建文件输出流
  * @param logDir 日志目录

@@ -1,9 +1,8 @@
 import cron from "node-cron";
 import path from "path";
-import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import type { AppConfig } from "./core/types.js";
-import { ConfigStore, getDefaultConfigPath } from "./core/config_store.js";
+import { ConfigStore } from "./core/config_store.js";
 import { AppRuntime } from "./app_state.js";
 import { buildApp } from "./app.js";
 import { logger } from "./core/logger.js";
@@ -46,8 +45,6 @@ const validConfig = validationResult.data as AppConfig;
  * @description 初始化配置、运行态并启动 Fastify 服务
  */
 async function bootstrap() {
-  // 使用 process.cwd() 作为项目根目录
-  const rootDir = process.cwd();
   const configStore = new ConfigStore(validConfig, configPath);
 
   // 创建应用运行态

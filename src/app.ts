@@ -108,7 +108,7 @@ export async function buildApp(runtime: AppRuntime, onConfigUpdate?: (config: Ap
   await app.register(adminRoutes, { prefix: "/admin" });
 
   // 404 handler
-  app.setNotFoundHandler((request, reply) => {
+  app.setNotFoundHandler((_request, reply) => {
     return reply.status(404).send({ error: "Not Found" });
   });
 

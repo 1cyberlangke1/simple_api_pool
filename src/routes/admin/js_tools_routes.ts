@@ -7,7 +7,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { adminAuth } from "./auth.js";
 import type { CreateJsToolRequest, UpdateJsToolRequest } from "../../core/js_tool_store.js";
-import { loadJsToolExamples, type JsToolDefinition } from "../../tools/js_tools/index.js";
+import { loadJsToolExamples } from "../../tools/js_tools/index.js";
 import type { JsonToolFile } from "../../core/file_tool_loader.js";
 import type { JSONSchema7 } from "json-schema";
 

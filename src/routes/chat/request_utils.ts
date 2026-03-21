@@ -5,10 +5,10 @@
  */
 
 import type { FastifyReply } from "fastify";
-import type { StreamMode, RequestContext, KeyState, ProviderConfig, ModelConfig, ToolRoutingStrategy, TruncationConfig } from "../../core/types.js";
+import type { RequestContext, KeyState, ProviderConfig, ModelConfig, ToolRoutingStrategy, TruncationConfig } from "../../core/types.js";
 import type { AppRuntime } from "../../app_state.js";
 import type { ChatCompletionBody, OpenAIResponse, UsageInfo } from "./types.js";
-import { callChatCompletion, callChatCompletionStream, collectStreamToNonStream, applyOverrides } from "../../core/openai_proxy.js";
+import { callChatCompletion, callChatCompletionStream, collectStreamToNonStream } from "../../core/openai_proxy.js";
 import { estimateTokensFromMessages, estimateTokensFromString } from "../../core/usage.js";
 import { stripTruncationSuffix } from "../../core/truncation.js";
 import { handleToolCalls } from "./tool_handler.js";
@@ -213,7 +213,7 @@ export async function handleNonStreamRequest(params: NonStreamRequestParams): Pr
     cacheKey,
     updatedMessages,
     toolRoutingStrategy,
-    openAiTools,
+    openAiTools: _openAiTools,
     injectLocalTools,
     truncationConfig,
     keyAlias,
