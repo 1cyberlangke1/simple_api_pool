@@ -1,0 +1,575 @@
+/**
+ * Element Plus 样式覆盖
+ * @description 使用高优先级选择器覆盖 Element Plus 默认样式
+ * @note 此文件必须在 element-plus/dist/index.css 之后导入
+ */
+
+/* ============================================================
+   按钮 - 渐变与动效
+   ============================================================ */
+
+/* 主按钮 */
+.el-button--primary {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #fb923c 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background: linear-gradient(135deg, #fbbf24 0%, #f97316 50%, #fb923c 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4) !important;
+}
+
+.el-button--primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3) !important;
+}
+
+/* 危险按钮 */
+.el-button--danger {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-button--danger:hover,
+.el-button--danger:focus {
+  background: linear-gradient(135deg, #f87171 0%, #fca5a5 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* 成功按钮 */
+.el-button--success {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-button--success:hover,
+.el-button--success:focus {
+  background: linear-gradient(135deg, #34d399 0%, #6ee7b7 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4) !important;
+}
+
+/* 警告按钮 */
+.el-button--warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-button--warning:hover,
+.el-button--warning:focus {
+  background: linear-gradient(135deg, #fbbf24 0%, #fef3c7 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4) !important;
+}
+
+/* 信息按钮 */
+.el-button--info {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-button--info:hover,
+.el-button--info:focus {
+  background: linear-gradient(135deg, #60a5fa 0%, #93c5fd 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* 默认按钮 hover 效果 */
+.el-button--default:hover,
+.el-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* 按钮圆角 */
+.el-button {
+  border-radius: 10px !important;
+  font-weight: 500 !important;
+}
+
+/* ============================================================
+   卡片 - 玻璃拟态
+   ============================================================ */
+
+.el-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  border-radius: 20px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.el-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #f59e0b, #8b5cf6, transparent);
+  opacity: 0.3;
+}
+
+.el-card:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  transform: translateY(-4px);
+}
+
+.el-card__header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+  font-weight: 600 !important;
+}
+
+/* 深色模式卡片 */
+:root[data-theme="dark"] .el-card {
+  background: rgba(24, 24, 27, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+:root[data-theme="dark"] .el-card:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ============================================================
+   表格 - 渐变悬停
+   ============================================================ */
+
+.el-table {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+.el-table__row {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-table__row:hover td {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.06) 0%, transparent 100%) !important;
+}
+
+.el-table__cell {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-table__header-wrapper th.el-table__cell {
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  background: rgba(0, 0, 0, 0.02) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 深色模式表格 */
+:root[data-theme="dark"] .el-table__row:hover td {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.06) 0%, transparent 100%) !important;
+}
+
+:root[data-theme="dark"] .el-table__header-wrapper th.el-table__cell {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ============================================================
+   进度条 - 渐变动画
+   ============================================================ */
+
+.el-progress-bar__outer {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.el-progress-bar__inner {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #fb923c 100%) !important;
+  border-radius: 8px !important;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative !important;
+}
+
+.el-progress-bar__inner::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  background-size: 200% 100%;
+  animation: progressShimmer 2s infinite;
+}
+
+@keyframes progressShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* 深色模式进度条 */
+:root[data-theme="dark"] .el-progress-bar__outer {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ============================================================
+   标签 - 渐变背景
+   ============================================================ */
+
+.el-tag {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  border: none !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-tag--success {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(52, 211, 153, 0.15) 100%) !important;
+  color: #10b981 !important;
+}
+
+.el-tag--warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(251, 191, 36, 0.15) 100%) !important;
+  color: #f59e0b !important;
+}
+
+.el-tag--danger {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(248, 113, 113, 0.15) 100%) !important;
+  color: #ef4444 !important;
+}
+
+.el-tag--info {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(96, 165, 250, 0.15) 100%) !important;
+  color: #3b82f6 !important;
+}
+
+/* 深色模式标签 */
+:root[data-theme="dark"] .el-tag--success {
+  color: #34d399 !important;
+}
+
+:root[data-theme="dark"] .el-tag--warning {
+  color: #fbbf24 !important;
+}
+
+:root[data-theme="dark"] .el-tag--danger {
+  color: #f87171 !important;
+}
+
+:root[data-theme="dark"] .el-tag--info {
+  color: #60a5fa !important;
+}
+
+/* ============================================================
+   对话框 - 玻璃拟态
+   ============================================================ */
+
+.el-dialog {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+  font-weight: 600 !important;
+}
+
+.el-dialog__footer {
+  border-top: 1px solid rgba(0, 0, 0, 0.04) !important;
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+
+/* 深色模式对话框 */
+:root[data-theme="dark"] .el-dialog {
+  background: rgba(24, 24, 27, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+:root[data-theme="dark"] .el-dialog__header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .el-dialog__footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+/* ============================================================
+   下拉菜单 - 玻璃拟态
+   ============================================================ */
+
+.el-select-dropdown,
+.el-dropdown-menu {
+  border-radius: 12px !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  overflow: hidden !important;
+}
+
+.el-select-dropdown__item,
+.el-dropdown-menu__item {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-select-dropdown__item:hover,
+.el-dropdown-menu__item:hover {
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+
+.el-select-dropdown__item.selected {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%) !important;
+  color: #f59e0b !important;
+  font-weight: 600 !important;
+}
+
+/* 深色模式下拉菜单 */
+:root[data-theme="dark"] .el-select-dropdown,
+:root[data-theme="dark"] .el-dropdown-menu {
+  background: rgba(24, 24, 27, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+:root[data-theme="dark"] .el-select-dropdown__item:hover,
+:root[data-theme="dark"] .el-dropdown-menu__item:hover {
+  background: rgba(251, 191, 36, 0.06) !important;
+}
+
+/* ============================================================
+   输入框 - 聚焦发光
+   ============================================================ */
+
+.el-input__wrapper {
+  border-radius: 10px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 2px #f59e0b, 0 0 20px rgba(245, 158, 11, 0.2) !important;
+}
+
+/* 深色模式输入框 */
+:root[data-theme="dark"] .el-input__wrapper {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+
+:root[data-theme="dark"] .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) !important;
+}
+
+:root[data-theme="dark"] .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 2px #fbbf24, 0 0 20px rgba(251, 191, 36, 0.2) !important;
+}
+
+/* ============================================================
+   分页 - 渐变激活
+   ============================================================ */
+
+.el-pagination button,
+.el-pagination .el-pager li {
+  border-radius: 8px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.el-pagination .el-pager li.is-active {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+  color: white !important;
+}
+
+.el-pagination .el-pager li:hover {
+  color: #f59e0b !important;
+}
+
+/* ============================================================
+   徽标 - 渐变
+   ============================================================ */
+
+.el-badge__content {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+}
+
+/* ============================================================
+   消息提示 - 玻璃拟态
+   ============================================================ */
+
+.el-message {
+  border-radius: 12px !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* ============================================================
+   菜单 - 悬停效果
+   ============================================================ */
+
+.el-menu-item {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 8px !important;
+  margin: 4px 8px !important;
+}
+
+.el-menu-item:hover {
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+
+.el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%) !important;
+  color: #f59e0b !important;
+}
+
+/* 深色模式菜单 */
+:root[data-theme="dark"] .el-menu-item:hover {
+  background: rgba(251, 191, 36, 0.06) !important;
+}
+
+:root[data-theme="dark"] .el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.1) 0%, transparent 100%) !important;
+  color: #fbbf24 !important;
+}
+
+/* ============================================================
+   开关 - 渐变
+   ============================================================ */
+
+.el-switch.is-checked .el-switch__core {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+  border-color: transparent !important;
+}
+
+/* ============================================================
+   复选框 - 渐变选中
+   ============================================================ */
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+  border-color: transparent !important;
+}
+
+.el-checkbox__input.is-checked + .el-checkbox__label {
+  color: #f59e0b !important;
+}
+
+/* ============================================================
+   单选框 - 渐变选中
+   ============================================================ */
+
+.el-radio__input.is-checked .el-radio__inner {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+  border-color: transparent !important;
+}
+
+.el-radio__input.is-checked + .el-radio__label {
+  color: #f59e0b !important;
+}
+
+/* ============================================================
+   选项卡 - 下划线渐变
+   ============================================================ */
+
+.el-tabs__item.is-active {
+  color: #f59e0b !important;
+}
+
+.el-tabs__active-bar {
+  background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%) !important;
+}
+
+/* ============================================================
+   抽屉 - 玻璃拟态
+   ============================================================ */
+
+.el-drawer {
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+:root[data-theme="dark"] .el-drawer {
+  background: rgba(24, 24, 27, 0.9) !important;
+}
+
+/* ============================================================
+   日期选择器
+   ============================================================ */
+
+.el-date-editor .el-input__wrapper {
+  border-radius: 10px !important;
+}
+
+.el-picker-panel {
+  border-radius: 12px !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1) !important;
+}
+
+.el-date-table td.today .el-date-table-cell__text {
+  color: #f59e0b !important;
+  font-weight: 600 !important;
+}
+
+.el-date-table td.current .el-date-table-cell__text {
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%) !important;
+}
+
+.el-date-table td:hover .el-date-table-cell__text {
+  color: #f59e0b !important;
+}
+
+/* ============================================================
+   加载动画
+   ============================================================ */
+
+.el-loading-spinner .circular {
+  stroke: #f59e0b !important;
+}
+
+.el-loading-text {
+  color: #f59e0b !important;
+}
+
+/* ============================================================
+   工具提示
+   ============================================================ */
+
+.el-tooltip__popper {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+}

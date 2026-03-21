@@ -116,6 +116,19 @@ export interface TruncationConfig {
 }
 
 /**
+ * 分组缓存配置
+ * @description 每个分组独立的内存缓存配置
+ */
+export interface GroupCacheConfig {
+  /** 是否启用缓存 */
+  enable: boolean;
+  /** 最大缓存条目数，默认 1000 */
+  maxEntries?: number;
+  /** 缓存过期时间（秒） */
+  ttl?: number;
+}
+
+/**
  * 分组功能配置
  * @description 每个分组独立配置，不继承全局
  */
@@ -128,6 +141,8 @@ export interface GroupFeatureConfig {
   promptInject?: PromptInjectConfig;
   /** 截断检测配置（不设置则不检测） */
   truncation?: TruncationConfig;
+  /** 分组缓存配置 */
+  cache?: GroupCacheConfig;
 }
 
 export interface GroupConfig {
@@ -559,21 +574,43 @@ export const getExchangeRateStatus = () =>
 // 缓存统计 API
 // ============================================================
 
-export interface CacheStats {
+/**
+ * 分组缓存统计信息
+ */
+export interface GroupCacheStats {
+  /** 分组名称 */
+  groupName: string;
+  /** 缓存条目数量 */
   entries: number;
+  /** 最大条目数 */
   maxEntries: number;
-  dbSizeBytes: number;
+  /** 缓存过期时间（秒） */
+  ttl: number | null;
+  /** 总命中次数 */
   hits: number;
+  /** 总未命中次数 */
   misses: number;
+  /** 命中率（0-1） */
   hitRate: number;
+  /** 最近 24 小时命中次数 */
   hits24h: number;
+  /** 最近 24 小时未命中次数 */
   misses24h: number;
+  /** 最近 24 小时命中率 */
   hitRate24h: number;
+  /** 过期条目数 */
+  expiredEntries: number;
 }
 
+/**
+ * 缓存统计响应
+ */
 export interface CacheStatsResponse {
   enabled: boolean;
-  stats: CacheStats | null;
+  /** 数据库文件大小（字节） */
+  dbSizeBytes: number;
+  /** 各分组缓存统计数组 */
+  stats: GroupCacheStats[];
 }
 
 /**
@@ -707,6 +744,8 @@ export const getLogContent = (date: string, level?: string, limit?: number) =>
  */
 export interface LogConfigResponse {
   enabled: boolean;
+  maxSizeMB: number;
+  keepDays: number;
   totalFiles: number;
   totalSize: number;
 }

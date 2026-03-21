@@ -89,13 +89,30 @@
                 />
               </div>
               <!-- 文本部分 -->
-              <pre v-else-if="part.type === 'text' && part.text" class="main-content">{{ part.text }}</pre>
+              <template v-else-if="part.type === 'text' && part.text">
+                <!-- assistant 消息使用 Markdown 渲染 -->
+                <div
+                  v-if="msg.role === 'assistant'"
+                  class="main-content markdown-body"
+                  v-html="renderMarkdown(part.text)"
+                ></div>
+                <pre v-else class="main-content">{{ part.text }}</pre>
+              </template>
               <!-- 其他类型：显示 JSON（自动截断长字符串） -->
               <pre v-else class="main-content content-part-other">{{ formatContent(part) }}</pre>
             </template>
           </template>
-          <!-- 字符串内容或 JSON 内容（自动截断长字符串） -->
-          <pre v-else class="main-content">{{ typeof msg.content === "string" ? msg.content : formatContent(msg.content) }}</pre>
+          <!-- 字符串内容：assistant 使用 Markdown，其他保持纯文本 -->
+          <template v-else-if="typeof msg.content === 'string'">
+            <div
+              v-if="msg.role === 'assistant'"
+              class="main-content markdown-body"
+              v-html="renderMarkdown(msg.content)"
+            ></div>
+            <pre v-else class="main-content">{{ msg.content }}</pre>
+          </template>
+          <!-- JSON 内容（自动截断长字符串） -->
+          <pre v-else class="main-content">{{ formatContent(msg.content) }}</pre>
         </div>
       </div>
       <div v-if="loading" class="loading-indicator">
@@ -192,13 +209,14 @@
 <script setup lang="ts">
 /**
  * 聊天面板组件
- * @description 显示消息列表和输入框，支持图片上传
+ * @description 显示消息列表和输入框，支持图片上传和 Markdown 渲染
  * @emits send - 发送消息
  * @emits remove - 删除消息
  */
 import { ref, nextTick, watch, computed } from "vue";
 import { Close, Promotion, QuestionFilled, DocumentCopy, RefreshRight, Picture } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { marked } from "marked";
 import type { Message } from "./types";
 
 interface PendingImage {
@@ -241,6 +259,45 @@ function hasImagesInContent(content: unknown): boolean {
 const TRUNCATE_THRESHOLD = 200;
 /** 截断后显示的长度 */
 const TRUNCATE_SHOW_LENGTH = 50;
+
+// ============================================================
+// Markdown 渲染配置（性能优化：配置一次，复用）
+// ============================================================
+marked.setOptions({
+  breaks: true,        // 支持 GFM 换行
+  gfm: true,           // 启用 GitHub Flavored Markdown
+});
+
+/** Markdown 渲染缓存（使用 Map 提升性能） */
+const markdownCache = new Map<string, string>();
+
+/**
+ * 渲染 Markdown 内容为 HTML
+ * @description 使用缓存机制避免重复解析，提升性能
+ * @param text Markdown 文本
+ * @returns 渲染后的 HTML 字符串
+ */
+function renderMarkdown(text: string): string {
+  // 检查缓存
+  const cached = markdownCache.get(text);
+  if (cached !== undefined) {
+    return cached;
+  }
+  
+  // 渲染并缓存
+  const html = marked.parse(text) as string;
+  markdownCache.set(text, html);
+  
+  // 限制缓存大小，避免内存溢出
+  if (markdownCache.size > 100) {
+    const firstKey = markdownCache.keys().next().value;
+    if (firstKey !== undefined) {
+      markdownCache.delete(firstKey);
+    }
+  }
+  
+  return html;
+}
 
 /**
  * 智能截断 JSON 中的长字符串值
@@ -763,6 +820,134 @@ defineExpose({ scrollToBottom });
 
 .main-content {
   margin: 0;
+}
+
+/* ============================================================
+   Markdown 样式
+   ============================================================ */
+.markdown-body {
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown-body :deep(h1) { font-size: 1.4em; }
+.markdown-body :deep(h2) { font-size: 1.3em; }
+.markdown-body :deep(h3) { font-size: 1.2em; }
+.markdown-body :deep(h4) { font-size: 1.1em; }
+.markdown-body :deep(h5) { font-size: 1em; }
+.markdown-body :deep(h6) { font-size: 0.9em; color: var(--text-secondary); }
+
+.markdown-body :deep(p) {
+  margin: 8px 0;
+}
+
+.markdown-body :deep(code) {
+  background: var(--surface-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  color: var(--primary-color);
+  transition: background-color 0.3s;
+}
+
+.markdown-body :deep(pre) {
+  background: var(--surface-secondary);
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+  border: 1px solid var(--border-light);
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-body :deep(blockquote) {
+  border-left: 4px solid var(--primary-color);
+  padding: 8px 16px;
+  margin: 12px 0;
+  background: var(--surface-secondary);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-secondary);
+  transition: background-color 0.3s;
+}
+
+.markdown-body :deep(blockquote p) {
+  margin: 0;
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid var(--border-light);
+  padding: 8px 12px;
+  text-align: left;
+  transition: border-color 0.3s;
+}
+
+.markdown-body :deep(th) {
+  background: var(--surface-secondary);
+  font-weight: 600;
+  transition: background-color 0.3s;
+}
+
+.markdown-body :deep(tr:nth-child(even) td) {
+  background: var(--surface-secondary);
+}
+
+.markdown-body :deep(a) {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 16px 0;
+  transition: border-color 0.3s;
+}
+
+.markdown-body :deep(img) {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 8px 0;
 }
 
 /* ============================================================

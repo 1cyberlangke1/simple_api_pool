@@ -59,6 +59,13 @@
               >
                 截断
               </el-tag>
+              <el-tag
+                v-if="row.features?.cache?.enable"
+                size="small"
+                type="primary"
+              >
+                缓存
+              </el-tag>
               <span v-if="!row.features" class="inherit-hint">无额外配置</span>
             </div>
           </template>
@@ -117,6 +124,13 @@
                   type="warning"
                 >
                   截断
+                </el-tag>
+                <el-tag
+                  v-if="group.features?.cache?.enable"
+                  size="small"
+                  type="primary"
+                >
+                  缓存
                 </el-tag>
               </div>
             </div>

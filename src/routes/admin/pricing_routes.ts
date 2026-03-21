@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { adminAuth } from "./auth.js";
-import { modelPricingService } from "../../core/model_pricing.js";
-import { exchangeRateService } from "../../core/exchange_rate.js";
+import { modelPricingService, getModelPricingService } from "../../core/model_pricing.js";
+import { exchangeRateService, getExchangeRateService } from "../../core/exchange_rate.js";
 
 /**
  * 注册模型价格相关路由
@@ -72,6 +72,29 @@ export function registerPricingRoutes(app: FastifyInstance, adminToken: string):
         prices: enrichedPrices,
         providers: modelPricingService.getSupportedProviders(),
         exchangeRate: rateData,
+      });
+    }
+  );
+
+  // 刷新模型价格和汇率
+  app.post(
+    "/api/pricing/refresh",
+    { preHandler: adminAuth(adminToken) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      // 并行刷新价格和汇率
+      const [priceSuccess, rateSuccess] = await Promise.all([
+        getModelPricingService().fetchOnlinePrices(),
+        getExchangeRateService().refresh(),
+      ]);
+
+      const rateData = await exchangeRateService.getUSDCNY();
+
+      return reply.send({
+        success: priceSuccess || rateSuccess,
+        priceRefresh: priceSuccess ? "success" : "failed",
+        rateRefresh: rateSuccess ? "success" : "failed",
+        exchangeRate: rateData,
+        modelCount: modelPricingService.getAllPrices().length,
       });
     }
   );

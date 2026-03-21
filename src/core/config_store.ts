@@ -30,16 +30,36 @@ export class ConfigStore {
 
   /**
    * 更新当前配置并持久化到 setting.json
+   * @description 使用原子写入：先写入临时文件，成功后重命名，确保数据一致性
    * @param nextConfig 新的配置
+   * @throws {Error} 写入失败时抛出异常，内存状态保持不变
    */
   updateConfig(nextConfig: AppConfig): void {
-    this.currentConfig = nextConfig;
     // 确保目录存在
     const dir = path.dirname(this.configPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.configPath, JSON.stringify(nextConfig, null, 2), "utf8");
+
+    // 原子写入：先写入临时文件
+    const tempPath = `${this.configPath}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify(nextConfig, null, 2), "utf8");
+      // 成功后重命名为目标文件（原子操作）
+      fs.renameSync(tempPath, this.configPath);
+      // 文件写入成功后才更新内存状态
+      this.currentConfig = nextConfig;
+    } catch (err) {
+      // 清理临时文件
+      try {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch {
+        // 忽略清理失败
+      }
+      throw err;
+    }
   }
 
   /**

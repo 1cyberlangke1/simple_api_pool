@@ -13,6 +13,7 @@ import { ModelRegistry } from "./core/model_registry.js";
 import { ToolRegistry } from "./core/tool_registry.js";
 import { RpmLimiter } from "./core/rate_limiter.js";
 import { CacheStore } from "./core/cache_store.js";
+import { GroupCacheManager } from "./core/group_cache.js";
 import { StatsStore } from "./core/stats_store.js";
 import { EventEmitter } from "./core/event_emitter.js";
 import { validateConfig } from "./core/config_schema.js";
@@ -41,8 +42,10 @@ export class AppRuntime {
   toolRegistry: ToolRegistry;
   /** 提供商限流器 */
   rpmLimiters: Map<string, RpmLimiter>;
-  /** 缓存存储 */
+  /** 缓存存储（全局，已弃用，保留向后兼容） */
   cacheStore: CacheStore | null;
+  /** 分组缓存管理器 */
+  groupCacheManager: GroupCacheManager;
   /** 统计存储 */
   statsStore: StatsStore;
   /** Key 使用状态持久化存储 */
@@ -102,6 +105,19 @@ export class AppRuntime {
         })
       : null;
 
+    // 初始化分组缓存管理器（使用 SQLite 持久化）
+    this.groupCacheManager = new GroupCacheManager(this.config.cache.dbPath);
+
+    // 注册已配置缓存的分组
+    for (const group of this.config.groups) {
+      if (group.features?.cache?.enable) {
+        this.groupCacheManager.registerGroup(group.name, {
+          maxEntries: group.features.cache.maxEntries ?? 1000,
+          ttl: group.features.cache.ttl,
+        });
+      }
+    }
+
     // 初始化提供商限流器
     this.initRpmLimiters();
 
@@ -151,6 +167,7 @@ export class AppRuntime {
     // 关闭旧组件，释放资源
     this.cacheStore?.close();
     this.toolRegistry.close();
+    this.groupCacheManager.close();
 
     this.config = validation.data!;
 
@@ -165,6 +182,19 @@ export class AppRuntime {
           maxEntries: this.config.cache.maxEntries,
         })
       : null;
+
+    // 重新初始化分组缓存管理器（已在上面关闭旧实例）
+    this.groupCacheManager = new GroupCacheManager(this.config.cache.dbPath);
+
+    // 注册已配置缓存的分组
+    for (const group of this.config.groups) {
+      if (group.features?.cache?.enable) {
+        this.groupCacheManager.registerGroup(group.name, {
+          maxEntries: group.features.cache.maxEntries ?? 1000,
+          ttl: group.features.cache.ttl,
+        });
+      }
+    }
 
     this.initRpmLimiters();
   }
@@ -358,6 +388,35 @@ export class AppRuntime {
    */
   getProvider(providerName: string): ProviderConfig | null {
     return this.config.providers.find((item) => item.name === providerName) ?? null;
+  }
+
+  /**
+   * 获取分组缓存配置
+   * @description 检查分组是否启用了缓存
+   * @param groupName 分组名称
+   * @returns 缓存配置或 null（未启用缓存时）
+   */
+  getGroupCacheConfig(groupName: string): { maxEntries: number; ttl?: number } | null {
+    const group = this.config.groups.find((g) => g.name === groupName);
+    const cacheConfig = group?.features?.cache;
+
+    if (!cacheConfig?.enable) return null;
+
+    return {
+      maxEntries: cacheConfig.maxEntries ?? 1000,
+      ttl: cacheConfig.ttl,
+    };
+  }
+
+  /**
+   * 确保分组已注册到缓存管理器
+   * @param groupName 分组名称
+   */
+  ensureGroupCacheRegistered(groupName: string): void {
+    const config = this.getGroupCacheConfig(groupName);
+    if (config) {
+      this.groupCacheManager.registerGroup(groupName, config);
+    }
   }
 
   // ============================================================

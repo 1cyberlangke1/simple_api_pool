@@ -265,7 +265,7 @@ function handleSizeChange(size: number): void {
   currentPage.value = 1;
 }
 
-const { showCNY, exchangeRate, loading: currencyLoading, fetchExchangeRate, updateExchangeRate, formatPrice } = useCurrency();
+const { showCNY, exchangeRate, fetchExchangeRate, updateExchangeRate, formatPrice } = useCurrency();
 
 onMounted(() => {
   fetchModels();

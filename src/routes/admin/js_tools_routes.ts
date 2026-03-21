@@ -221,6 +221,10 @@ export function registerJsToolsRoutes(app: FastifyInstance, adminToken: string):
       const dbTool = app.runtime.jsToolStore.getById(id) ?? app.runtime.jsToolStore.getByName(id);
       if (dbTool) {
         const result = await app.runtime.jsSandbox.execute(dbTool.code, request.body.args ?? {});
+        // 执行失败时返回 400 状态码
+        if (!result.success) {
+          return reply.status(400).send(result);
+        }
         return reply.send(result);
       }
 
@@ -238,6 +242,10 @@ export function registerJsToolsRoutes(app: FastifyInstance, adminToken: string):
           : app.runtime.jsSandbox;
 
         const result = await sandbox.execute(fileTool.code, request.body.args ?? {});
+        // 执行失败时返回 400 状态码
+        if (!result.success) {
+          return reply.status(400).send(result);
+        }
         return reply.send(result);
       }
 

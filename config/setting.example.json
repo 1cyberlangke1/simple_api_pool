@@ -56,6 +56,11 @@
         },
         "truncation": {
           "enable": false
+        },
+        "cache": {
+          "enable": true,
+          "maxEntries": 1000,
+          "ttl": 3600
         }
       }
     },
@@ -77,6 +82,9 @@
             "latitude": 39.9042,
             "longitude": 116.4074
           }
+        },
+        "cache": {
+          "enable": false
         }
       }
     }

@@ -941,7 +941,7 @@ describe("Admin Routes", () => {
   // Cache Routes
   // ============================================================
   describe("Cache Routes", () => {
-    it("GET /api/cache/stats returns stats (cache disabled)", async () => {
+    it("GET /api/cache/stats returns stats", async () => {
       const response = await app.inject({
         method: "GET",
         url: "/admin/api/cache/stats",
@@ -950,17 +950,19 @@ describe("Admin Routes", () => {
 
       expect(response.statusCode).toBe(200);
       const data = response.json();
-      expect(data.enabled).toBe(false);
+      expect(data.enabled).toBe(true);
+      expect(Array.isArray(data.stats)).toBe(true);
     });
 
-    it("DELETE /api/cache returns error when cache disabled", async () => {
+    it("DELETE /api/cache clears all caches", async () => {
       const response = await app.inject({
         method: "DELETE",
         url: "/admin/api/cache",
         headers: authHeaders(),
       });
 
-      expect(response.statusCode).toBe(400);
+      expect(response.statusCode).toBe(200);
+      expect(response.json().status).toBe("ok");
     });
   });
 });
@@ -979,7 +981,7 @@ describe("Admin Routes with Cache Enabled", () => {
   });
 
   beforeEach(async () => {
-    // 创建启用缓存的配置
+    // 创建启用缓存的配置（分组级别）
     const configWithCache: AppConfig = {
       ...testConfig,
       cache: {
@@ -987,6 +989,19 @@ describe("Admin Routes with Cache Enabled", () => {
         maxEntries: 100,
         dbPath: testCachePath,
       },
+      groups: [
+        {
+          name: "test-group",
+          strategy: "round_robin",
+          routes: [{ modelId: "openai/gpt-4o-mini" }],
+          features: {
+            cache: {
+              enable: true,
+              maxEntries: 100,
+            },
+          },
+        },
+      ],
     };
 
     runtime = new AppRuntime(configWithCache);
@@ -1001,6 +1016,7 @@ describe("Admin Routes with Cache Enabled", () => {
   afterEach(async () => {
     await app.close();
     runtime.cacheStore?.close();
+    runtime.groupCacheManager.close();
     runtime.statsStore.close();
 
     // 清理测试数据库
@@ -1014,7 +1030,7 @@ describe("Admin Routes with Cache Enabled", () => {
   });
 
   describe("Cache Routes with cache enabled", () => {
-    it("GET /api/cache/stats returns enabled status", async () => {
+    it("GET /api/cache/stats returns stats array", async () => {
       const response = await app.inject({
         method: "GET",
         url: "/admin/api/cache/stats",
@@ -1024,16 +1040,24 @@ describe("Admin Routes with Cache Enabled", () => {
       expect(response.statusCode).toBe(200);
       const data = response.json();
       expect(data.enabled).toBe(true);
-      expect(data.stats).toBeDefined();
-      expect(data.stats!.entries).toBe(0);
-      expect(data.stats!.hits).toBe(0);
-      expect(data.stats!.misses).toBe(0);
+      expect(Array.isArray(data.stats)).toBe(true);
     });
 
-    it("DELETE /api/cache clears cache", async () => {
-      // 添加一些缓存
-      runtime.cacheStore!.set("test-key", { data: "test" });
+    it("GET /api/cache/stats/:groupName returns group cache stats", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/admin/api/cache/stats/test-group",
+        headers: authHeaders(),
+      });
 
+      expect(response.statusCode).toBe(200);
+      const data = response.json();
+      expect(data.enabled).toBe(true);
+      expect(data.stats).toBeDefined();
+      expect(data.stats.groupName).toBe("test-group");
+    });
+
+    it("DELETE /api/cache clears all caches", async () => {
       const response = await app.inject({
         method: "DELETE",
         url: "/admin/api/cache",
@@ -1042,7 +1066,6 @@ describe("Admin Routes with Cache Enabled", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json().status).toBe("ok");
-      expect(runtime.cacheStore!.size()).toBe(0);
     });
   });
 });

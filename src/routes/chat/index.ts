@@ -6,11 +6,11 @@
 
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { StreamMode, RequestContext, GroupRouteConfig, KeyState, ProviderConfig, ModelConfig } from "../../core/types.js";
+import type { AppRuntime } from "../../app_state.js";
 import { applyOverrides, callChatCompletion, callChatCompletionStream, collectStreamToNonStream } from "../../core/openai_proxy.js";
 import { estimateTokensFromMessages, estimateTokensFromString } from "../../core/usage.js";
 import { injectSystemPrompt } from "../../core/system_prompt.js";
 import { addTruncationPrompt, stripTruncationSuffix } from "../../core/truncation.js";
-import { CacheStore } from "../../core/cache_store.js";
 import { getGroupFeatures, parseGroupId } from "./feature_flags.js";
 import { handleToolCalls } from "./tool_handler.js";
 import { sendStreamingResponse, forwardStreamResponse } from "./stream_handler.js";
@@ -34,9 +34,9 @@ interface SingleRequestParams {
   targetModelId: string;
   routeTemperature?: number;
   requestedModelId: string;
-  parsedGroupId: { name: string; wantsCache: boolean } | null;
+  parsedGroupId: { name: string } | null;
   body: ChatCompletionBody;
-  runtime: ReturnType<FastifyRequest["server"]["runtime"]>;
+  runtime: AppRuntime;
   reply: FastifyReply;
   isFailoverAttempt?: boolean;
 }
@@ -46,7 +46,7 @@ interface SingleRequestParams {
  */
 interface SingleRequestResult {
   success: boolean;
-  response?: OpenAIResponse;
+  response?: OpenAIResponse | null;
   error?: string;
   statusCode?: number;
   usage?: UsageInfo;
@@ -72,11 +72,10 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
     isFailoverAttempt = false,
   } = params;
 
-  // 获取分组功能配置（独立配置，支持 -cache 后缀）
+  // 获取分组功能配置
   const features = getGroupFeatures(
     parsedGroupId ? `group/${parsedGroupId.name}` : null, 
-    runtime,
-    parsedGroupId?.wantsCache ?? false
+    runtime
   );
 
   // 获取模型配置
@@ -146,13 +145,16 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
   const toolSupport = modelConfig.supportsTools ?? true;
   const toolRoutingStrategy = features.toolRoutingStrategy;
   const selectedTools = features.tools;
-  
+
   // 从请求体中提取工具名称（前端可能只传名称）
   const requestToolNames: string[] = [];
   if (Array.isArray(body.tools)) {
     for (const tool of body.tools) {
-      if (typeof tool === "object" && tool?.function?.name) {
-        requestToolNames.push(tool.function.name);
+      if (typeof tool === "object" && tool !== null && "function" in tool) {
+        const toolFunc = (tool as { function: { name: string } }).function;
+        if (toolFunc?.name) {
+          requestToolNames.push(toolFunc.name);
+        }
       }
     }
   }
@@ -195,10 +197,13 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
   }
 
   // 缓存检查（故障转移时不使用缓存）
-  const cacheEnabled = !isFailoverAttempt && features.enableCache && runtime.cacheStore && body.cache !== false;
+  const cacheEnabled = !isFailoverAttempt && parsedGroupId?.name && features.cache?.enable && body.cache !== false;
   let cacheKey: string | null = null;
 
-  if (cacheEnabled && runtime.cacheStore) {
+  if (cacheEnabled && parsedGroupId?.name) {
+    // 确保分组已注册到缓存管理器
+    runtime.ensureGroupCacheRegistered(parsedGroupId.name);
+
     const cachePayload = {
       model: finalBody.model,
       messages: finalBody.messages,
@@ -207,8 +212,8 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
       response_format: (finalBody as Record<string, unknown>).response_format,
       temperature: (finalBody as Record<string, unknown>).temperature,
     };
-    cacheKey = CacheStore.buildKey(cachePayload);
-    const cached = runtime.cacheStore.get(cacheKey);
+    cacheKey = runtime.groupCacheManager.buildKey(parsedGroupId.name, cachePayload);
+    const cached = runtime.groupCacheManager.get(parsedGroupId.name, cacheKey);
 
     if (cached) {
       const cachedResponse = cached.response as OpenAIResponse;
@@ -326,7 +331,7 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
       const stream = callChatCompletionStream(provider, keyState.key, finalBody);
       const result = await forwardStreamResponse(reply, stream, modelConfig.model);
 
-      if (result.success && result.response && cacheEnabled && cacheKey && runtime.cacheStore) {
+      if (result.success && result.response && cacheEnabled && cacheKey && parsedGroupId?.name) {
         const responseContent = result.response.choices?.[0]?.message?.content ?? "";
         let cacheUsage: UsageInfo;
 
@@ -346,10 +351,10 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
           };
         }
 
-        runtime.cacheStore.set(cacheKey, {
+        runtime.groupCacheManager.set(parsedGroupId.name, cacheKey, {
           response: result.response,
           usage: cacheUsage,
-        } as unknown as Record<string, unknown>);
+        });
       }
 
       runtime.eventEmitter.emit("request:complete", {
@@ -442,7 +447,7 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
     }
 
     // 缓存结果
-    if (cacheEnabled && cacheKey && runtime.cacheStore) {
+    if (cacheEnabled && cacheKey && parsedGroupId?.name) {
       let cacheUsage: UsageInfo;
 
       if (result.usage) {
@@ -461,10 +466,10 @@ async function executeSingleModelRequest(params: SingleRequestParams): Promise<S
         };
       }
 
-      runtime.cacheStore.set(cacheKey, {
+      runtime.groupCacheManager.set(parsedGroupId.name, cacheKey, {
         response: result,
         usage: cacheUsage,
-      } as unknown as Record<string, unknown>);
+      });
     }
 
     runtime.eventEmitter.emit("request:complete", {
@@ -590,8 +595,8 @@ export async function chatCompletionHandler(
     return reply.status(400).send({ error: "group not found" });
   }
 
-  // 检查是否启用故障转移策略（兼容旧配置中的 failover 字段）
-  const failoverEnabled = groupConfig.strategy === "failover" || groupConfig.failover === true;
+  // 检查是否启用故障转移策略
+  const failoverEnabled = groupConfig.strategy === "failover";
 
   if (!failoverEnabled) {
     // 非故障转移模式，使用原有策略选择路由

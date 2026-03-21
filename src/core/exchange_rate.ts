@@ -60,8 +60,31 @@ const FALLBACK_RATES: Record<string, number> = {
 
 /**
  * 免费汇率 API 端点列表
+ * @description 按可靠性排序，优先使用国内可访问的源
  */
 const EXCHANGE_RATE_APIS = [
+  {
+    name: "currency-api-jsdelivr",
+    url: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+    parse: (data: Record<string, unknown>) => {
+      const usd = data.usd as Record<string, number> | undefined;
+      if (usd && usd.cny) {
+        return { USDCNY: usd.cny };
+      }
+      return null;
+    },
+  },
+  {
+    name: "currency-api-unpkg",
+    url: "https://unpkg.com/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+    parse: (data: Record<string, unknown>) => {
+      const usd = data.usd as Record<string, number> | undefined;
+      if (usd && usd.cny) {
+        return { USDCNY: usd.cny };
+      }
+      return null;
+    },
+  },
   {
     name: "exchangerate-api",
     url: "https://open.er-api.com/v6/latest/USD",
@@ -85,12 +108,23 @@ const EXCHANGE_RATE_APIS = [
     },
   },
   {
-    name: "currency-api",
-    url: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+    name: "floatrates-usd",
+    url: "https://www.floatrates.com/daily/usd.json",
     parse: (data: Record<string, unknown>) => {
-      const usd = data.usd as Record<string, number> | undefined;
-      if (usd && usd.cny) {
-        return { USDCNY: usd.cny };
+      const cny = data.cny as { rate: number } | undefined;
+      if (cny && cny.rate) {
+        return { USDCNY: cny.rate };
+      }
+      return null;
+    },
+  },
+  {
+    name: "v6-exchangerate",
+    url: "https://v6.exchangerate-api.com/v6/latest/USD",
+    parse: (data: Record<string, unknown>) => {
+      const rates = data.rates as Record<string, number> | undefined;
+      if (rates && rates.CNY) {
+        return { USDCNY: rates.CNY };
       }
       return null;
     },
@@ -374,6 +408,7 @@ export class ExchangeRateService {
    * 获取经验值汇率
    * @param pair 货币对
    * @returns 缓存数据
+   * @throws {Error} 当货币对完全未知时抛出错误
    */
   private getFallbackRate(pair: string): RateCache {
     const rate = FALLBACK_RATES[pair];
@@ -398,13 +433,8 @@ export class ExchangeRateService {
       };
     }
 
-    // 完全未知，返回 1:1
-    log.warn(`Unknown currency pair: ${pair}, using 1:1`);
-    return {
-      rate: 1,
-      updatedAt: Date.now(),
-      source: "fallback",
-    };
+    // 完全未知，抛出错误而非静默返回 1:1
+    throw new Error(`Unknown currency pair: ${pair}. Supported currencies: USD, CNY, EUR, GBP, JPY`);
   }
 
   /**

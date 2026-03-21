@@ -16,8 +16,13 @@ export function registerExchangeRateRoutes(app: FastifyInstance, adminToken: str
     ) => {
       const { base = "USD", target = "CNY" } = request.query;
 
-      const rateData = await exchangeRateService.getRate(base, target);
-      return reply.send(rateData);
+      try {
+        const rateData = await exchangeRateService.getRate(base, target);
+        return reply.send(rateData);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown currency pair";
+        return reply.status(400).send({ error: message });
+      }
     }
   );
 
@@ -31,8 +36,9 @@ export function registerExchangeRateRoutes(app: FastifyInstance, adminToken: str
     ) => {
       const { base = "USD", target = "CNY", rate } = request.body;
 
-      if (!rate || rate <= 0) {
-        return reply.status(400).send({ error: "Invalid rate value" });
+      // 类型检查：rate 必须是正数
+      if (typeof rate !== "number" || !rate || rate <= 0) {
+        return reply.status(400).send({ error: "Invalid rate value: must be a positive number" });
       }
 
       exchangeRateService.setRate(base, target, rate);

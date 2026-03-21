@@ -77,7 +77,11 @@
           </div>
         </div>
         <div class="chart-legend">
-          <div v-for="group in data.groups" :key="group" class="legend-item">
+          <div
+            v-for="group in data.groups"
+            :key="group"
+            :class="['legend-item', { highlighted: !highlightGroup || highlightGroup === group }]"
+          >
             <div class="legend-color" :style="{ background: getGroupColor(group) }" />
             <span>{{ group || "default" }}</span>
           </div>
@@ -98,6 +102,7 @@ import type { ChartData } from "@/api/types";
 
 interface Props {
   data: ChartData;
+  highlightGroup?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -157,10 +162,15 @@ function getBarStyle(group: string, idx: number): Record<string, string> {
   const maxVal = chartMaxValue.value || 10;
   const height = (value / maxVal) * 100;
 
+  // 如果有高亮分组，非高亮的分组降低透明度
+  const isHighlighted = !props.highlightGroup || props.highlightGroup === group;
+  const opacity = isHighlighted ? "1" : "0.3";
+
   return {
     height: `${height}%`,
     background: getGroupColor(group),
     minHeight: value > 0 ? "2px" : "0px",
+    opacity,
   };
 }
 
@@ -296,6 +306,12 @@ function getProgressColor(rate: number): string {
   gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
+.legend-item.highlighted {
+  opacity: 1;
 }
 
 .legend-color {

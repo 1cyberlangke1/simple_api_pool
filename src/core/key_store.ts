@@ -89,8 +89,25 @@ export class KeyStore {
 
   /**
    * 添加 Key
+   * @description 如果 alias 已存在，先移除旧记录再添加新记录，避免 providerKeys 重复
    */
   addKey(config: KeyConfig): void {
+    // 如果 alias 已存在，先从 providerKeys 中移除旧记录
+    const existing = this.keys.get(config.alias);
+    if (existing) {
+      const oldProviderKeys = this.providerKeys.get(existing.provider);
+      if (oldProviderKeys) {
+        const idx = oldProviderKeys.indexOf(config.alias);
+        if (idx !== -1) {
+          oldProviderKeys.splice(idx, 1);
+        }
+        // 如果数组为空，移除该 provider 条目
+        if (oldProviderKeys.length === 0) {
+          this.providerKeys.delete(existing.provider);
+        }
+      }
+    }
+
     const state: KeyState = {
       ...config,
       usage: {

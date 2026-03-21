@@ -252,6 +252,34 @@
         <el-switch v-model="truncationEnabled" />
         <span class="switch-hint">检测 AI 回复是否被截断，并在截断时自动提示</span>
       </el-form-item>
+
+      <el-form-item label="响应缓存">
+        <el-switch v-model="cacheEnabled" />
+        <span class="switch-hint">缓存相同请求的响应，减少 API 调用</span>
+      </el-form-item>
+
+      <template v-if="cacheEnabled">
+        <el-form-item label="缓存条目数">
+          <el-input-number
+            v-model="cacheConfig.maxEntries"
+            :min="100"
+            :max="100000"
+            :step="100"
+            style="width: 150px"
+          />
+          <span class="switch-hint">最多缓存多少条响应（默认 1000）</span>
+        </el-form-item>
+        <el-form-item label="缓存有效期">
+          <el-input-number
+            v-model="cacheConfig.ttl"
+            :min="60"
+            :max="86400"
+            :step="60"
+            style="width: 150px"
+          />
+          <span class="switch-hint">缓存过期时间（秒），留空则永不过期</span>
+        </el-form-item>
+      </template>
     </el-form>
 
     <template #footer>
@@ -302,6 +330,12 @@ const emit = defineEmits<{
 const submitting = ref(false);
 const formRef = ref();
 const truncationEnabled = ref(false);
+const cacheEnabled = ref(false);
+
+const cacheConfig = reactive({
+  maxEntries: 1000 as number | undefined,
+  ttl: undefined as number | undefined,
+});
 
 const form = reactive({
   name: "",
@@ -388,6 +422,11 @@ function loadGroupData(group: GroupConfig) {
   }
 
   truncationEnabled.value = group.features?.truncation?.enable ?? false;
+
+  // 加载缓存配置
+  cacheEnabled.value = group.features?.cache?.enable ?? false;
+  cacheConfig.maxEntries = group.features?.cache?.maxEntries ?? 1000;
+  cacheConfig.ttl = group.features?.cache?.ttl;
 }
 
 function resetForm() {
@@ -407,6 +446,9 @@ function resetForm() {
   });
 
   truncationEnabled.value = false;
+  cacheEnabled.value = false;
+  cacheConfig.maxEntries = 1000;
+  cacheConfig.ttl = undefined;
 }
 
 function addRoute() {
@@ -507,6 +549,15 @@ function buildFeatures(): GroupFeatureConfig {
 
   if (truncationEnabled.value) {
     features.truncation = { enable: true };
+  }
+
+  // 添加缓存配置
+  if (cacheEnabled.value) {
+    features.cache = {
+      enable: true,
+      ...(cacheConfig.maxEntries ? { maxEntries: cacheConfig.maxEntries } : {}),
+      ...(cacheConfig.ttl ? { ttl: cacheConfig.ttl } : {}),
+    };
   }
 
   return features;

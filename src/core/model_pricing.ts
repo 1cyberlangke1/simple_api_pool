@@ -5,6 +5,9 @@
 
 import type { PricingConfig } from "./types.js";
 import { DAY_MS } from "./types.js";
+import { createModuleLogger } from "./logger.js";
+
+const log = createModuleLogger("model-pricing");
 
 // ============================================================
 // 类型定义
@@ -499,6 +502,144 @@ export class ModelPricingService {
    */
   markUpdated(): void {
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 从外部 API 获取最新价格数据
+   * @returns 是否成功获取
+   */
+  async fetchOnlinePrices(): Promise<boolean> {
+    const PRICE_APIS = [
+      {
+        name: "genai-prices-jsdelivr",
+        url: "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      },
+      {
+        name: "genai-prices-unpkg",
+        url: "https://unpkg.com/litellm/model_prices_and_context_window.json",
+      },
+    ];
+
+    for (const api of PRICE_APIS) {
+      try {
+        const response = await fetch(api.url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (!response.ok) {
+          log.warn({ status: response.status }, `${api.name} returned non-OK status`);
+          continue;
+        }
+
+        const data = (await response.json()) as Record<string, unknown>;
+
+        if (data && typeof data === "object") {
+          const newPrices: ModelPriceData[] = [];
+          let count = 0;
+
+          for (const [modelId, modelData] of Object.entries(data)) {
+            if (!modelData || typeof modelData !== "object") continue;
+
+            const md = modelData as Record<string, unknown>;
+            const inputPrice = md.input_cost_per_token as number | undefined;
+            const outputPrice = md.output_cost_per_token as number | undefined;
+
+            if (inputPrice === undefined || outputPrice === undefined) continue;
+
+            // 转换为每 1M tokens 的价格
+            const inputPricePer1M = inputPrice * 1_000_000;
+            const outputPricePer1M = outputPrice * 1_000_000;
+
+            // 解析提供商
+            const providerId = this.extractProvider(modelId);
+
+            newPrices.push({
+              providerId,
+              modelId,
+              displayName: (md.model_name as string) ?? modelId,
+              inputPricePer1M,
+              outputPricePer1M,
+              contextWindow: md.max_input_tokens as number | undefined,
+              supportsTools: md.supports_function_calling === true,
+            });
+            count++;
+          }
+
+          if (count > 0) {
+            // 合并内置价格和在线价格（在线价格优先）
+            const priceMap = new Map<string, ModelPriceData>();
+
+            // 先添加内置价格
+            for (const p of BUILTIN_PRICES) {
+              priceMap.set(`${p.providerId}/${p.modelId}`, p);
+            }
+
+            // 再添加在线价格（覆盖同名）
+            for (const p of newPrices) {
+              priceMap.set(`${p.providerId}/${p.modelId}`, p);
+            }
+
+            this.prices = Array.from(priceMap.values());
+            this.normalizedIndex = this.buildNormalizedIndex();
+            this.queryCache.clear();
+            this.lastUpdate = Date.now();
+
+            log.info({ count, source: api.name }, "Successfully fetched online prices");
+            return true;
+          }
+        }
+      } catch (error) {
+        log.warn({ error, api: api.name }, "Failed to fetch online prices");
+        continue;
+      }
+    }
+
+    log.warn("All price APIs failed, using built-in prices");
+    return false;
+  }
+
+  /**
+   * 从模型 ID 提取提供商名称
+   * @param modelId 模型 ID
+   * @returns 提供商 ID
+   */
+  private extractProvider(modelId: string): string {
+    // 常见的提供商前缀
+    const providerPrefixes: Array<{ prefix: string; provider: string }> = [
+      { prefix: "openai/", provider: "openai" },
+      { prefix: "anthropic/", provider: "anthropic" },
+      { prefix: "google/", provider: "google" },
+      { prefix: "gemini/", provider: "google" },
+      { prefix: "deepseek/", provider: "deepseek" },
+      { prefix: "mistral/", provider: "mistral" },
+      { prefix: "mistralai/", provider: "mistral" },
+      { prefix: "groq/", provider: "groq" },
+      { prefix: "xai/", provider: "xai" },
+      { prefix: "meta/", provider: "meta" },
+      { prefix: "meta-llama/", provider: "meta" },
+      { prefix: "qwen/", provider: "qwen" },
+      { prefix: "alibaba/", provider: "qwen" },
+      { prefix: "zhipu/", provider: "zhipu" },
+      { prefix: "moonshot/", provider: "moonshot" },
+      { prefix: "doubao/", provider: "doubao" },
+      { prefix: "baidu/", provider: "baidu" },
+      { prefix: "cohere/", provider: "cohere" },
+      { prefix: "perplexity/", provider: "perplexity" },
+      { prefix: "together/", provider: "together" },
+      { prefix: "fireworks/", provider: "fireworks" },
+      { prefix: "openrouter/", provider: "openrouter" },
+    ];
+
+    for (const { prefix, provider } of providerPrefixes) {
+      if (modelId.toLowerCase().startsWith(prefix)) {
+        return provider;
+      }
+    }
+
+    // 无法识别的提供商，使用模型名作为提供商
+    return modelId.split("/")[0]?.toLowerCase() ?? "unknown";
   }
 }
 

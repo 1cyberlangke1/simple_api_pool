@@ -33,6 +33,91 @@ export interface SandboxResult {
 }
 
 /**
+ * 创建安全的 Error 构造函数包装器
+ * @description 防止通过 Error.constructor 访问 Function 构造函数
+ */
+function createSafeError(name = "Error"): typeof Error {
+  // 使用 Object.defineProperty 避免直接赋值到只读属性
+  const SafeError = function (this: Error, message?: string): Error {
+    const err = new Error(message);
+    err.name = name;
+    return err;
+  } as unknown as typeof Error;
+
+  // 使用 Object.defineProperty 设置 prototype
+  Object.defineProperty(SafeError, "prototype", {
+    value: Error.prototype,
+    writable: false,
+    configurable: false,
+  });
+
+  SafeError.captureStackTrace = Error.captureStackTrace;
+
+  return SafeError;
+}
+
+/**
+ * 创建冻结的 Date 构造函数
+ * @description 防止通过 Date.prototype 访问其他对象
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createFrozenDate(): any {
+  return class SafeDate extends Date {
+    constructor(...args: unknown[]) {
+      // @ts-expect-error - Date 构造函数参数类型
+      super(...args);
+    }
+  };
+}
+
+/**
+ * 创建冻结的 Object 构造函数
+ * @description 禁止访问危险的 Object 方法
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createFrozenObject(): any {
+  const safeObject = {
+    ...Object,
+    // 禁止使用这些危险方法
+    getPrototypeOf: () => null,
+    setPrototypeOf: () => {
+      throw new Error("Object.setPrototypeOf is not allowed");
+    },
+    defineProperty: Object.defineProperty,
+    getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+    keys: Object.keys,
+    values: Object.values,
+    entries: Object.entries,
+    assign: Object.assign,
+    freeze: Object.freeze,
+    fromEntries: Object.fromEntries,
+  };
+
+  // 冻结防止修改
+  Object.freeze(safeObject);
+  return safeObject;
+}
+
+/**
+ * 创建冻结的 Array 构造函数
+ * @description 防止通过 Array.prototype 访问其他对象
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createFrozenArray(): any {
+  return class SafeArray<T> extends Array<T> {
+    constructor(...args: unknown[]) {
+      super();
+      if (args.length === 1 && typeof args[0] === "number") {
+        return new Array(args[0]) as unknown as SafeArray<T>;
+      }
+      // @ts-expect-error - Array 构造函数参数类型
+      this.push(...args);
+      return this;
+    }
+  };
+}
+
+/**
  * 文件系统接口（受限）
  */
 interface RestrictedFS {
@@ -196,21 +281,22 @@ export class JsSandbox {
         fs: fsApi,
         // 受限网络访问（仅当 allowNetwork 为 true 时）
         fetch: networkApi,
-        // 允许的安全全局对象
+        // 允许的安全全局对象（冻结版本）
         JSON,
         Math,
-        Date,
-        Object,
-        Array,
+        Date: createFrozenDate(),
+        Object: createFrozenObject(),
+        Array: createFrozenArray(),
         String,
         Number,
         Boolean,
         Map,
         Set,
         RegExp,
-        Error,
-        TypeError,
-        RangeError,
+        // 使用安全的 Error 包装器，禁止访问 constructor
+        Error: createSafeError(),
+        TypeError: createSafeError("TypeError"),
+        RangeError: createSafeError("RangeError"),
         // 禁止的对象（显式 undefined）
         console: undefined,
         XMLHttpRequest: undefined,
@@ -222,6 +308,9 @@ export class JsSandbox {
         require: undefined,
         module: undefined,
         global: undefined,
+        globalThis: undefined,
+        // 冻结 this
+        this: null,
       });
 
       // 包装代码为异步函数
@@ -259,7 +348,7 @@ export class JsSandbox {
   /**
    * 验证代码安全性
    * @param code JS 代码
-   * @returns 是否安全
+   * @returns 是否安全及问题列表
    */
   validateCode(code: string): { safe: boolean; issues: string[] } {
     const issues: string[] = [];
@@ -273,7 +362,27 @@ export class JsSandbox {
       { pattern: /\bimport\s+/g, message: "禁止使用 import" },
       { pattern: /\bexport\s+/g, message: "禁止使用 export" },
       { pattern: /__proto__/g, message: "禁止使用 __proto__" },
-      { pattern: /constructor\s*\(/g, message: "禁止使用 constructor" },
+      { pattern: /\.constructor\s*\(/g, message: "禁止使用 constructor 调用" },
+      { pattern: /\.constructor\s*\[/g, message: "禁止通过 constructor 属性访问" },
+      { pattern: /\[\s*['\"]constructor['\"]\s*\]/g, message: "禁止通过字符串访问 constructor" },
+      { pattern: /\bprototype\s*\[/g, message: "禁止修改 prototype" },
+      { pattern: /\bObject\s*\.\s*setPrototypeOf/g, message: "禁止使用 setPrototypeOf" },
+      { pattern: /\bObject\s*\.\s*getPrototypeOf/g, message: "禁止使用 getPrototypeOf" },
+      { pattern: /\bReflect\s*\./g, message: "禁止使用 Reflect" },
+      { pattern: /\bProxy\s*\(/g, message: "禁止使用 Proxy" },
+      { pattern: /\bGeneratorFunction\b/g, message: "禁止使用 GeneratorFunction" },
+      { pattern: /\bAsyncFunction\b/g, message: "禁止使用 AsyncFunction" },
+      { pattern: /\bglobalThis\b/g, message: "禁止使用 globalThis" },
+      { pattern: /\bwindow\b/g, message: "禁止使用 window" },
+      { pattern: /\bdocument\b/g, message: "禁止使用 document" },
+      { pattern: /\bnavigator\b/g, message: "禁止使用 navigator" },
+      // 检测通过 this 访问 constructor 的模式
+      { pattern: /this\s*\[\s*['\"]constructor['\"]\s*\]/g, message: "禁止通过 this 访问 constructor" },
+      // 检测通过 arguments.callee 访问
+      { pattern: /\barguments\s*\.\s*callee\b/g, message: "禁止使用 arguments.callee" },
+      { pattern: /\barguments\s*\[\s*['\"]callee['\"]\s*\]/g, message: "禁止使用 arguments.callee" },
+      // 检测 with 语句
+      { pattern: /\bwith\s*\(/g, message: "禁止使用 with 语句" },
     ];
 
     for (const { pattern, message } of forbiddenPatterns) {

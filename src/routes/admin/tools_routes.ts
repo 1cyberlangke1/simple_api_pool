@@ -84,10 +84,11 @@ export function registerToolsRoutes(app: FastifyInstance, adminToken: string): v
         result,
       });
     } catch (err) {
-      const error = err as Error;
+      // 安全提取错误消息，处理非 Error 类型异常
+      const errorMessage = err instanceof Error ? err.message : String(err);
       return reply.status(500).send({
         success: false,
-        error: error.message,
+        error: errorMessage,
       });
     }
   });

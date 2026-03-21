@@ -117,6 +117,19 @@ const TruncationSchema = z.object({
 });
 
 /**
+ * 分组缓存配置 Schema
+ * @description 每个分组独立的内存缓存配置
+ */
+const GroupCacheSchema = z.object({
+  /** 是否启用缓存 */
+  enable: z.boolean(),
+  /** 最大缓存条目数，默认 1000 */
+  maxEntries: z.number().positive().max(100000).optional(),
+  /** 过期时间（秒） */
+  ttl: z.number().positive().optional(),
+});
+
+/**
  * 分组功能配置 Schema
  * @description 每个分组独立配置，不再继承全局
  */
@@ -129,6 +142,8 @@ const GroupFeatureSchema = z.object({
   promptInject: PromptInjectSchema.optional(),
   /** 截断检测配置 */
   truncation: TruncationSchema.optional(),
+  /** 分组缓存配置 */
+  cache: GroupCacheSchema.optional(),
 });
 
 /**
@@ -351,21 +366,22 @@ export function validateConfig(config: unknown): ValidationResult<z.infer<typeof
       }
     }
 
-    // 检查分组引用的工具是否存在于全局工具池
-    const toolNames = new Set(result.data.tools.mcpTools.map((t) => t.name));
-    const toolErrors: string[] = [];
+    // 检查分组引用的工具是否存在于 MCP 工具池
+    // 注意：JS 工具是运行时注册的，这里只验证 MCP 工具，未知工具改为警告
+    const mcpToolNames = new Set(result.data.tools.mcpTools.map((t) => t.name));
 
     for (const group of result.data.groups) {
       if (group.features?.tools) {
         for (const toolName of group.features.tools) {
-          if (!toolNames.has(toolName)) {
-            toolErrors.push(`Group "${group.name}" references unknown tool "${toolName}"`);
+          // 只对 MCP 工具进行验证，其他工具（JS 工具）可能是运行时注册的
+          if (!mcpToolNames.has(toolName)) {
+            warnings.push(`Group "${group.name}" references tool "${toolName}" which is not an MCP tool. If this is a JS tool, it must be registered at runtime.`);
           }
         }
       }
     }
 
-    const allErrors = [...modelErrors, ...groupErrors, ...toolErrors];
+    const allErrors = [...modelErrors, ...groupErrors];
     if (allErrors.length > 0) {
       return {
         success: false,

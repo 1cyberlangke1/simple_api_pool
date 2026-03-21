@@ -16,7 +16,7 @@
               class="search-input"
               @input="handleSearchChange"
             />
-            <el-button type="success" @click="showBatchImportDialog" class="action-btn">
+            <el-button @click="showBatchImportDialog" class="action-btn">
               <el-icon><Upload /></el-icon>
               <span class="btn-text">批量导入</span>
             </el-button>

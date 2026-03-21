@@ -27,10 +27,32 @@ export async function buildApp(runtime: AppRuntime, onConfigUpdate?: (config: Ap
   });
 
   // 注册 CORS（前后端分离，允许跨域）
+  // 生产环境应限制特定域名，开发环境允许所有来源
+  const isProduction = process.env.NODE_ENV === "production";
   await app.register(cors, {
-    origin: true, // 开发环境允许所有来源
+    origin: isProduction
+      ? (origin, callback) => {
+          // 生产环境：只允许 localhost 和配置的域名
+          const allowedOrigins = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+          ];
+          // 允许无 origin 的请求（如移动端应用、Postman）
+          if (!origin) return callback(null, true);
+          if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+          } else {
+            // 记录未授权的跨域请求
+            app.log.warn({ origin }, "CORS: Origin not allowed");
+            callback(new Error("Not allowed by CORS"), false);
+          }
+        }
+      : true, // 开发环境允许所有来源
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Token"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Token", "X-API-Key"],
+    credentials: true,
   });
 
   // 装饰运行态到 app 实例

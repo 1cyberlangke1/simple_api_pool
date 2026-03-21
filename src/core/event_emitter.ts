@@ -5,7 +5,7 @@
  */
 
 import mitt from "mitt";
-import type { RequestEvent, EventHandler, IEventEmitter } from "./types.js";
+import type { AppEvent, EventHandler, IEventEmitter } from "./events.js";
 import { createModuleLogger } from "./logger.js";
 
 const log = createModuleLogger("events");
@@ -14,7 +14,7 @@ const log = createModuleLogger("events");
  * 事件映射类型
  */
 type EventMap = {
-  [K in RequestEvent]: unknown;
+  [K in AppEvent]: unknown;
 };
 
 /**
@@ -23,14 +23,14 @@ type EventMap = {
  */
 export class EventEmitter implements IEventEmitter {
   private emitter = mitt<EventMap>();
-  private onceHandlers: Map<RequestEvent, Set<EventHandler>> = new Map();
+  private onceHandlers: Map<AppEvent, Set<EventHandler>> = new Map();
 
   /**
    * 订阅事件
    * @param event 事件名称
    * @param handler 处理器
    */
-  on<E extends RequestEvent>(event: E, handler: EventHandler): void {
+  on<E extends AppEvent>(event: E, handler: EventHandler): void {
     this.emitter.on(event, handler as (data: unknown) => void);
   }
 
@@ -39,7 +39,7 @@ export class EventEmitter implements IEventEmitter {
    * @param event 事件名称
    * @param handler 处理器
    */
-  once<E extends RequestEvent>(event: E, handler: EventHandler): void {
+  once<E extends AppEvent>(event: E, handler: EventHandler): void {
     if (!this.onceHandlers.has(event)) {
       this.onceHandlers.set(event, new Set());
     }
@@ -51,7 +51,7 @@ export class EventEmitter implements IEventEmitter {
    * @param event 事件名称
    * @param handler 处理器
    */
-  off<E extends RequestEvent>(event: E, handler: EventHandler): void {
+  off<E extends AppEvent>(event: E, handler: EventHandler): void {
     this.emitter.off(event, handler as (data: unknown) => void);
     this.onceHandlers.get(event)?.delete(handler);
   }
@@ -61,7 +61,7 @@ export class EventEmitter implements IEventEmitter {
    * @param event 事件名称
    * @param data 事件数据
    */
-  async emit<E extends RequestEvent>(event: E, data: unknown): Promise<void> {
+  async emit<E extends AppEvent>(event: E, data: unknown): Promise<void> {
     // 执行持久处理器（mitt 内部同步调用）
     const handlers = this.emitter.all.get(event);
     if (handlers) {
@@ -93,7 +93,7 @@ export class EventEmitter implements IEventEmitter {
    * 移除所有处理器
    * @param event 可选的事件名称，不传则清空所有
    */
-  clear(event?: RequestEvent): void {
+  clear(event?: AppEvent): void {
     if (event) {
       this.emitter.all.delete(event);
       this.onceHandlers.delete(event);
@@ -107,7 +107,7 @@ export class EventEmitter implements IEventEmitter {
    * 获取事件监听器数量
    * @param event 事件名称
    */
-  listenerCount(event: RequestEvent): number {
+  listenerCount(event: AppEvent): number {
     const handlers = this.emitter.all.get(event);
     const persistent = handlers ? (Array.isArray(handlers) ? handlers.length : 1) : 0;
     const once = this.onceHandlers.get(event)?.size ?? 0;

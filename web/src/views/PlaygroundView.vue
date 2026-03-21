@@ -7,7 +7,7 @@
             <span>对话测试</span>
           </div>
           <div class="header-actions page-header__actions">
-            <el-button @click="fetchModels" :loading="isLoadingModels" title="刷新模型列表">
+            <el-button type="primary" @click="fetchModels" :loading="isLoadingModels" title="刷新模型列表">
               <el-icon><Refresh /></el-icon>
             </el-button>
             <el-select
@@ -34,7 +34,7 @@
                 </div>
               </el-option>
             </el-select>
-            <el-button @click="clearMessages" :disabled="messages.length === 0">
+            <el-button type="danger" @click="clearMessages" :disabled="messages.length === 0">
               <el-icon><Delete /></el-icon>
               <span class="btn-text">清空对话</span>
             </el-button>

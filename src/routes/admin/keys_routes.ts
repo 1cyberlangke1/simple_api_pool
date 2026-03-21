@@ -26,20 +26,38 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
     "/api/keys",
     { preHandler: adminAuth(adminToken) },
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      // 转换后端 KeyState 为前端期望的格式
+      // 转换后端 KeyState 为前端期望的格式（敏感字段脱敏）
       const keys = app.runtime.keyStore.listKeys().map((key) => ({
         alias: key.alias,
         provider: key.provider,
-        key: key.key,
+        // Key 脱敏处理：只显示前 8 位和后 4 位
+        key: maskKey(key.key),
         model: key.model,
         quota: key.quota,
         usedToday: key.usage.dailyCount,
         remainingTotal:
           key.quota.type === "total" ? key.quota.limit - key.usage.totalCost : null,
+        dailyResetDate: key.dailyResetDate,
       }));
       return reply.send(keys);
     }
   );
+
+/**
+ * 脱敏 API Key
+ * @description 只显示前缀和后几位，中间用 * 代替
+ * @param key 原始 Key
+ * @returns 脱敏后的 Key
+ */
+function maskKey(key: string): string {
+  if (!key || key.length < 12) {
+    // 短 Key 只显示前后各 2 位
+    if (!key || key.length < 4) return "****";
+    return key.slice(0, 2) + "*".repeat(4) + key.slice(-2);
+  }
+  // 标准 Key：显示前 8 位和后 4 位
+  return key.slice(0, 8) + "*".repeat(8) + key.slice(-4);
+}
 
   /**
    * 添加 Key
@@ -218,6 +236,11 @@ export function registerKeysRoutes(app: FastifyInstance, adminToken: string): vo
 
       if (!aliases || !Array.isArray(aliases) || aliases.length === 0) {
         return reply.status(400).send({ error: "aliases array is required" });
+      }
+
+      // 验证数组元素类型
+      if (!aliases.every((a) => typeof a === "string")) {
+        return reply.status(400).send({ error: "aliases must be an array of strings" });
       }
 
       const results: { alias: string; status: "success" | "not_found" }[] = [];

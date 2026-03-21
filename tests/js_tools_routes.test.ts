@@ -82,12 +82,23 @@ const mockJsSandbox = {
   }),
 };
 
+// Mock fileToolLoader
+const mockFileToolLoader = {
+  getTool: vi.fn((name: string) => null),
+  getAll: vi.fn(() => []),
+};
+
 // Mock AppRuntime
 const mockRuntime = {
   jsToolStore: mockJsToolStore,
   jsSandbox: mockJsSandbox,
+  fileToolLoader: mockFileToolLoader,
   refreshJsTool: vi.fn(),
   removeJsTool: vi.fn(),
+  getAllTools: vi.fn(() => ({
+    dbTools: Array.from(mockTools.values()),
+    fileTools: [],
+  })),
 };
 
 describe("js_tools_routes", () => {
@@ -118,7 +129,7 @@ describe("js_tools_routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual([]);
+      expect(response.json()).toEqual({ dbTools: [], fileTools: [] });
     });
 
     it("should return all tools", async () => {
@@ -137,8 +148,8 @@ describe("js_tools_routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toHaveLength(1);
-      expect(response.json()[0].name).toBe("test_tool");
+      expect(response.json().dbTools).toHaveLength(1);
+      expect(response.json().dbTools[0].name).toBe("test_tool");
     });
 
     it("should reject request without auth", async () => {

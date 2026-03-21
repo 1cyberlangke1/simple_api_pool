@@ -7,6 +7,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply, preValidationAsyncHookHandler } from "fastify";
 import type { RequestEvent, ConfigEvent } from "../../core/events.js";
 import { createModuleLogger } from "../../core/logger.js";
+import { safeCompare } from "./auth.js";
 
 const log = createModuleLogger("sse");
 
@@ -25,7 +26,8 @@ function sseAuth(adminToken: string): preValidationAsyncHookHandler {
     const headerToken = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
     const alt = (request.headers["x-admin-token"] as string | undefined) ?? "";
 
-    if (queryToken !== adminToken && headerToken !== adminToken && alt !== adminToken) {
+    // 使用常量时间比较，防止时序攻击
+    if (!safeCompare(queryToken ?? "", adminToken) && !safeCompare(headerToken, adminToken) && !safeCompare(alt, adminToken)) {
       return reply.status(401).send({ error: "unauthorized" });
     }
   };

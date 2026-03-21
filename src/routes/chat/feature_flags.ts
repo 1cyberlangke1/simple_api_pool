@@ -4,7 +4,7 @@
  * @module routes/chat/feature_flags
  */
 
-import type { AppConfig, PromptInjectConfig, TruncationConfig, ToolRoutingStrategy } from "../../core/types.js";
+import type { AppConfig, PromptInjectConfig, TruncationConfig, ToolRoutingStrategy, GroupCacheConfig } from "../../core/types.js";
 
 /**
  * 分组功能配置
@@ -19,21 +19,19 @@ export interface GroupFeatures {
   promptInject?: PromptInjectConfig;
   /** 截断检测配置（未配置则不检测） */
   truncation?: TruncationConfig;
-  /** 是否启用缓存（通过分组名后缀 -cache 判断） */
-  enableCache: boolean;
+  /** 缓存配置（未配置则不启用缓存） */
+  cache?: GroupCacheConfig;
 }
 
 /**
  * 获取分组功能配置
- * @param groupId 分组 ID（不含 -cache 后缀）
+ * @param groupId 分组 ID
  * @param runtime 运行时配置
- * @param wantsCache 是否请求缓存版本
  * @returns 功能配置
  */
 export function getGroupFeatures(
   groupId: string | null, 
-  runtime: { config: AppConfig },
-  wantsCache: boolean = false
+  runtime: { config: AppConfig }
 ): GroupFeatures {
   if (!groupId) {
     // 无分组，返回空配置
@@ -42,7 +40,7 @@ export function getGroupFeatures(
       toolRoutingStrategy: "local_first",
       promptInject: undefined,
       truncation: undefined,
-      enableCache: false,
+      cache: undefined,
     };
   }
 
@@ -58,25 +56,24 @@ export function getGroupFeatures(
     toolRoutingStrategy: features?.toolRoutingStrategy ?? "local_first",
     promptInject: features?.promptInject,
     truncation: features?.truncation,
-    enableCache: wantsCache && runtime.config.cache.enable,
+    cache: features?.cache,
   };
 }
 
 /**
  * 解析分组 ID
- * @description 从请求的分组 ID 中提取实际分组名和是否请求缓存
- * @param groupId 请求的分组 ID（格式：group/{name} 或 group/{name}-cache）
+ * @description 从请求的分组 ID 中提取实际分组名
+ * @param groupId 请求的分组 ID（格式：group/{name}）
  * @returns 解析结果
  */
-export function parseGroupId(groupId: string): { name: string; wantsCache: boolean } {
+export function parseGroupId(groupId: string): { name: string } {
   // 去掉 group/ 前缀（如果存在）
   let name = groupId.startsWith("group/") ? groupId.slice(6) : groupId;
   
-  // 检查是否请求缓存版本
-  const wantsCache = name.endsWith("-cache");
-  if (wantsCache) {
+  // 兼容旧的 -cache 后缀，自动移除
+  if (name.endsWith("-cache")) {
     name = name.slice(0, -6);
   }
   
-  return { name, wantsCache };
+  return { name };
 }

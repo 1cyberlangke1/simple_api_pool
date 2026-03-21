@@ -49,12 +49,9 @@ describe("ExchangeRateService", () => {
       expect(rateData.rate).toBe(1);
     });
 
-    it("returns fallback for unknown currency pair", async () => {
-      const rateData = await service.getRate("XYZ", "ABC");
-
-      // 未知货币对应该返回 1:1
-      expect(rateData.rate).toBe(1);
-      expect(rateData.source).toBe("fallback");
+    it("throws error for unknown currency pair", async () => {
+      // 未知货币对应该抛出错误
+      await expect(service.getRate("XYZ", "ABC")).rejects.toThrow("Unknown currency pair");
     });
   });
 

@@ -171,6 +171,7 @@ import {
   getConfig,
   updateConfig,
   type JsTool,
+  type FileJsTool,
   type JsToolExample,
   type McpStdioConfig,
   type McpSseConfig,
@@ -185,17 +186,20 @@ import McpToolsTable from "@/components/McpToolsTable.vue";
 // MCP 工具类型
 type McpTool = McpStdioConfig | McpSseConfig | McpHttpConfig;
 
+// 统一工具类型（数据库工具 + 文件工具）
+type UnifiedJsTool = (JsTool & { source: "database" }) | (FileJsTool & { source: "file" });
+
 // 状态
 const loading = ref(false);
 const activeTab = ref("all");
-const jsTools = ref<JsTool[]>([]);
+const jsTools = ref<UnifiedJsTool[]>([]);
 const jsExamples = ref<JsToolExample[]>([]);
 const mcpTools = ref<McpTool[]>([]);
 const fullConfig = ref<AppConfig | null>(null);
 
 // JS 工具对话框
 const jsToolDialogVisible = ref(false);
-const editingJsTool = ref<JsTool | null>(null);
+const editingJsTool = ref<(JsTool & { source: "database" }) | null>(null);
 
 // 测试对话框
 const testDialogVisible = ref(false);
@@ -260,7 +264,8 @@ async function fetchAll() {
 async function fetchJsTools() {
   try {
     const { data } = await getJsTools();
-    jsTools.value = data;
+    // 合并 dbTools 和 fileTools 为统一数组
+    jsTools.value = [...(data.dbTools || []), ...(data.fileTools || [])];
   } catch {
     // ignore
   }
@@ -292,10 +297,16 @@ function showAddJsToolDialog() {
 }
 
 function showEditJsToolDialog(tool: { name: string; id?: string }) {
-  // 从 jsTools 中找到完整的工具对象
-  const fullTool = jsTools.value.find(t => t.id === tool.id || t.name === tool.name);
-  if (fullTool) {
-    editingJsTool.value = fullTool;
+  // 从 jsTools 中找到完整的工具对象（只编辑数据库工具）
+  const fullTool = jsTools.value.find(t => {
+    // 只有数据库工具有 id，可以编辑
+    if ('id' in t && tool.id && t.id === tool.id) {
+      return true;
+    }
+    return false;
+  });
+  if (fullTool && 'id' in fullTool) {
+    editingJsTool.value = fullTool as JsTool & { source: "database" };
     jsToolDialogVisible.value = true;
   }
 }
@@ -363,10 +374,15 @@ function getExampleValue(prop: Record<string, unknown>): unknown {
 }
 
 function showTestJsToolDialog(tool: { name: string; id?: string }) {
+  // 测试功能仅支持数据库工具（需要 id）
+  if (!tool.id) {
+    ElMessage.warning("文件工具暂不支持在线测试");
+    return;
+  }
   // 从 jsTools 中找到完整的工具对象
-  const fullTool = jsTools.value.find(t => t.id === tool.id || t.name === tool.name);
-  if (fullTool) {
-    testingTool.value = fullTool;
+  const fullTool = jsTools.value.find(t => 'id' in t && t.id === tool.id);
+  if (fullTool && 'id' in fullTool) {
+    testingTool.value = fullTool as JsTool;
     // 根据 inputSchema 自动生成示例参数
     const exampleArgs = generateExampleFromSchema(fullTool.inputSchema as Record<string, unknown>);
     testArgs.value = JSON.stringify(exampleArgs, null, 2);

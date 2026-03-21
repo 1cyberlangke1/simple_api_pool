@@ -21,7 +21,7 @@
               <el-option label="DEBUG" value="debug" />
               <el-option label="TRACE" value="trace" />
             </el-select>
-            <el-button @click="refresh" :loading="loading">
+            <el-button type="primary" @click="refresh" :loading="loading">
               <el-icon><Refresh /></el-icon>
               <span class="btn-text">刷新</span>
             </el-button>
@@ -63,7 +63,7 @@
  * 日志查看视图
  * @description 查看系统运行日志
  */
-import { ref, onMounted, computed, nextTick, watch } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { Refresh } from "@element-plus/icons-vue";
 import { getLogList, getLogContent, type LogEntry, type LogFileInfo } from "@/api/types";
 

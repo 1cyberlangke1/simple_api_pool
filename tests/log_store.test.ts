@@ -268,20 +268,25 @@ describe("LogStore", () => {
 
       const store = createLogStore();
 
-      // Read first page
+      // ReadLogs 从末尾开始读取最新的日志
+      // offset=0, limit=3 返回最新的 3 行：line 7, 8, 9
       const page1 = store.readLogs("2024-03-15", 0, 3);
       expect(page1).toHaveLength(3);
-      expect(page1[0]).toBe('{"line":0}');
+      expect(page1[0]).toBe('{"line":7}');
+      expect(page1[1]).toBe('{"line":8}');
+      expect(page1[2]).toBe('{"line":9}');
 
-      // Read second page
+      // offset=3, limit=3 跳过最新 3 行，再返回 3 行：line 4, 5, 6
       const page2 = store.readLogs("2024-03-15", 3, 3);
       expect(page2).toHaveLength(3);
-      expect(page2[0]).toBe('{"line":3}');
+      expect(page2[0]).toBe('{"line":4}');
+      expect(page2[1]).toBe('{"line":5}');
+      expect(page2[2]).toBe('{"line":6}');
 
-      // Read last page
+      // offset=9, limit=5 返回最早的内容：line 0, 1
       const page3 = store.readLogs("2024-03-15", 9, 5);
       expect(page3).toHaveLength(1);
-      expect(page3[0]).toBe('{"line":9}');
+      expect(page3[0]).toBe('{"line":0}');
 
       store.close();
     });

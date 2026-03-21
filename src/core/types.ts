@@ -153,6 +153,19 @@ export interface TruncationConfig {
 }
 
 /**
+ * 分组缓存配置
+ * @description 每个分组独立的缓存配置，使用内存 LRU 缓存
+ */
+export interface GroupCacheConfig {
+  /** 是否启用缓存 */
+  enable: boolean;
+  /** 最大缓存条目数，默认 1000 */
+  maxEntries?: number;
+  /** 缓存过期时间（秒），不设置则永不过期 */
+  ttl?: number;
+}
+
+/**
  * 分组功能配置
  * @description 每个分组独立配置，不再继承全局配置
  */
@@ -178,6 +191,11 @@ export interface GroupFeatureConfig {
    * @description 不设置则不启用截断检测
    */
   truncation?: TruncationConfig;
+  /**
+   * 分组缓存配置
+   * @description 每个分组独立的内存缓存配置
+   */
+  cache?: GroupCacheConfig;
 }
 
 /**

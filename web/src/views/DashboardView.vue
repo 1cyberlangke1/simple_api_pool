@@ -49,13 +49,15 @@
           </div>
         </div>
       </template>
-      <CallChart :data="chartData" />
+      <CallChart :data="filteredChartData" :highlight-group="selectedGroup" />
     </el-card>
 
     <!-- 缓存统计卡片 -->
     <CacheStatsCard
       v-if="cacheStats.enabled"
       :stats="cacheStats.stats"
+      :db-size-bytes="cacheStats.dbSizeBytes"
+      v-model="selectedGroup"
       @refresh="fetchCacheStats"
     />
 
@@ -344,13 +346,49 @@ const paginatedKeys = computed(() => {
   return filteredKeys.value.slice(start, end);
 });
 
-const cacheStats = ref<CacheStatsResponse>({ enabled: false, stats: null });
+const cacheStats = ref<CacheStatsResponse>({ enabled: false, stats: [], dbSizeBytes: 0 });
 const chartHours = ref(24);
 const chartData = ref<ChartData>({
   timeline: [],
   groups: [],
   groupData: {},
   summary: [],
+});
+
+// 选中的分组（用于缓存统计与柱状图联动）
+const selectedGroup = ref<string | null>(null);
+
+/**
+ * 过滤后的图表数据（根据选中的分组过滤）
+ */
+const filteredChartData = computed(() => {
+  // 未选中分组时返回全部数据
+  if (!selectedGroup.value) {
+    return chartData.value;
+  }
+
+  const group = selectedGroup.value;
+  const data = chartData.value;
+
+  // 如果选中的分组不在数据中，返回空数据
+  if (!data.groups.includes(group)) {
+    return {
+      timeline: data.timeline,
+      groups: [],
+      groupData: {},
+      summary: [],
+    };
+  }
+
+  // 只返回选中的分组数据
+  return {
+    timeline: data.timeline,
+    groups: [group],
+    groupData: {
+      [group]: data.groupData[group] || { calls: [], successRate: [] },
+    },
+    summary: data.summary.filter((s) => s.group === group),
+  };
 });
 
 // SSE 连接状态
