@@ -223,7 +223,7 @@ function createDefaultLogger(): Logger {
 }
 
 /** 全局日志器实例 */
-export const logger = createDefaultLogger();
+export const LOGGER = createDefaultLogger();
 
 /**
  * 创建模块日志器
@@ -231,7 +231,7 @@ export const logger = createDefaultLogger();
  * @returns 带模块标签的日志器
  */
 export function createModuleLogger(moduleName: string): Logger {
-  return logger.child({ module: moduleName });
+  return LOGGER.child({ module: moduleName });
 }
 
 /**
@@ -240,5 +240,5 @@ export function createModuleLogger(moduleName: string): Logger {
  * @returns 带插件标签的日志器
  */
 export function createPluginLogger(pluginName: string): Logger {
-  return logger.child({ plugin: pluginName });
+  return LOGGER.child({ plugin: pluginName });
 }

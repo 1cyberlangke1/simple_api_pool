@@ -7,7 +7,7 @@
 import fs from "fs";
 import path from "path";
 import type { JSONSchema7 } from "json-schema";
-import { logger as log } from "./logger.js";
+import { LOGGER as log } from "./logger.js";
 
 /**
  * JSON 工具文件定义格式

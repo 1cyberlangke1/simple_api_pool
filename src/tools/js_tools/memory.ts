@@ -21,7 +21,7 @@ export interface JsToolDefinition {
 /**
  * 文件记忆工具定义
  */
-export const memoryTool: JsToolDefinition = {
+export const MEMORY_TOOL: JsToolDefinition = {
   name: "memory",
   description: "简单的基于文件的记忆工具，以日期为文件名存储和读取记忆内容",
   category: "记忆",
@@ -129,4 +129,4 @@ switch (action) {
 }`,
 };
 
-export default memoryTool;
+export default MEMORY_TOOL;

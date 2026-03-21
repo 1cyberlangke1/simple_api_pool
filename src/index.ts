@@ -5,7 +5,7 @@ import type { AppConfig } from "./core/types.js";
 import { ConfigStore } from "./core/config_store.js";
 import { AppRuntime } from "./app_state.js";
 import { buildApp } from "./app.js";
-import { logger } from "./core/logger.js";
+import { LOGGER } from "./core/logger.js";
 import { validateConfig } from "./core/config_schema.js";
 
 // Load config from JSON file
@@ -115,6 +115,6 @@ async function bootstrap() {
 bootstrap().catch((err) => {
   console.error("[ERROR] Bootstrap failed:");
   console.error(err);
-  logger.error({ error: err instanceof Error ? err.message : String(err) }, "Bootstrap failed");
+  LOGGER.error({ error: err instanceof Error ? err.message : String(err) }, "Bootstrap failed");
   process.exit(1);
 });

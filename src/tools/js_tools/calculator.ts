@@ -21,7 +21,7 @@ export interface JsToolDefinition {
 /**
  * 计算器工具定义
  */
-export const calculatorTool: JsToolDefinition = {
+export const CALCULATOR_TOOL: JsToolDefinition = {
   name: "calculator",
   description: "执行基本数学运算，支持加减乘除和幂运算",
   category: "工具",
@@ -96,4 +96,4 @@ return {
 };`,
 };
 
-export default calculatorTool;
+export default CALCULATOR_TOOL;

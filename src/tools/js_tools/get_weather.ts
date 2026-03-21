@@ -21,7 +21,7 @@ export interface JsToolDefinition {
 /**
  * 天气获取工具定义
  */
-export const getWeatherTool: JsToolDefinition = {
+export const GET_WEATHER_TOOL: JsToolDefinition = {
   name: "get_weather",
   description: "获取指定城市的天气信息，使用 Open-Meteo 免费 API",
   category: "网络",
@@ -146,4 +146,4 @@ return {
 };`,
 };
 
-export default getWeatherTool;
+export default GET_WEATHER_TOOL;
