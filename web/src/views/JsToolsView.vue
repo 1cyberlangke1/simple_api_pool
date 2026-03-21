@@ -78,16 +78,14 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button type="warning" text size="small" @click="showTestDialog(row, 'file')">
-                测试
-              </el-button>
-              <el-popconfirm title="确定删除此工具文件？" @confirm="handleDeleteFileTool(row.name)">
-                <template #reference>
-                  <el-button type="danger" text size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
+            <el-button type="warning" text size="small" @click="showTestDialog(row, 'file')">
+              测试
+            </el-button>
+            <el-popconfirm title="确定删除此工具文件？" @confirm="handleDeleteFileTool(row.name)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -157,19 +155,17 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button type="primary" text size="small" @click="showEditDialog(row)">
-                编辑
-              </el-button>
-              <el-button type="warning" text size="small" @click="showTestDialog(row, 'db')">
-                测试
-              </el-button>
-              <el-popconfirm title="确定删除此工具？" @confirm="handleDelete(row.id)">
-                <template #reference>
-                  <el-button type="danger" text size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
+            <el-button type="primary" text size="small" @click="showEditDialog(row)">
+              编辑
+            </el-button>
+            <el-button type="warning" text size="small" @click="showTestDialog(row, 'db')">
+              测试
+            </el-button>
+            <el-popconfirm title="确定删除此工具？" @confirm="handleDelete(row.id)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -546,13 +542,6 @@ function getFileName(filePath: string): string {
   font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
-}
-
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
 }
 
 .test-container {

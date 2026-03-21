@@ -71,19 +71,17 @@
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button type="primary" text size="small" @click="showEditDialog(row)">
-                编辑
-              </el-button>
-              <el-popconfirm
-                title="确定删除此模型？"
-                @confirm="handleDelete(row.provider, row.name)"
-              >
-                <template #reference>
-                  <el-button type="danger" text size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
+            <el-button type="primary" text size="small" @click="showEditDialog(row)">
+              编辑
+            </el-button>
+            <el-popconfirm
+              title="确定删除此模型？"
+              @confirm="handleDelete(row.provider, row.name)"
+            >
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -364,13 +362,6 @@ async function handleDelete(provider: string, name: string) {
 
 .text-muted {
   color: var(--text-secondary);
-}
-
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
 }
 
 .price-cell {

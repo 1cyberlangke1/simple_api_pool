@@ -72,16 +72,14 @@
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button type="primary" text size="small" @click="showEditDialog(row)">
-                编辑
-              </el-button>
-              <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(row.name)">
-                <template #reference>
-                  <el-button type="danger" text size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
+            <el-button type="primary" text size="small" @click="showEditDialog(row)">
+              编辑
+            </el-button>
+            <el-popconfirm title="确定删除此分组？" @confirm="handleDelete(row.name)">
+              <template #reference>
+                <el-button type="danger" text size="small">删除</el-button>
+              </template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -297,13 +295,6 @@ async function handleDelete(name: string) {
   font-size: 12px;
   color: var(--text-muted);
   font-style: italic;
-}
-
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
 }
 
 /* 移动端 (< 768px) */
