@@ -125,8 +125,8 @@ const GroupCacheSchema = z.object({
   enable: z.boolean(),
   /** 最大缓存条目数，默认 1000 */
   maxEntries: z.number().positive().max(100000).optional(),
-  /** 过期时间（秒） */
-  ttl: z.number().positive().optional(),
+  /** 过期时间（秒），0 表示永不过期 */
+  ttl: z.number().nonnegative().optional(),
 });
 
 /**
@@ -234,8 +234,8 @@ const CacheSchema = z.object({
       },
       { message: "数据库路径必须是项目相对路径，不能包含 '..'、'~' 或使用绝对路径" }
     ),
-  /** 过期时间（秒） */
-  ttl: z.number().positive().optional(),
+  /** 过期时间（秒），0 表示永不过期 */
+  ttl: z.number().nonnegative().optional(),
 });
 
 /**
