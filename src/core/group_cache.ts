@@ -348,11 +348,23 @@ export class GroupCacheManager {
 
 /**
  * 稳定序列化
+ * @description 使用 WeakSet 检测循环引用，防止栈溢出
+ * @param value 要序列化的值
+ * @param seen 已访问对象集合（用于检测循环引用）
  */
-function stableStringify(value: unknown): string {
+function stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  
+  // 循环引用检测
+  if (seen.has(value as object)) {
+    return '"[Circular]"';
+  }
+  seen.add(value as object);
+  
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item, seen)).join(",")}]`;
+  }
   const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-  const inner = entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",");
+  const inner = entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v, seen)}`).join(",");
   return `{${inner}}`;
 }

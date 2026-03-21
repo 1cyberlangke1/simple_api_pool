@@ -217,15 +217,16 @@ export async function collectStreamToNonStream(
         }
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            if (tc.id && !toolCalls.has(tc.id)) {
+            // 确保 tc.function 存在后再访问其属性
+            if (tc.id && tc.function && !toolCalls.has(tc.id)) {
               toolCalls.set(tc.id, {
                 id: tc.id,
                 type: "function",
-                function: { name: tc.function.name, arguments: tc.function.arguments },
+                function: { name: tc.function.name ?? "", arguments: tc.function.arguments ?? "" },
               });
-            } else if (tc.id && toolCalls.has(tc.id)) {
+            } else if (tc.id && tc.function && toolCalls.has(tc.id)) {
               const existing = toolCalls.get(tc.id)!;
-              existing.function.arguments += tc.function.arguments;
+              existing.function.arguments += tc.function.arguments ?? "";
             }
           }
         }

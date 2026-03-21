@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useCurrency } from "./useCurrency";
-import { getExchangeRate, setExchangeRate } from "@/api/types";
+import { getExchangeRate, setExchangeRate, type ExchangeRateData } from "@/api/types";
 
 // Mock API
 vi.mock("@/api/types", () => ({
@@ -19,6 +19,18 @@ vi.mock("element-plus", () => ({
     error: vi.fn(),
   },
 }));
+
+/** 创建模拟汇率数据 */
+function createMockRate(rate: number, source: "online" | "fallback" = "online"): ExchangeRateData {
+  return {
+    base: "USD",
+    target: "CNY",
+    rate,
+    source,
+    updatedAt: Date.now(),
+    nextUpdateAt: Date.now() + 86400000,
+  };
+}
 
 describe("useCurrency", () => {
   beforeEach(() => {
@@ -68,7 +80,7 @@ describe("useCurrency", () => {
       const { showCNY, exchangeRate, formatPrice } = useCurrency();
       
       // 设置汇率
-      exchangeRate.value = { from: "USD", to: "CNY", rate: 7.2, source: "manual", timestamp: Date.now() };
+      exchangeRate.value = createMockRate(7.2);
       showCNY.value = true;
       
       expect(formatPrice(1)).toBe("¥7.200000");
@@ -77,7 +89,7 @@ describe("useCurrency", () => {
     it("应该使用提供的人民币值", async () => {
       const { showCNY, exchangeRate, formatPrice } = useCurrency();
       
-      exchangeRate.value = { from: "USD", to: "CNY", rate: 7.2, source: "manual", timestamp: Date.now() };
+      exchangeRate.value = createMockRate(7.2);
       showCNY.value = true;
       
       expect(formatPrice(1, 10)).toBe("¥10.000000");
@@ -86,7 +98,7 @@ describe("useCurrency", () => {
     it("当 showCNY 为 false 时应该显示美元", async () => {
       const { showCNY, exchangeRate, formatPrice } = useCurrency();
       
-      exchangeRate.value = { from: "USD", to: "CNY", rate: 7.2, source: "manual", timestamp: Date.now() };
+      exchangeRate.value = createMockRate(7.2);
       showCNY.value = false;
       
       expect(formatPrice(1)).toBe("$1.000000");
@@ -101,7 +113,7 @@ describe("useCurrency", () => {
 
     it("有汇率时应该正确转换", () => {
       const { exchangeRate, toCNY } = useCurrency();
-      exchangeRate.value = { from: "USD", to: "CNY", rate: 7.2, source: "manual", timestamp: Date.now() };
+      exchangeRate.value = createMockRate(7.2);
       expect(toCNY(100)).toBe(720);
     });
   });
@@ -114,14 +126,14 @@ describe("useCurrency", () => {
 
     it("有汇率时应该正确转换", () => {
       const { exchangeRate, toUSD } = useCurrency();
-      exchangeRate.value = { from: "USD", to: "CNY", rate: 7.2, source: "manual", timestamp: Date.now() };
+      exchangeRate.value = createMockRate(7.2);
       expect(toUSD(720)).toBe(100);
     });
   });
 
   describe("fetchExchangeRate", () => {
     it("成功获取汇率", async () => {
-      const mockData = { from: "USD", to: "CNY", rate: 7.2, source: "online", timestamp: Date.now() };
+      const mockData = createMockRate(7.2);
       vi.mocked(getExchangeRate).mockResolvedValue({ data: mockData } as any);
       
       const { exchangeRate, loading, fetchExchangeRate } = useCurrency();
@@ -135,7 +147,7 @@ describe("useCurrency", () => {
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(getExchangeRate).mockRejectedValue(new Error("Network error"));
       
-      const { exchangeRate, loading, fetchExchangeRate } = useCurrency();
+      const { loading, fetchExchangeRate } = useCurrency();
       await fetchExchangeRate();
       
       expect(consoleSpy).toHaveBeenCalled();
@@ -147,7 +159,7 @@ describe("useCurrency", () => {
 
   describe("updateExchangeRate", () => {
     it("成功设置汇率", async () => {
-      const mockData = { from: "USD", to: "CNY", rate: 7.5, source: "manual", timestamp: Date.now() };
+      const mockData = createMockRate(7.5, "fallback");
       vi.mocked(setExchangeRate).mockResolvedValue({ data: mockData } as any);
       
       const { exchangeRate, loading, updateExchangeRate } = useCurrency();
