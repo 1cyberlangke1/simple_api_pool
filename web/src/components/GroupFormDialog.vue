@@ -589,13 +589,14 @@ function buildFeatures(): GroupFeatureConfig {
 
 .sort-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
 
 .sort-buttons .el-button {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
 }
 
