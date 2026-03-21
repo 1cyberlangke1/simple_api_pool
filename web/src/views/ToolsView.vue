@@ -296,19 +296,25 @@ function showAddJsToolDialog() {
   jsToolDialogVisible.value = true;
 }
 
-function showEditJsToolDialog(tool: { name: string; id?: string }) {
+function showEditJsToolDialog(tool: { name: string; id?: string; source?: "database" | "file" }) {
   // 从 jsTools 中找到完整的工具对象
-  const fullTool = jsTools.value.find(t => {
-    // 数据库工具通过 id 匹配
-    if ('id' in t && tool.id && t.id === tool.id) {
-      return true;
+  // 注意：同名的数据库工具和文件工具可能同时存在，需要精确匹配
+  let fullTool: UnifiedJsTool | undefined;
+  
+  if (tool.source === "database" || tool.id) {
+    // 数据库工具：优先通过 id 匹配，其次通过 name + source 匹配
+    fullTool = jsTools.value.find(t => 'id' in t && (t.id === tool.id || (t.name === tool.name && tool.source === "database")));
+  } else if (tool.source === "file") {
+    // 文件工具：通过 name 匹配，且必须是文件工具
+    fullTool = jsTools.value.find(t => !('id' in t) && t.name === tool.name);
+  } else {
+    // 没有明确 source，尝试智能匹配
+    if (tool.id) {
+      fullTool = jsTools.value.find(t => 'id' in t && t.id === tool.id);
+    } else {
+      fullTool = jsTools.value.find(t => !('id' in t) && t.name === tool.name);
     }
-    // 文件工具通过 name 匹配（文件工具没有 id）
-    if (!tool.id && t.name === tool.name) {
-      return true;
-    }
-    return false;
-  });
+  }
   
   if (fullTool) {
     if ('id' in fullTool) {
