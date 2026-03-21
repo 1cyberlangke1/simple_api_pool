@@ -391,7 +391,6 @@ function connectSSE(): void {
 
   eventSource.onopen = () => {
     sseState.value = "connected";
-    console.log("[SSE] Connected");
   };
 
   eventSource.onerror = () => {
@@ -404,7 +403,6 @@ function connectSSE(): void {
 
   // 监听请求完成事件，刷新统计数据
   eventSource.addEventListener("request:complete", () => {
-    console.log("[SSE] Request complete, refreshing stats...");
     refreshStats();
   });
 
@@ -428,29 +426,25 @@ function connectSSE(): void {
   });
 
   // 监听请求错误事件
-  eventSource.addEventListener("request:error", (e: MessageEvent) => {
-    console.log("[SSE] Request error:", e.data);
+  eventSource.addEventListener("request:error", () => {
+    // 请求错误事件
   });
 
   // 监听配置变更事件，实时刷新统计数据
-  eventSource.addEventListener("config:provider:changed", (e: MessageEvent) => {
-    console.log("[SSE] Provider config changed:", e.data);
+  eventSource.addEventListener("config:provider:changed", () => {
     fetchConfig();
   });
 
-  eventSource.addEventListener("config:model:changed", (e: MessageEvent) => {
-    console.log("[SSE] Model config changed:", e.data);
+  eventSource.addEventListener("config:model:changed", () => {
     fetchConfig();
   });
 
-  eventSource.addEventListener("config:key:changed", (e: MessageEvent) => {
-    console.log("[SSE] Key config changed:", e.data);
+  eventSource.addEventListener("config:key:changed", () => {
     fetchKeys();
     fetchConfig();
   });
 
-  eventSource.addEventListener("config:group:changed", (e: MessageEvent) => {
-    console.log("[SSE] Group config changed:", e.data);
+  eventSource.addEventListener("config:group:changed", () => {
     fetchConfig();
     fetchHealth();
   });

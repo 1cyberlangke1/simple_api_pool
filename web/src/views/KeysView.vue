@@ -185,7 +185,7 @@
           :page-sizes="[10, 20, 50]"
           :total="totalKeys"
           layout="total, prev, pager, next"
-          :small="true"
+          size="small"
           @current-change="handlePageChange"
         />
       </div>
