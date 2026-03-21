@@ -144,6 +144,8 @@ export function useSSE<T extends keyof SSEEventMap>(
       eventSource.close();
       eventSource = null;
     }
+    // 清理已注册的监听器记录
+    registeredListeners.clear();
     connectionState.value = "disconnected";
   }
 

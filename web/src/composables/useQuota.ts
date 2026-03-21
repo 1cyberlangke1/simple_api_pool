@@ -37,7 +37,8 @@ export function useQuota() {
    * @returns 百分比 (0-100)
    */
   function getQuotaPercentage(quota: QuotaConfig, used: number): number {
-    if (quota.type === "infinite" || !quota.limit) return 0;
+    // 无限配额、无限制或限制为0时返回0
+    if (quota.type === "infinite" || !quota.limit || quota.limit <= 0) return 0;
     return Math.min((used / quota.limit) * 100, 100);
   }
 

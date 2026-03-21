@@ -7,9 +7,27 @@ import { ref, watch } from "vue";
 
 export type ThemeMode = "light" | "dark" | "system";
 
+/** 有效的主题模式值 */
+const VALID_THEMES: ThemeMode[] = ["light", "dark", "system"];
+
+/**
+ * 从 localStorage 安全获取主题模式
+ * @returns 有效的主题模式，无效值返回默认 "system"
+ */
+function getStoredTheme(): ThemeMode {
+  const stored = localStorage.getItem("theme-mode");
+  if (stored && VALID_THEMES.includes(stored as ThemeMode)) {
+    return stored as ThemeMode;
+  }
+  return "system";
+}
+
 export const useThemeStore = defineStore("theme", () => {
   /** 当前主题模式 */
-  const mode = ref<ThemeMode>((localStorage.getItem("theme-mode") as ThemeMode) || "system");
+  const mode = ref<ThemeMode>(getStoredTheme());
+
+  /** 系统主题监听器清理函数 */
+  let cleanupSystemListener: (() => void) | null = null;
 
   /** 实际应用的主题（light 或 dark） */
   const appliedTheme = ref<"light" | "dark">("light");
@@ -61,7 +79,7 @@ export const useThemeStore = defineStore("theme", () => {
   }
 
   // 监听系统主题变化
-  function setupSystemThemeListener() {
+  function setupSystemThemeListener(): () => void {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = () => {
@@ -81,7 +99,18 @@ export const useThemeStore = defineStore("theme", () => {
     } else {
       applyTheme(mode.value);
     }
-    setupSystemThemeListener();
+    // 保存清理函数以便后续清理
+    cleanupSystemListener = setupSystemThemeListener();
+  }
+
+  /**
+   * 清理资源（应用卸载时调用）
+   */
+  function destroy() {
+    if (cleanupSystemListener) {
+      cleanupSystemListener();
+      cleanupSystemListener = null;
+    }
   }
 
   // 监听 mode 变化
@@ -99,5 +128,6 @@ export const useThemeStore = defineStore("theme", () => {
     updateTheme,
     toggleTheme,
     init,
+    destroy,
   };
 });
