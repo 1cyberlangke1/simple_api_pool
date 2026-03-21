@@ -183,8 +183,7 @@ describe("Chat Integration Tests", () => {
         async (args) => {
           const result = await sandbox.execute(
             `return eval(args.expression);`,
-            { args },
-            { timeout: 5000 }
+            { args }
           );
           return result.result;
         }
@@ -500,8 +499,7 @@ describe("Chat Integration Tests", () => {
         async (args) => {
           const result = await sandbox.execute(
             `return eval(args.expr);`,
-            { args },
-            { timeout: 5000 }
+            { args }
           );
           return { result: result.result };
         }
