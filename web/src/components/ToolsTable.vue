@@ -102,6 +102,7 @@
  * @description 显示 JS 和 MCP 工具列表
  */
 import { Tools } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 
 interface ToolItem {
   name: string;
@@ -124,9 +125,11 @@ const emit = defineEmits<{
 }>();
 
 function handleDeleteJs(tool: ToolItem) {
-  if (tool.id) {
-    emit("delete-js", tool.id);
+  if (!tool.id) {
+    ElMessage.warning("文件工具请在配置文件中删除");
+    return;
   }
+  emit("delete-js", tool.id);
 }
 
 function formatDate(timestamp?: number): string {

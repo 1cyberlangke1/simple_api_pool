@@ -297,10 +297,16 @@ function showAddJsToolDialog() {
 }
 
 function showEditJsToolDialog(tool: { name: string; id?: string }) {
+  // 文件工具没有 id，无法在数据库中编辑
+  if (!tool.id) {
+    ElMessage.warning("文件工具请在配置文件中修改，或复制代码后创建新的数据库工具");
+    return;
+  }
+  
   // 从 jsTools 中找到完整的工具对象（只编辑数据库工具）
   const fullTool = jsTools.value.find(t => {
     // 只有数据库工具有 id，可以编辑
-    if ('id' in t && tool.id && t.id === tool.id) {
+    if ('id' in t && t.id === tool.id) {
       return true;
     }
     return false;
@@ -392,6 +398,12 @@ function showTestJsToolDialog(tool: { name: string; id?: string }) {
 }
 
 async function handleDeleteJsTool(id: string) {
+  // 文件工具没有 id，无法删除
+  if (!id) {
+    ElMessage.warning("文件工具请在配置文件中删除");
+    return;
+  }
+  
   try {
     await ElMessageBox.confirm("确定删除此工具？", "确认删除", {
       type: "warning",
