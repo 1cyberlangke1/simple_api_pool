@@ -302,7 +302,7 @@ const importDialogVisible = ref(false);
 const dbTools = ref<JsTool[]>([]);
 const fileTools = ref<FileJsTool[]>([]);
 const examples = ref<JsToolExample[]>([]);
-const editingTool = ref<JsTool | null>(null);
+const editingTool = ref<(JsTool & { source: "database" }) | null>(null);
 const testResult = ref<JsToolTestResult | null>(null);
 const testArgs = ref("{}");
 const testingToolId = ref("");
@@ -384,7 +384,7 @@ async function doImport() {
 }
 
 function showEditDialog(tool: JsTool) {
-  editingTool.value = tool;
+  editingTool.value = { ...tool, source: "database" as const };
   dialogVisible.value = true;
 }
 

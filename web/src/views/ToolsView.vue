@@ -199,7 +199,7 @@ const fullConfig = ref<AppConfig | null>(null);
 
 // JS 工具对话框
 const jsToolDialogVisible = ref(false);
-const editingJsTool = ref<(JsTool & { source: "database" }) | null>(null);
+const editingJsTool = ref<((JsTool & { source: "database" }) | (FileJsTool & { source: "file" })) | null>(null);
 
 // 测试对话框
 const testDialogVisible = ref(false);
@@ -297,22 +297,27 @@ function showAddJsToolDialog() {
 }
 
 function showEditJsToolDialog(tool: { name: string; id?: string }) {
-  // 文件工具没有 id，无法在数据库中编辑
-  if (!tool.id) {
-    ElMessage.warning("文件工具请在配置文件中修改，或复制代码后创建新的数据库工具");
-    return;
-  }
-  
-  // 从 jsTools 中找到完整的工具对象（只编辑数据库工具）
+  // 从 jsTools 中找到完整的工具对象
   const fullTool = jsTools.value.find(t => {
-    // 只有数据库工具有 id，可以编辑
-    if ('id' in t && t.id === tool.id) {
+    // 数据库工具通过 id 匹配
+    if ('id' in t && tool.id && t.id === tool.id) {
+      return true;
+    }
+    // 文件工具通过 name 匹配（文件工具没有 id）
+    if (!tool.id && t.name === tool.name) {
       return true;
     }
     return false;
   });
-  if (fullTool && 'id' in fullTool) {
-    editingJsTool.value = fullTool as JsTool & { source: "database" };
+  
+  if (fullTool) {
+    if ('id' in fullTool) {
+      // 数据库工具
+      editingJsTool.value = { ...fullTool, source: "database" } as JsTool & { source: "database" };
+    } else {
+      // 文件工具
+      editingJsTool.value = { ...fullTool, source: "file" } as FileJsTool & { source: "file" };
+    }
     jsToolDialogVisible.value = true;
   }
 }
@@ -397,18 +402,21 @@ function showTestJsToolDialog(tool: { name: string; id?: string }) {
   }
 }
 
-async function handleDeleteJsTool(id: string) {
-  // 文件工具没有 id，无法删除
-  if (!id) {
-    ElMessage.warning("文件工具请在配置文件中删除");
-    return;
-  }
-  
+async function handleDeleteJsTool(id: string, name?: string) {
   try {
     await ElMessageBox.confirm("确定删除此工具？", "确认删除", {
       type: "warning",
     });
-    await deleteJsTool(id);
+    
+    if (id) {
+      // 删除数据库工具
+      await deleteJsTool(id);
+    } else if (name) {
+      // 删除文件工具
+      const { deleteFileTool } = await import("@/api/types");
+      await deleteFileTool(name);
+    }
+    
     ElMessage.success("删除成功");
     await fetchJsTools();
   } catch {

@@ -129,7 +129,7 @@
 <script setup lang="ts">
 /**
  * JS 工具表单对话框
- * @description 创建和编辑 JS 工具
+ * @description 创建和编辑 JS 工具（支持数据库工具和文件工具）
  */
 import { ref, reactive, watch, computed } from "vue";
 import { Delete } from "@element-plus/icons-vue";
@@ -138,7 +138,9 @@ import {
   createJsTool,
   updateJsTool,
   validateJsCode,
+  createFileTool,
   type JsTool,
+  type FileJsTool,
   type JsToolValidation,
 } from "@/api/types";
 
@@ -149,9 +151,12 @@ interface ParamDef {
   required: boolean;
 }
 
+/** 编辑工具的类型（数据库工具或文件工具） */
+type EditingTool = (JsTool & { source: "database" }) | (FileJsTool & { source: "file" }) | null;
+
 interface Props {
   visible: boolean;
-  editingTool: JsTool | null;
+  editingTool: EditingTool;
 }
 
 const props = defineProps<Props>();
@@ -215,12 +220,18 @@ watch(
   { immediate: true }
 );
 
-function loadToolData(tool: JsTool) {
+function loadToolData(tool: EditingTool) {
+  if (!tool) {
+    resetForm();
+    return;
+  }
+  
   Object.assign(form, {
     name: tool.name,
     description: tool.description,
     code: tool.code,
-    enabled: tool.enabled,
+    // 文件工具没有 enabled 字段，默认为 true
+    enabled: 'enabled' in tool ? tool.enabled : true,
   });
 
   const schema = tool.inputSchema as {
@@ -317,21 +328,39 @@ async function handleSubmit() {
   submitting.value = true;
   try {
     const inputSchema = buildInputSchema();
-    const data = {
-      name: form.name,
-      description: form.description,
-      inputSchema,
-      code: form.code,
-      enabled: form.enabled,
-    };
-
+    
     if (props.editingTool) {
-      await updateJsTool(props.editingTool.id, data);
+      // 判断是数据库工具还是文件工具
+      if (props.editingTool.source === "database") {
+        // 更新数据库工具
+        await updateJsTool(props.editingTool.id, {
+          name: form.name,
+          description: form.description,
+          inputSchema,
+          code: form.code,
+          enabled: form.enabled,
+        });
+      } else {
+        // 更新文件工具（文件工具没有 enabled 字段）
+        await createFileTool({
+          name: form.name,
+          description: form.description,
+          inputSchema,
+          code: form.code,
+        });
+      }
+      ElMessage.success("更新成功");
     } else {
-      await createJsTool(data);
+      // 创建新工具（默认创建到数据库）
+      await createJsTool({
+        name: form.name,
+        description: form.description,
+        inputSchema,
+        code: form.code,
+      });
+      ElMessage.success("创建成功");
     }
 
-    ElMessage.success(props.editingTool ? "更新成功" : "创建成功");
     emit("update:visible", false);
     emit("submitted");
   } finally {
