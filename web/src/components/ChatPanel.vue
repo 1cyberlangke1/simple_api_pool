@@ -217,6 +217,7 @@ import { ref, nextTick, watch, computed } from "vue";
 import { Close, Promotion, QuestionFilled, DocumentCopy, RefreshRight, Picture } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import type { Message } from "./types";
 import { truncateLongStrings } from "@/utils/format";
 
@@ -280,8 +281,9 @@ function renderMarkdown(text: string): string {
     return cached;
   }
   
-  // 渲染并缓存
-  const html = marked.parse(text) as string;
+  // 渲染并使用 DOMPurify 清理，防止 XSS 攻击
+  const rawHtml = marked.parse(text) as string;
+  const html = DOMPurify.sanitize(rawHtml);
   markdownCache.set(text, html);
   
   // 限制缓存大小，避免内存溢出
