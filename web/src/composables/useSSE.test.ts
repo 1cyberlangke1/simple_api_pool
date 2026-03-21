@@ -69,15 +69,10 @@ class MockEventSource {
 vi.stubGlobal("EventSource", MockEventSource);
 
 describe("useSSE", () => {
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
     MockEventSource.instances = [];
     localStorage.clear();
-    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -310,13 +305,10 @@ describe("useSSE", () => {
 });
 
 describe("useDashboardSSE", () => {
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
     MockEventSource.instances = [];
     localStorage.clear();
-    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
   afterEach(() => {
