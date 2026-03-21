@@ -2,7 +2,7 @@
   <el-config-provider :locale="zhCn">
     <router-view v-slot="{ Component, route }">
       <transition
-        :name="route.meta.transition || 'ios-page'"
+        :name="(route.meta.transition as string) || 'ios-page'"
         mode="out-in"
       >
         <component :is="Component" :key="route.path" />
