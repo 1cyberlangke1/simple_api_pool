@@ -183,6 +183,10 @@ const isLoading = ref(false);
 const useStream = ref(true);
 const lastRequestBody = ref("");
 const lastResponse = ref("");
+/** 原始完整响应数据（用于下载，不被截断） */
+const lastRawResponse = ref<unknown>(null);
+/** 原始完整请求体（用于下载，不被截断） */
+const lastRawRequestBody = ref<unknown>(null);
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 const settingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
 const mobileSettingsRef = ref<InstanceType<typeof ChatSettingsPanel> | null>(null);
@@ -380,7 +384,9 @@ async function handleSend(content: string, images?: string[]) {
       }
     }
 
-    // 保存请求体 JSON（自动截断长字符串）
+    // 保存原始请求体（用于下载）
+    lastRawRequestBody.value = requestBody;
+    // 保存请求体 JSON（自动截断长字符串用于显示）
     lastRequestBody.value = formatJsonWithTruncate(requestBody);
 
     if (useStream.value) {
@@ -405,7 +411,9 @@ async function handleSend(content: string, images?: string[]) {
       errorResponse.body = err.body;
     }
     
-    // 保存完整的错误响应体（自动截断长字符串）
+    // 保存原始错误响应（用于下载）
+    lastRawResponse.value = errorResponse;
+    // 保存显示用的截断版本
     lastResponse.value = formatJsonWithTruncate(errorResponse);
     
     // 在消息列表中显示错误（方便用户查看）
@@ -498,15 +506,18 @@ async function sendStreamRequest(body: Record<string, unknown>) {
     reader.releaseLock();
   }
 
-  // 保存完整的响应数据（自动截断长字符串）
-  lastResponse.value = formatJsonWithTruncate({
+  // 保存原始响应数据（用于下载，不截断）
+  const rawData = {
     stream: true,
     content: assistantContent,
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
     usage: streamUsage,
     rawChunks: rawChunks.length,
     raw: rawChunks.join("\n")
-  });
+  };
+  lastRawResponse.value = rawData;
+  // 保存显示用的截断版本
+  lastResponse.value = formatJsonWithTruncate(rawData);
 }
 
 /**
@@ -535,6 +546,9 @@ async function sendNonStreamRequest(body: Record<string, unknown>) {
     });
   }
 
+  // 保存原始响应数据（用于下载，不截断）
+  lastRawResponse.value = data;
+  // 保存显示用的截断版本
   lastResponse.value = formatJsonWithTruncate(data);
   chatPanelRef.value?.scrollToBottom();
 }
@@ -543,6 +557,8 @@ function clearMessages() {
   messages.value = [];
   lastRequestBody.value = "";
   lastResponse.value = "";
+  lastRawResponse.value = null;
+  lastRawRequestBody.value = null;
 }
 
 function removeMessage(index: number) {
@@ -590,27 +606,31 @@ function handleRetry() {
 }
 
 function copyRequestBody() {
-  if (lastRequestBody.value) {
-    navigator.clipboard.writeText(lastRequestBody.value);
+  if (lastRawRequestBody.value) {
+    navigator.clipboard.writeText(JSON.stringify(lastRawRequestBody.value, null, 2));
     ElMessage.success("已复制");
   }
 }
 
 function copyResponse() {
-  if (lastResponse.value) {
-    navigator.clipboard.writeText(lastResponse.value);
+  if (lastRawResponse.value) {
+    navigator.clipboard.writeText(JSON.stringify(lastRawResponse.value, null, 2));
     ElMessage.success("已复制");
   }
 }
 
 /**
  * 下载响应 JSON 文件
+ * @description 下载完整的原始响应数据，不被截断
  */
 function downloadResponse() {
-  if (!lastResponse.value) return;
+  if (!lastRawResponse.value) return;
+  
+  // 使用原始完整数据，不截断
+  const jsonStr = JSON.stringify(lastRawResponse.value, null, 2);
   
   // 创建 Blob 对象
-  const blob = new Blob([lastResponse.value], { type: "application/json" });
+  const blob = new Blob([jsonStr], { type: "application/json" });
   
   // 创建下载链接
   const url = URL.createObjectURL(blob);
@@ -629,7 +649,7 @@ function downloadResponse() {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
   
-  ElMessage.success("已下载");
+  ElMessage.success("已下载完整响应");
 }
 
 watch(isCompactLayout, (compact) => {
