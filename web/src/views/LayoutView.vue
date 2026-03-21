@@ -212,13 +212,7 @@
 
       <el-main class="main">
         <div class="page-shell app-page-shell">
-          <router-view v-slot="{ Component }">
-            <transition name="fade-slide" mode="out-in">
-              <keep-alive>
-                <component :is="Component" />
-              </keep-alive>
-            </transition>
-          </router-view>
+          <router-view />
         </div>
       </el-main>
     </el-container>
@@ -555,37 +549,6 @@ function closeMobileMenu() {
 
 .app-page-shell {
   min-height: 100%;
-}
-
-/* 页面切换动画 - iOS 风格 */
-.fade-slide-enter-active {
-  animation: iosPageIn var(--ios-duration-modal, 0.4s) var(--ios-spring-gentle, cubic-bezier(0.34, 1.56, 0.64, 1));
-}
-
-.fade-slide-leave-active {
-  animation: iosPageOut var(--ios-duration-normal, 0.35s) var(--ios-ease-in, cubic-bezier(0.42, 0, 1, 1));
-}
-
-@keyframes iosPageIn {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes iosPageOut {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.99);
-  }
 }
 
 /* ============================================================
