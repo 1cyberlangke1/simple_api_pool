@@ -12,6 +12,7 @@ import { registerToolsRoutes } from "./tools_routes.js";
 import { registerLogsRoutes } from "./logs_routes.js";
 import { registerJsToolsRoutes } from "./js_tools_routes.js";
 import { registerSSERoutes } from "./sse_routes.js";
+import { registerPerformanceRoutes } from "./performance_routes.js";
 
 /**
  * 管理端 API 路由
@@ -34,4 +35,5 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   registerLogsRoutes(app, adminToken);
   registerJsToolsRoutes(app, adminToken);
   registerSSERoutes(app, adminToken);
+  registerPerformanceRoutes(app, adminToken);
 }

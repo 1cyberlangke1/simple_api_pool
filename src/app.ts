@@ -1,11 +1,21 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import type { FastifyRequest } from "fastify";
 import type { AppConfig } from "./core/types.js";
 import type { AppRuntime } from "./app_state.js";
 import { chatCompletionHandler } from "./routes/chat/index.js";
 import { listModelsHandler } from "./routes/models.js";
 import { healthHandler } from "./routes/health.js";
 import { adminRoutes } from "./routes/admin/index.js";
+import { getPerformanceMonitor } from "./core/performance.js";
+
+/**
+ * 扩展 FastifyRequest 类型
+ * @description 用于性能监控存储请求开始时间
+ */
+interface PerformanceRequest extends FastifyRequest {
+  startTime?: number;
+}
 
 /**
  * 构建 Fastify 应用
@@ -61,6 +71,23 @@ export async function buildApp(runtime: AppRuntime, onConfigUpdate?: (config: Ap
 
   // 加载工具
   await runtime.loadTools();
+
+  // ============================================================
+  // 性能监控中间件
+  // ============================================================
+  const performanceMonitor = getPerformanceMonitor();
+  
+  app.addHook("onRequest", async (request: PerformanceRequest) => {
+    request.startTime = Date.now();
+  });
+
+  app.addHook("onResponse", async (request: PerformanceRequest, reply) => {
+    if (request.startTime) {
+      const responseTime = Date.now() - request.startTime;
+      const route = request.routeOptions?.url ?? request.url.split("?")[0] ?? "/";
+      performanceMonitor.recordRequest(route, request.method, responseTime, reply.statusCode < 400);
+    }
+  });
 
   // API 认证中间件（用于 /v1/* 路由，排除 /v1/models）
   const apiAuth = runtime.config.server.apiAuth;
