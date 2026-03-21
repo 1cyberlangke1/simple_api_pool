@@ -490,6 +490,14 @@ async function handleSubmit() {
     return;
   }
 
+  // 验证 modelId 是否在可用模型列表中
+  const availableModelIds = new Set(props.models.map((m) => `${m.provider}/${m.name}`));
+  const invalidRoutes = validRoutes.filter((r) => !availableModelIds.has(r.modelId!));
+  if (invalidRoutes.length > 0) {
+    ElMessage.warning(`模型 "${invalidRoutes[0].modelId}" 不存在，请重新选择`);
+    return;
+  }
+
   submitting.value = true;
   try {
     const features = buildFeatures();

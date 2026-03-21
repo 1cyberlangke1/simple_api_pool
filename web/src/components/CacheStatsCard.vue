@@ -158,7 +158,7 @@ function getHitRateClass(rate: number): string {
  * 获取使用率百分比
  */
 function getUsagePercent(group: GroupCacheStats): number {
-  if (group.maxEntries === 0) return 0;
+  if (!group.maxEntries || group.maxEntries === 0) return 0;
   return (group.entries / group.maxEntries) * 100;
 }
 

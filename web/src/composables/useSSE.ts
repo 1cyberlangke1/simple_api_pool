@@ -65,6 +65,8 @@ export function useSSE<T extends keyof SSEEventMap>(
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   const eventHandlers = new Map<T, Set<(data: SSEEventMap[T]) => void>>();
+  // 跟踪已注册的事件监听器：eventType -> handler -> listener
+  const registeredListeners = new Map<string, Map<Function, (e: MessageEvent) => void>>();
 
   /**
    * 连接 SSE
@@ -162,14 +164,29 @@ export function useSSE<T extends keyof SSEEventMap>(
 
     // 如果已连接，动态添加事件监听
     if (eventSource) {
-      eventSource.addEventListener(eventType as string, (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data);
-          handler(data);
-        } catch (err) {
-          console.error(`[SSE] Failed to parse event ${eventType}:`, err);
-        }
-      });
+      const eventKey = eventType as string;
+      
+      // 获取或创建该事件类型的监听器映射
+      if (!registeredListeners.has(eventKey)) {
+        registeredListeners.set(eventKey, new Map());
+      }
+      
+      const listenerMap = registeredListeners.get(eventKey)!;
+      
+      // 如果这个 handler 还没有注册监听器，则添加
+      if (!listenerMap.has(handler)) {
+        const listener = (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            handler(data);
+          } catch (err) {
+            console.error(`[SSE] Failed to parse event ${eventType}:`, err);
+          }
+        };
+        
+        eventSource.addEventListener(eventKey, listener);
+        listenerMap.set(handler, listener);
+      }
     }
   }
 

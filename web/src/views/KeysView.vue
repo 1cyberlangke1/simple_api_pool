@@ -263,8 +263,11 @@ const searchedKeys = computed(() => {
  * 分页后的 Key 列表
  */
 const filteredKeys = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  const end = start + pageSize.value;
+  // 边界检查：确保页码和每页条数为有效值
+  const page = Math.max(1, currentPage.value);
+  const size = Math.max(1, pageSize.value);
+  const start = (page - 1) * size;
+  const end = start + size;
   return searchedKeys.value.slice(start, end);
 });
 

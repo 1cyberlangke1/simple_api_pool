@@ -617,12 +617,21 @@ async function handleSubmit() {
       completionUSD = form.completionPer1k / props.exchangeRate.rate;
     }
 
-    const requestOverrides = form.requestOverridesJson.trim()
-      ? JSON.parse(form.requestOverridesJson)
-      : undefined;
-    const extraBody = form.extraBodyJson.trim()
-      ? JSON.parse(form.extraBodyJson)
-      : undefined;
+    // 解析 JSON 字段（验证后再解析以防输入被修改）
+    let requestOverrides: Record<string, unknown> | undefined;
+    let extraBody: Record<string, unknown> | undefined;
+    
+    try {
+      requestOverrides = form.requestOverridesJson.trim()
+        ? JSON.parse(form.requestOverridesJson)
+        : undefined;
+      extraBody = form.extraBodyJson.trim()
+        ? JSON.parse(form.extraBodyJson)
+        : undefined;
+    } catch {
+      ElMessage.error("JSON 格式错误，请检查输入");
+      return;
+    }
 
     const config: ModelConfig = {
       provider: form.provider,
