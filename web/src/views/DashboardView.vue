@@ -230,80 +230,40 @@
  * @description 显示系统概览、统计图表和 Key 状态
  * @behavior 使用 SSE 替代轮询，只在后端有更新时才刷新数据
  */
-import { ref, reactive, onMounted, onUnmounted, h, computed } from "vue";
+import { ref, onMounted, onUnmounted, h, computed, watch } from "vue";
 import { OfficeBuilding, Document, Key, Grid, Search } from "@element-plus/icons-vue";
-import axios from "axios";
 import {
-  getKeys,
-  getCacheStats,
-  getStatsChart,
-  getConfig,
-  type KeyState,
-  type CacheStatsResponse,
-  type ChartData,
-} from "@/api/types";
-import { useQuota } from "@/composables";
+  useQuota,
+  useDashboardData,
+  useUptime,
+} from "@/composables";
 import StatCard from "@/components/StatCard.vue";
 import CacheStatsCard from "@/components/CacheStatsCard.vue";
 import CallChart from "@/components/CallChart.vue";
 
 const { getQuotaLabel, getQuotaTagType } = useQuota();
 
-const stats = reactive({
-  providers: 0,
-  models: 0,
-  keys: 0,
-  groups: 0,
-});
+// 使用 composables 管理数据
+const {
+  stats,
+  health,
+  keys,
+  cacheStats,
+  chartData,
+  chartHours,
+  fetchHealth,
+  fetchKeys,
+  fetchCacheStats,
+  fetchChartStats,
+  fetchConfig,
+} = useDashboardData();
 
-const health = reactive({
-  status: "ok",
-  timestamp: "",
-  startTime: "", // 服务启动时间 (ISO 8601)
-  groups: [] as string[],
-});
-
-// 运行时间（前端计算，减轻后端负担）
-const uptime = ref(0); // 运行秒数
-const formattedUptime = ref("--");
+// 使用 composable 管理运行时间
+const { formattedUptime, updateUptime } = useUptime();
 
 /** 描述列表列数（响应式） */
 const descColumn = ref(2);
 const windowWidth = ref(window.innerWidth);
-
-/**
- * 格式化运行时间为可读字符串
- * @param seconds 总秒数
- * @returns 格式化的时间字符串 (如 "2天 3小时 15分 30秒")
- */
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}天`);
-  if (hours > 0 || days > 0) parts.push(`${hours}小时`);
-  if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}分`);
-  parts.push(`${secs}秒`);
-
-  return parts.join(" ");
-}
-
-/**
- * 更新运行时间（纯前端计算，不请求后端）
- * @behavior 只有在后端连接正常时才更新时间
- */
-function updateUptime(): void {
-  // 如果后端连接断开或出错，不更新运行时间
-  if (sseState.value !== "connected" || !health.startTime) return;
-  
-  const startMs = new Date(health.startTime).getTime();
-  const nowMs = Date.now();
-  uptime.value = Math.floor((nowMs - startMs) / 1000);
-  formattedUptime.value = formatUptime(uptime.value);
-}
 
 /**
  * 更新响应式变量（根据窗口宽度）
@@ -313,8 +273,6 @@ function updateResponsive(): void {
   windowWidth.value = width;
   descColumn.value = width < 900 ? 1 : 2;
 }
-
-const keys = ref<KeyState[]>([]);
 
 // Key 状态表格分页和搜索
 const keySearch = ref("");
@@ -344,15 +302,6 @@ const paginatedKeys = computed(() => {
   const start = (currentPage.value - 1) * pageSize;
   const end = start + pageSize;
   return filteredKeys.value.slice(start, end);
-});
-
-const cacheStats = ref<CacheStatsResponse>({ enabled: false, stats: [], dbSizeBytes: 0 });
-const chartHours = ref(24);
-const chartData = ref<ChartData>({
-  timeline: [],
-  groups: [],
-  groupData: {},
-  summary: [],
 });
 
 // 选中的分组（用于缓存统计与柱状图联动）
@@ -532,6 +481,19 @@ async function refreshStats(): Promise<void> {
   ]);
 }
 
+// 监听健康状态变化，更新运行时间
+watch(
+  () => health.startTime,
+  () => {
+    updateUptime(health.startTime, sseState.value === "connected");
+  }
+);
+
+// 监听 SSE 状态变化，更新运行时间
+watch(sseState, (state) => {
+  updateUptime(health.startTime, state === "connected");
+});
+
 onMounted(async () => {
   // 初始化响应式变量
   updateResponsive();
@@ -550,7 +512,9 @@ onMounted(async () => {
   connectSSE();
   
   // 启动运行时间定时器（每秒更新，纯前端计算）
-  uptimeTimer = setInterval(updateUptime, 1000);
+  uptimeTimer = setInterval(() => {
+    updateUptime(health.startTime, sseState.value === "connected");
+  }, 1000);
 });
 
 onUnmounted(() => {
@@ -563,65 +527,6 @@ onUnmounted(() => {
   // 移除事件监听
   window.removeEventListener("resize", updateResponsive);
 });
-
-async function fetchHealth() {
-  try {
-    const { data } = await axios.get("/health");
-    health.status = data.status;
-    health.timestamp = data.timestamp;
-    health.startTime = data.startTime || "";
-    health.groups = data.groups || [];
-    
-    // 分组数量
-    stats.groups = health.groups.length;
-    
-    // 初始化运行时间
-    updateUptime();
-  } catch {
-    health.status = "error";
-  }
-}
-
-async function fetchKeys() {
-  try {
-    const { data } = await getKeys();
-    keys.value = data;
-    stats.keys = data.length;
-  } catch {
-    // ignore
-  }
-}
-
-async function fetchCacheStats() {
-  try {
-    const { data } = await getCacheStats();
-    cacheStats.value = data;
-  } catch {
-    // ignore
-  }
-}
-
-async function fetchChartStats() {
-  try {
-    const { data } = await getStatsChart(chartHours.value);
-    chartData.value = data;
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * 获取配置数据（用于统计 providers 和 models 数量）
- */
-async function fetchConfig() {
-  try {
-    const { data } = await getConfig();
-    stats.providers = data.providers?.length || 0;
-    stats.models = data.models?.length || 0;
-  } catch {
-    // ignore
-  }
-}
 </script>
 
 <style scoped>
