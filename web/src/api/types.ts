@@ -883,3 +883,84 @@ export const getJsToolExamples = () => api.get<JsToolExample[]>("/js-tools/examp
 
 export const importJsToolExample = (name: string) =>
   api.post<JsTool>("/js-tools/import", { name });
+
+// ============================================================
+// 性能监控 API
+// ============================================================
+
+/**
+ * 性能指标
+ */
+export interface PerformanceMetrics {
+  /** 总请求数 */
+  totalRequests: number;
+  /** 成功请求数 */
+  successRequests: number;
+  /** 失败请求数 */
+  failedRequests: number;
+  /** 平均响应时间（ms） */
+  avgResponseTime: number;
+  /** 最大响应时间（ms） */
+  maxResponseTime: number;
+  /** 最小响应时间（ms） */
+  minResponseTime: number;
+  /** P95 响应时间（ms） */
+  p95ResponseTime: number;
+  /** P99 响应时间（ms） */
+  p99ResponseTime: number;
+  /** 慢请求数 */
+  slowRequests: number;
+  /** 慢请求阈值（ms） */
+  slowRequestThreshold: number;
+  /** 内存使用情况 */
+  memory: {
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+    rss: number;
+  };
+  /** 运行时间（秒） */
+  uptime: number;
+  /** 统计窗口时间（秒） */
+  windowSeconds: number;
+}
+
+/**
+ * 路由性能指标
+ */
+export interface RouteMetrics {
+  /** 路由路径 */
+  route: string;
+  /** 请求方法 */
+  method: string;
+  /** 请求次数 */
+  count: number;
+  /** 平均响应时间（ms） */
+  avgTime: number;
+  /** 最大响应时间（ms） */
+  maxTime: number;
+  /** 最小响应时间（ms） */
+  minTime: number;
+  /** 错误次数 */
+  errors: number;
+  /** 错误率 */
+  errorRate: number;
+}
+
+/**
+ * 获取性能指标
+ */
+export const getPerformanceMetrics = () =>
+  api.get<{ success: boolean; data: PerformanceMetrics }>("/performance/metrics");
+
+/**
+ * 获取路由性能指标
+ */
+export const getPerformanceRoutes = () =>
+  api.get<{ success: boolean; data: RouteMetrics[] }>("/performance/routes");
+
+/**
+ * 重置性能统计
+ */
+export const resetPerformance = () =>
+  api.post<{ success: boolean; message: string }>("/performance/reset");

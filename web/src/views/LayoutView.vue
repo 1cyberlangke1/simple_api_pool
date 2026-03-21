@@ -89,6 +89,14 @@
             </div>
           </el-menu-item>
         </el-tooltip>
+        <el-tooltip content="查看性能指标，监控系统负载" placement="right" :show-after="500">
+          <el-menu-item index="/performance" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><TrendCharts /></el-icon>
+              <span>性能监控</span>
+            </div>
+          </el-menu-item>
+        </el-tooltip>
       </el-menu>
 
       <div class="aside-footer">
@@ -175,6 +183,12 @@
               <span>系统日志</span>
             </div>
           </el-menu-item>
+          <el-menu-item index="/performance" class="nav-item">
+            <div class="nav-item-content">
+              <el-icon><TrendCharts /></el-icon>
+              <span>性能监控</span>
+            </div>
+          </el-menu-item>
         </el-menu>
 
         <div class="aside-footer">
@@ -244,6 +258,7 @@ import {
   Cpu,
   Fold,
   Expand,
+  TrendCharts,
 } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
@@ -267,6 +282,7 @@ const pageTitle = computed(() => {
     "/tools": "工具管理",
     "/config": "高级配置",
     "/logs": "系统日志",
+    "/performance": "性能监控",
   };
   return titles[route.path] || "管理面板";
 });

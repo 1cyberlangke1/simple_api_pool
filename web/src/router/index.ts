@@ -59,6 +59,11 @@ const router = createRouter({
           name: "Logs",
           component: () => import("@/views/LogsView.vue"),
         },
+        {
+          path: "performance",
+          name: "Performance",
+          component: () => import("@/views/PerformanceView.vue"),
+        },
       ],
     },
   ],
