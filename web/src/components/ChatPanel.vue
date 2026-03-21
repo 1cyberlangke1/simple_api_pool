@@ -218,6 +218,7 @@ import { Close, Promotion, QuestionFilled, DocumentCopy, RefreshRight, Picture }
 import { ElMessage } from "element-plus";
 import { marked } from "marked";
 import type { Message } from "./types";
+import { truncateLongStrings } from "@/utils/format";
 
 interface PendingImage {
   preview: string;
@@ -254,11 +255,6 @@ function hasImagesInContent(content: unknown): boolean {
     (part) => part.type === "image_url" && part.image_url?.url
   );
 }
-
-/** 字符串截断阈值（超过此长度则截断） */
-const TRUNCATE_THRESHOLD = 200;
-/** 截断后显示的长度 */
-const TRUNCATE_SHOW_LENGTH = 50;
 
 // ============================================================
 // Markdown 渲染配置（性能优化：配置一次，复用）
@@ -297,37 +293,6 @@ function renderMarkdown(text: string): string {
   }
   
   return html;
-}
-
-/**
- * 智能截断 JSON 中的长字符串值
- * @description 递归遍历对象，对超过阈值的长字符串进行截断
- * @param value 要处理的值
- * @returns 处理后的值
- */
-function truncateLongStrings(value: unknown): unknown {
-  if (typeof value === "string") {
-    if (value.length > TRUNCATE_THRESHOLD) {
-      const truncated = value.slice(0, TRUNCATE_SHOW_LENGTH);
-      const remaining = value.length - TRUNCATE_SHOW_LENGTH;
-      return `${truncated}... [已截断 ${remaining} 字符，共 ${value.length} 字符]`;
-    }
-    return value;
-  }
-  
-  if (Array.isArray(value)) {
-    return value.map((item) => truncateLongStrings(item));
-  }
-  
-  if (value !== null && typeof value === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
-      result[key] = truncateLongStrings(val);
-    }
-    return result;
-  }
-  
-  return value;
 }
 
 /**
