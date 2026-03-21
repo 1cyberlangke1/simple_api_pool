@@ -7,7 +7,7 @@ const router = createRouter({
       path: "/login",
       name: "Login",
       component: () => import("@/views/LoginView.vue"),
-      meta: { requiresAuth: false },
+      meta: { requiresAuth: false, transition: "ios-modal" },
     },
     {
       path: "/",
