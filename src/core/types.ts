@@ -214,6 +214,10 @@ export interface GroupConfig {
    *              - failover: 故障转移，按顺序尝试，失败自动切换下一个
    */
   strategy?: ModelGroupStrategy;
+  /** @deprecated 已合并到 strategy 中，保留用于兼容旧配置 */
+  failover?: boolean;
+  /** @deprecated 已合并到 strategy 中，保留用于兼容旧配置 */
+  failoverMaxRetries?: number;
   /** 分组内的模型路由列表（按优先级排序，前面的优先级更高） */
   routes: GroupRouteConfig[];
   /** 功能配置（独立配置，不继承全局） */
