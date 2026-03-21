@@ -182,6 +182,16 @@ export class ModelPricingService {
               score = fuzzyScore * 0.7;
             }
           }
+        } else {
+          // 提供商不匹配时，仍然尝试模糊匹配模型（降权处理）
+          // 这样用户自定义的提供商名称也能找到价格
+          if (normalizedPriceModel === normalizedModel) {
+            score = 0.7; // 提供商不匹配但模型精确匹配
+            matchType = "fuzzy";
+          } else if (normalizedPriceModel.includes(normalizedModel) || normalizedModel.includes(normalizedPriceModel)) {
+            score = 0.5;
+            matchType = "fuzzy";
+          }
         }
       } else {
         // 未指定提供商时的匹配逻辑
