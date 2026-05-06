@@ -41,79 +41,142 @@ data/           运行时数据目录
 
 ## 部署教程
 
-这一节只处理“把服务部署起来”。
+这一节只处理“把服务稳定部署起来，并且知道怎么验证、查看日志、升级和保留数据”。
 
 ### 部署方式
 
-当前仓库推荐三种方式：
+推荐按下面顺序选择：
 
-1. 使用 Docker Compose 本地构建部署
-2. 本机直接运行 Go 后端
-3. 使用已发布的 Docker 镜像部署
+1. `Docker Compose` 本地构建部署
+2. 使用 `GHCR` 已发布镜像部署
+3. 本机直接运行 Go 后端
 
-### 环境准备
+前两种方式都属于 Docker 部署，差别只有一个：
 
-#### 方式一：本机运行
-
-需要：
-
-- Go 运行环境
-- 可写目录，用于保存 `data/`
-
-#### 方式二：Docker Compose
-
-需要：
-
-- Docker
-- Docker Compose
-
-#### 方式三：已发布 Docker 镜像
-
-需要：
-
-- Docker
+- `Docker Compose 本地构建`：适合你要自己改代码，或者希望直接从当前仓库构建
+- `GHCR 镜像部署`：适合你只想启动现成版本，不关心本地构建过程
 
 ### 部署前要知道的事
 
 - 服务默认监听 `18080`
+- 容器内服务端口也是 `18080`
 - 如果没有显式设置 `GOMEMLIMIT`，程序默认按 `32MiB` 运行内存上限启动
-- 首次启动前，需要先提供管理员密钥
-- 管理员密钥需要提前配置到环境变量 `ADMIN_KEY`
-- 如果配置了客户端访问密钥，代理请求必须带 `Authorization: Bearer <CLIENT_KEY>`
-- 项目不提供 Nginx 配置文件，反向代理由你自己决定
-- 仓库根目录提供了环境变量示例文件 `.env.example`
+- 首次启动前必须先配置 `ADMIN_KEY`
+- 如果配置了 `CLIENT_KEYS`，代理请求需要带 `Authorization: Bearer <CLIENT_KEY>`
+- 所有运行时数据都会写入 `/app/data`
+- 如果你不挂载卷，容器删除后配置、统计和缓存也会一起丢失
 
-### 方式一：本机直接部署
+### 环境准备
 
-#### 1. 进入后端目录
+#### Docker 部署需要
 
-```bash
-cd backend
-```
+- Docker
+- Docker Compose V2
 
-#### 2. 先配置环境变量，再启动
-
-本机运行时，程序直接读取当前系统环境变量。
-
-至少需要提前配置：
-
-```text
-ADMIN_KEY=你的管理员密钥
-```
-
-配置完成后启动：
+可以先执行下面两个命令确认环境正常：
 
 ```bash
-go run .
+docker --version
+docker compose version
 ```
 
-启动后默认监听：
+#### 本机运行需要
+
+- Go 运行环境
+- 可写目录，用于保存 `data/`
+
+### 环境变量说明
+
+仓库根目录提供了示例文件：`.env.example`。
+
+最常用的变量如下：
+
+| 变量名 | 是否必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `ADMIN_KEY` | 是 | 无 | 管理员密钥，管理页和管理接口都依赖它 |
+| `CLIENT_KEYS` | 否 | 空 | 客户端访问密钥，多个值用半角逗号分隔 |
+| `PORT` | 否 | `18080` | 服务监听端口 |
+| `GOMEMLIMIT` | 否 | `32MiB` | Go 运行时内存限制 |
+
+最小可用配置通常只需要：
 
 ```text
-http://127.0.0.1:18080
+ADMIN_KEY=请改成你自己的管理员密钥
 ```
 
-#### 3. 验证服务是否在线
+如果你希望代理入口也带鉴权，再补一行：
+
+```text
+CLIENT_KEYS=client-key-1,client-key-2
+```
+
+### 方式一：Docker Compose 本地构建部署
+
+这是最适合当前仓库的部署方式。你可以直接用现有的 `docker-compose.yml` 和 `Dockerfile`。
+
+#### 1. 获取代码并进入目录
+
+```bash
+git clone https://github.com/1cyberlangke1/simple_api_pool.git
+cd simple_api_pool
+```
+
+#### 2. 准备环境变量文件
+
+复制示例文件：
+
+```bash
+cp .env.example .env
+```
+
+然后编辑 `.env`，至少修改：
+
+```text
+ADMIN_KEY=改成你自己的管理员密钥
+```
+
+如果你希望调用代理接口时必须带客户端密钥，可以同时设置：
+
+```text
+CLIENT_KEYS=client-key-1,client-key-2
+```
+
+如果你需要改端口或调整内存限制，也可以一起修改：
+
+```text
+PORT=18080
+GOMEMLIMIT=32MiB
+```
+
+#### 3. 启动服务
+
+```bash
+docker compose up --build -d
+```
+
+首次启动时会执行镜像构建，时间会比后续重启更长。
+
+#### 4. 确认容器已经起来
+
+```bash
+docker compose ps
+```
+
+你应该能看到 `app` 服务处于运行状态。
+
+#### 5. 查看启动日志
+
+```bash
+docker compose logs -f app
+```
+
+如果你只想看最近 100 行：
+
+```bash
+docker compose logs --tail=100 app
+```
+
+#### 6. 验证健康检查
 
 ```bash
 curl http://127.0.0.1:18080/api/health
@@ -125,48 +188,95 @@ curl http://127.0.0.1:18080/api/health
 {"status":"ok"}
 ```
 
-### 方式二：Docker Compose 本地构建部署
-
-#### 1. 在仓库根目录准备 `.env`
-
-先复制环境变量示例文件：
-
-```bash
-cp .env.example .env
-```
-
-然后修改 `.env`，至少填写：
-
-```text
-ADMIN_KEY=你的管理员密钥
-```
-
-`docker-compose.yml` 会自动读取这个 `.env` 文件。
-
-启动服务：
-
-```bash
-docker compose up --build -d
-```
-
-#### 2. 验证健康状态
-
-```bash
-curl http://127.0.0.1:18080/api/health
-```
-
-#### 3. 查看页面
+#### 7. 打开页面
 
 - 状态页：`http://127.0.0.1:18080/status`
 - 管理页：`http://127.0.0.1:18080/admin`
 
-#### 4. 停止服务
+#### 8. 常用运维命令
+
+查看服务状态：
+
+```bash
+docker compose ps
+```
+
+停止服务：
 
 ```bash
 docker compose down
 ```
 
-### 方式三：使用已发布 GHCR 镜像部署
+重启服务：
+
+```bash
+docker compose restart app
+```
+
+停止后再重新构建启动：
+
+```bash
+docker compose down
+docker compose up --build -d
+```
+
+#### 9. 数据保存位置
+
+当前 Compose 文件已经挂载了命名卷：
+
+```text
+app-data
+```
+
+容器内对应目录：
+
+```text
+/app/data
+```
+
+如果你删除容器但不删卷，配置、统计和缓存还会保留。
+
+#### 10. 升级到最新代码
+
+如果你是从仓库部署的，升级流程通常是：
+
+```bash
+git pull
+docker compose down
+docker compose up --build -d
+```
+
+升级前如果你关心历史配置和缓存，建议先备份 Docker 卷。
+
+#### 11. 备份与恢复
+
+先看卷名：
+
+```bash
+docker volume ls
+```
+
+导出数据卷：
+
+```bash
+docker run --rm \
+  -v app-data:/source \
+  -v "$PWD:/backup" \
+  alpine \
+  tar czf /backup/simple-api-pool-data.tar.gz -C /source .
+```
+
+恢复数据卷：
+
+```bash
+docker run --rm \
+  -v app-data:/target \
+  -v "$PWD:/backup" \
+  alpine \
+  sh -c "cd /target && tar xzf /backup/simple-api-pool-data.tar.gz"
+```
+
+### 方式二：使用 GHCR 镜像部署
 
 镜像地址：
 
@@ -174,23 +284,30 @@ docker compose down
 ghcr.io/1cyberlangke1/simple_api_pool
 ```
 
-#### 1. 在当前目录准备 `.env`
+如果你不打算本地构建，直接拉镜像会更省事。
 
-先复制环境变量示例文件：
+#### 1. 准备独立部署目录
 
 ```bash
-cp .env.example .env
+mkdir simple-api-pool
+cd simple-api-pool
 ```
 
-然后修改 `.env`，至少填写：
+#### 2. 创建 `.env`
+
+把下面内容保存为 `.env`：
 
 ```text
-ADMIN_KEY=你的管理员密钥
+ADMIN_KEY=改成你自己的管理员密钥
+CLIENT_KEYS=
+PORT=18080
+GOMEMLIMIT=32MiB
 ```
 
-#### 2. 直接使用 `docker run` 启动
+#### 3. 方式 A：直接用 `docker run`
 
 ```bash
+docker pull ghcr.io/1cyberlangke1/simple_api_pool:latest
 docker run -d \
   --name simple-api-pool \
   --restart unless-stopped \
@@ -200,24 +317,11 @@ docker run -d \
   ghcr.io/1cyberlangke1/simple_api_pool:latest
 ```
 
-#### 3. 验证健康状态
+#### 4. 方式 B：自己写一个最小 Compose 文件
 
-```bash
-curl http://127.0.0.1:18080/api/health
-```
+如果你希望后续升级、重启、看日志都统一用 `docker compose`，更推荐这一种。
 
-#### 4. 查看页面
-
-- 状态页：`http://127.0.0.1:18080/status`
-- 管理页：`http://127.0.0.1:18080/admin`
-
-#### 5. 停止并删除容器
-
-```bash
-docker rm -f simple-api-pool
-```
-
-如果你更习惯 Compose，也可以直接写一个最小部署文件：
+新建 `docker-compose.yml`：
 
 ```yaml
 services:
@@ -235,76 +339,307 @@ volumes:
   app-data:
 ```
 
-### 部署后的数据位置
+启动：
 
-#### 本机运行
+```bash
+docker compose up -d
+```
 
-运行数据会写到仓库根目录下的：
+#### 5. 验证服务状态
+
+如果你使用 `docker run`：
+
+```bash
+docker ps
+docker logs -f simple-api-pool
+```
+
+如果你使用 Compose：
+
+```bash
+docker compose ps
+docker compose logs -f app
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:18080/api/health
+```
+
+#### 6. 页面入口
+
+- 状态页：`http://127.0.0.1:18080/status`
+- 管理页：`http://127.0.0.1:18080/admin`
+
+#### 7. 升级镜像
+
+如果你使用 `docker run`：
+
+```bash
+docker pull ghcr.io/1cyberlangke1/simple_api_pool:latest
+docker rm -f simple-api-pool
+docker run -d \
+  --name simple-api-pool \
+  --restart unless-stopped \
+  --env-file .env \
+  -p 18080:18080 \
+  -v simple-api-pool-data:/app/data \
+  ghcr.io/1cyberlangke1/simple_api_pool:latest
+```
+
+如果你使用 Compose：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+#### 8. 停止与删除
+
+如果你使用 `docker run`：
+
+```bash
+docker stop simple-api-pool
+docker rm simple-api-pool
+```
+
+如果你使用 Compose：
+
+```bash
+docker compose down
+```
+
+只要你没有删除数据卷，历史配置和缓存会保留。
+
+### 方式三：本机直接运行
+
+如果你不使用 Docker，也可以直接运行 Go 后端。
+
+#### 1. 进入后端目录
+
+```bash
+cd backend
+```
+
+#### 2. 设置环境变量
+
+至少需要：
+
+```text
+ADMIN_KEY=你的管理员密钥
+```
+
+按需增加：
+
+```text
+CLIENT_KEYS=client-key-1,client-key-2
+PORT=18080
+GOMEMLIMIT=32MiB
+```
+
+#### 3. 启动服务
+
+```bash
+go run .
+```
+
+#### 4. 验证健康状态
+
+```bash
+curl http://127.0.0.1:18080/api/health
+```
+
+#### 5. 数据位置
+
+本机运行时，数据默认写到仓库根目录下的：
 
 ```text
 data/
 ```
 
-#### Docker Compose
+### 常见排查
 
-容器内数据目录：
+#### 端口被占用
 
-```text
-/app/data
-```
+如果 `18080` 已经被别的程序占用，把 `.env` 里的 `PORT` 改成别的值，然后重新启动容器。
 
-Compose 中已经挂载卷：
+#### 页面打不开
 
-```text
-app-data
-```
-
-### 常用环境变量
-
-- `ADMIN_KEY`：管理员密钥
-- `CLIENT_KEYS`：客户端访问密钥，多个值用半角逗号分隔
-- `PORT`：监听端口，默认 `18080`
-- `GOMEMLIMIT`：Go 运行时内存限制，默认 `32MiB`
-
-### 升级部署
-
-如果你更新了代码并重新部署，Docker 方式可以直接执行：
+先检查容器是否正常运行：
 
 ```bash
-docker compose down
-docker compose up --build -d
+docker compose ps
 ```
 
-如果你关心历史配置和统计，升级前建议先备份 `data/` 或 Docker 卷里的数据。
+再检查健康接口：
+
+```bash
+curl http://127.0.0.1:18080/api/health
+```
+
+如果健康接口不通，再看日志：
+
+```bash
+docker compose logs --tail=200 app
+```
+
+#### 重建容器后配置丢失
+
+通常是因为没有挂载 `/app/data`。确认你的部署命令或 Compose 文件里存在：
+
+```text
+-v simple-api-pool-data:/app/data
+```
+
+或者：
+
+```yaml
+volumes:
+  - app-data:/app/data
+```
 
 ## 使用教程
 
-这一节只处理“服务已经启动后，怎么配置和调用”。
+这一节只处理“服务已经启动后，怎么完成初始化、怎么配置提供商、怎么发代理请求、怎么看状态”。
 
-### 使用流程
+### 先理解三种密钥
 
-推荐按这个顺序使用：
+项目里常见的密钥有三种，角色不同：
 
-1. 准备管理员密钥
-2. 登录管理页或调用管理接口
-3. 配置全局参数
-4. 新增提供商
-5. 导入上游 key
-6. 用客户端 key 发起代理请求
-7. 查看状态页和缓存统计
+- `ADMIN_KEY`：管理员密钥，用于登录 `/admin` 和调用管理接口
+- `CLIENT_KEYS`：客户端访问密钥，用于业务方调用代理接口
+- 上游供应商 key：例如 OpenAI、Claude、Gemini 的真实 API key，由你导入到某个提供商下面
+
+可以把它理解成三层：
+
+1. `ADMIN_KEY` 管理整个系统
+2. `CLIENT_KEYS` 控制谁能使用你的代理
+3. 上游 key 负责真正请求外部模型服务
+
+### 推荐使用顺序
+
+推荐按这个顺序完成初始化：
+
+1. 确认服务已经启动并能访问 `/api/health`
+2. 打开 `/admin`，输入管理员密钥登录
+3. 配置全局参数，例如客户端 key 和 Token 估算开关
+4. 新增一个提供商
+5. 给这个提供商导入一个或多个上游 key
+6. 用客户端 key 调用代理入口
+7. 到 `/status` 查看成功率、错误率、Token 和缓存统计
 
 ### 页面入口
 
-- `/status`：公开状态页
-- `/admin`：管理页
+- `/status`：公开状态页，不需要登录
+- `/admin`：管理页，需要管理员密钥
 
-### 管理接口总览
+### 两种使用方式
+
+你可以任选一种：
+
+- 浏览器方式：主要在 `/admin` 页面里完成配置
+- API 方式：使用 `curl` 或其他 HTTP 客户端调用管理接口
+
+如果你只是自己使用，浏览器方式更直观。
+
+如果你要写自动化脚本、批量初始化环境、或者做二次集成，API 方式更合适。
+
+## 浏览器方式初始化
+
+### 1. 打开管理页
+
+在浏览器访问：
+
+```text
+http://127.0.0.1:18080/admin
+```
+
+输入你在环境变量里设置的 `ADMIN_KEY`。
+
+### 2. 设置全局配置
+
+在管理页里至少确认下面几项：
+
+- 管理员密钥是否正确
+- 是否需要启用客户端访问密钥
+- 是否开启 Token 估算
+
+如果你希望代理入口也带访问控制，先配置至少一个客户端 key。
+
+### 3. 新增提供商
+
+在管理页中新增提供商时，至少要填写：
+
+- 提供商名称
+- 提供商类型
+- 上游基础地址
+- key 策略
+
+建议先从一个最简单的提供商开始，例如：
+
+- 名称：`openai`
+- 类型：`openai_chat`
+- 地址：`https://api.openai.com`
+
+### 4. 导入上游 key
+
+进入对应提供商后导入 key。
+
+支持的批量格式：
+
+- 每行一个
+- 半角逗号分隔
+- 混合空格
+
+例如：
+
+```text
+sk-a
+sk-b
+sk-c
+```
+
+或者：
+
+```text
+sk-a, sk-b, sk-c
+```
+
+### 5. 调用代理接口
+
+提供商保存成功后，就可以用它的名称拼代理路径。
+
+例如你新增的是 `openai`，那入口就是：
+
+```text
+http://127.0.0.1:18080/openai/...
+```
+
+如果你给系统配置了客户端 key，调用时要带：
+
+```text
+Authorization: Bearer <CLIENT_KEY>
+```
+
+### 6. 查看运行状态
+
+初始化完成后，可以到下面两个页面确认结果：
+
+- `/status`：看调用是否成功、缓存是否命中、各提供商可用 key 数量
+- `/admin`：看每个 key 的禁用状态、失败次数、缓存配置
+
+## API 方式初始化
+
+### 管理接口鉴权
 
 所有管理接口都需要：
 
 ```text
 Authorization: Bearer <ADMIN_KEY>
 ```
+
+常用管理接口如下：
 
 - `POST /api/admin/login`
 - `GET /api/admin/config`
@@ -315,29 +650,16 @@ Authorization: Bearer <ADMIN_KEY>
 - `POST /api/admin/providers/{name}/keys`
 - `DELETE /api/admin/providers/{name}/{key}`
 
-### 代理接口总览
+### 1. 先验证管理员密钥
 
-如果你配置了客户端访问密钥，代理请求需要：
-
-```text
-Authorization: Bearer <CLIENT_KEY>
+```bash
+curl -X POST http://127.0.0.1:18080/api/admin/login \
+  -H "Authorization: Bearer admin-demo"
 ```
 
-代理入口：
+这个请求成功，说明管理员密钥可用。
 
-- `/{provider}/...`
-- `/cache/{provider}/...`
-
-示例路径：
-
-- `/openai/v1/chat/completions`
-- `/responses/v1/responses`
-- `/claude/v1/messages`
-- `/gemini/v1beta/models/gemini-2.5-flash:generateContent`
-
-## 初始化配置
-
-### 1. 设置全局配置
+### 2. 设置全局配置
 
 这个接口会保存：
 
@@ -356,7 +678,9 @@ curl -X PUT http://127.0.0.1:18080/api/admin/config \
   }'
 ```
 
-### 2. 新增提供商
+如果你不想给代理接口加客户端鉴权，可以把 `client_keys` 设为空数组。
+
+### 3. 新增提供商
 
 下面是一个 `OpenAI Chat` 提供商示例：
 
@@ -379,17 +703,22 @@ curl -X POST http://127.0.0.1:18080/api/admin/providers \
 
 字段说明：
 
-- `name`：代理入口名称
-- `type`：提供商类型
-- `base_url`：上游地址
+- `name`：代理入口名称，同时也会出现在 `/status` 和 `/admin`
+- `type`：提供商类型，可选值取决于支持的供应商协议
+- `base_url`：上游基础地址
 - `key_strategy`：`round_robin` 或 `fill`
-- `fail_threshold`：连续失败阈值
+- `fail_threshold`：连续失败多少次后禁用该 key
 - `min_disable_secs`：最小禁用时长
 - `max_disable_secs`：最大禁用时长
-- `cache_enabled`：是否启用缓存
+- `cache_enabled`：是否启用该提供商的缓存入口
 - `cache_max_entries`：该提供商缓存条目上限
 
-### 3. 导入上游 key
+提供商名称需要注意两点：
+
+- 必须唯一
+- 不能使用保留名称 `status` 和 `admin`
+
+### 4. 导入上游 key
 
 支持：
 
@@ -404,12 +733,75 @@ curl -X POST http://127.0.0.1:18080/api/admin/providers/openai/keys \
   -d '{"keys":"sk-a\nsk-b\nsk-c"}'
 ```
 
-### 4. 读取当前配置
+如果你更喜欢逗号分隔，也可以这样传：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/admin/providers/openai/keys \
+  -H "Authorization: Bearer admin-demo" \
+  -H "Content-Type: application/json" \
+  -d '{"keys":"sk-a, sk-b, sk-c"}'
+```
+
+### 5. 读取当前配置
+
+读取全局配置：
+
+```bash
+curl http://127.0.0.1:18080/api/admin/config \
+  -H "Authorization: Bearer admin-demo"
+```
+
+读取提供商列表：
 
 ```bash
 curl http://127.0.0.1:18080/api/admin/providers \
   -H "Authorization: Bearer admin-demo"
 ```
+
+### 6. 删除提供商或单个 key
+
+删除整个提供商：
+
+```bash
+curl -X DELETE http://127.0.0.1:18080/api/admin/providers/openai \
+  -H "Authorization: Bearer admin-demo"
+```
+
+删除某一个上游 key：
+
+```bash
+curl -X DELETE http://127.0.0.1:18080/api/admin/providers/openai/sk-a \
+  -H "Authorization: Bearer admin-demo"
+```
+
+删除提供商时，对应的独立缓存也会一起处理。
+
+## 代理接口总览
+
+如果你配置了客户端访问密钥，代理请求需要：
+
+```text
+Authorization: Bearer <CLIENT_KEY>
+```
+
+代理入口有两类：
+
+- `/{provider}/...`：普通代理入口
+- `/cache/{provider}/...`：缓存代理入口
+
+示例路径：
+
+- `/openai/v1/chat/completions`
+- `/responses/v1/responses`
+- `/claude/v1/messages`
+- `/gemini/v1beta/models/gemini-2.5-flash:generateContent`
+
+调用时有几个要点：
+
+- 后缀路径会继续透传给上游
+- 查询参数会继续透传给上游
+- 请求体按下游官方格式原样传入
+- 多模态消息不会被改写
 
 ## 代理请求示例
 
