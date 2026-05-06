@@ -48,9 +48,46 @@ function Test-ChineseSegment {
     return $true
 }
 
+function Test-HasChineseChar {
+    param(
+        [string]$Text
+    )
+
+    foreach ($char in $Text.ToCharArray()) {
+        $code = [int]$char
+        if (($code -ge 0x4E00) -and ($code -le 0x9FFF)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-SummarySegment {
+    param(
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+
+    if (-not (Test-HasChineseChar -Text $Text)) {
+        return $false
+    }
+
+    foreach ($char in $Text.Trim().ToCharArray()) {
+        if ([char]::IsControl($char)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 $notFoundMessage = New-Text -Codes @(26410,25214,21040,25552,20132,20449,24687,25991,20214)
 $emptyTitleMessage = New-Text -Codes @(25552,20132,26631,39064,19981,33021,20026,31354)
-$invalidTitlePrefix = New-Text -Codes @(25552,20132,26631,39064,24517,39035,20026,65306,20013,25991,20998,31867,58,32,20013,25991,35828,26126)
+$invalidTitlePrefix = New-Text -Codes @(25552,20132,26631,39064,24517,39035,20026,65306,20013,25991,20998,31867,58,32,20013,25991,35828,26126,65292,21487,28151,21512,33521,25991,12289,25968,23383,21644,25991,20214,21517)
 $fullWidthColon = [char]0xFF1A
 
 if (-not (Test-Path -LiteralPath $MessageFile)) {
@@ -85,7 +122,7 @@ if ($separatorIndex -lt 1 -or $separatorIndex -ge ($firstLine.Length - 1)) {
 $category = $firstLine.Substring(0, $separatorIndex).Trim()
 $summary = $firstLine.Substring($separatorIndex + 1).Trim()
 
-if ((-not (Test-ChineseSegment -Text $category)) -or (-not (Test-ChineseSegment -Text $summary))) {
+if ((-not (Test-ChineseSegment -Text $category)) -or (-not (Test-SummarySegment -Text $summary))) {
     Write-Error ($invalidTitlePrefix + " -> " + $firstLine)
     exit 1
 }
