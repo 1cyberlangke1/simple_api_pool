@@ -3,90 +3,1917 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple API Pool</title>
+  <title>Simple API Pool 控制台</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
-    h1 { margin-bottom: 20px; color: #333; }
-    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .card h2 { margin-bottom: 12px; font-size: 18px; }
-    #pool-list { list-style: none; }
-    #pool-list li { padding: 10px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-    #pool-list li:last-child { border-bottom: none; }
-    form { display: flex; gap: 10px; }
-    input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-    button { padding: 8px 20px; background: #1a73e8; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    button:hover { background: #1557b0; }
-    .status { padding: 10px; border-radius: 4px; margin-bottom: 16px; }
-    .status.ok { background: #e6f4ea; color: #1e7e34; }
-    .status.err { background: #fce8e6; color: #c5221f; }
+    @import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=IBM+Plex+Sans+SC:wght@400;500;600&display=swap");
+
+    :root {
+      --bg: #f3ede1;
+      --bg-grad-top-left: rgba(181, 82, 51, 0.16);
+      --bg-grad-top-right: rgba(46, 85, 70, 0.12);
+      --bg-grad-from: #faf3e6;
+      --bg-grad-to: #ede4d4;
+      --panel: rgba(255, 251, 243, 0.92);
+      --panel-strong: #fffaf0;
+      --panel-soft: rgba(252, 246, 234, 0.6);
+      --panel-input: rgba(255, 252, 247, 0.95);
+      --panel-input-readonly: rgba(245, 238, 226, 0.7);
+      --panel-key: rgba(245, 238, 226, 0.7);
+      --line: rgba(52, 44, 31, 0.12);
+      --line-soft: rgba(52, 44, 31, 0.06);
+      --text: #2a241a;
+      --muted: #6a5f4d;
+      --muted-strong: #4d4434;
+      --accent: #b55233;
+      --accent-deep: #7e2a14;
+      --accent-text: #fff8ef;
+      --accent-soft: rgba(181, 82, 51, 0.12);
+      --accent-soft-2: rgba(181, 82, 51, 0.06);
+      --ok: #1f6a3f;
+      --ok-bg: rgba(31, 106, 63, 0.08);
+      --ok-line: rgba(31, 106, 63, 0.22);
+      --warn: #9a6626;
+      --err: #8a2f22;
+      --err-bg: rgba(138, 47, 34, 0.08);
+      --err-line: rgba(138, 47, 34, 0.22);
+      --grid-line: rgba(53, 40, 22, 0.025);
+      --grid-mask-end: rgba(0, 0, 0, 0.55);
+      --shadow-lg: 0 18px 44px rgba(80, 53, 18, 0.12);
+      --shadow-sm: 0 6px 16px rgba(80, 53, 18, 0.08);
+      --shadow-card-hover: 0 10px 24px rgba(80, 53, 18, 0.08);
+      --shadow-btn: 0 10px 22px rgba(126, 42, 20, 0.18);
+      --shadow-btn-hover: 0 14px 28px rgba(126, 42, 20, 0.24);
+      --shadow-nav-active: 0 8px 18px rgba(126, 42, 20, 0.22);
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 14px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #1a1611;
+      --bg-grad-top-left: rgba(217, 121, 78, 0.18);
+      --bg-grad-top-right: rgba(82, 138, 116, 0.14);
+      --bg-grad-from: #1f1a13;
+      --bg-grad-to: #14110c;
+      --panel: rgba(36, 30, 22, 0.85);
+      --panel-strong: rgba(42, 35, 25, 0.95);
+      --panel-soft: rgba(36, 30, 22, 0.5);
+      --panel-input: rgba(28, 23, 17, 0.9);
+      --panel-input-readonly: rgba(22, 18, 13, 0.7);
+      --panel-key: rgba(28, 23, 17, 0.7);
+      --line: rgba(232, 215, 184, 0.12);
+      --line-soft: rgba(232, 215, 184, 0.06);
+      --text: #ece1cc;
+      --muted: #a89a82;
+      --muted-strong: #c4b89e;
+      --accent: #d9794e;
+      --accent-deep: #e89270;
+      --accent-text: #1a1611;
+      --accent-soft: rgba(217, 121, 78, 0.18);
+      --accent-soft-2: rgba(217, 121, 78, 0.08);
+      --ok: #6ec48c;
+      --ok-bg: rgba(110, 196, 140, 0.12);
+      --ok-line: rgba(110, 196, 140, 0.28);
+      --warn: #d4a456;
+      --err: #e07c6c;
+      --err-bg: rgba(224, 124, 108, 0.12);
+      --err-line: rgba(224, 124, 108, 0.28);
+      --grid-line: rgba(232, 215, 184, 0.04);
+      --grid-mask-end: rgba(0, 0, 0, 0.7);
+      --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.4);
+      --shadow-sm: 0 6px 16px rgba(0, 0, 0, 0.28);
+      --shadow-card-hover: 0 10px 24px rgba(0, 0, 0, 0.32);
+      --shadow-btn: 0 10px 22px rgba(217, 121, 78, 0.24);
+      --shadow-btn-hover: 0 14px 28px rgba(217, 121, 78, 0.32);
+      --shadow-nav-active: 0 8px 18px rgba(217, 121, 78, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "IBM Plex Sans SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, var(--bg-grad-top-left), transparent 26%),
+        radial-gradient(circle at top right, var(--bg-grad-top-right), transparent 22%),
+        linear-gradient(180deg, var(--bg-grad-from) 0%, var(--bg) 42%, var(--bg-grad-to) 100%);
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    body[data-lang="en"] {
+      font-family: "Inter", "IBM Plex Sans", system-ui, sans-serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(180deg, var(--grid-mask-end), transparent 92%);
+    }
+
+    .shell {
+      width: min(1200px, calc(100vw - 32px));
+      margin: 28px auto 56px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 24px 28px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(135deg, rgba(255, 251, 243, 0.96), rgba(249, 239, 220, 0.84));
+      box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(10px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      right: -64px;
+      top: -64px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-soft), transparent 68%);
+      pointer-events: none;
+    }
+
+    .hero-top {
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+
+    .nav button {
+      border: none;
+      border-radius: 999px;
+      padding: 9px 18px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--muted-strong);
+      background: transparent;
+      transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .nav button:hover { color: var(--accent-deep); }
+
+    .nav button.active {
+      color: var(--accent-text);
+      background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      box-shadow: var(--shadow-nav-active);
+    }
+
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      color: var(--muted-strong);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
+      padding: 0;
+    }
+
+    .icon-btn:hover {
+      color: var(--accent-deep);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .icon-btn svg { width: 18px; height: 18px; }
+
+    .lang-btn {
+      width: auto;
+      padding: 0 12px;
+      gap: 6px;
+      letter-spacing: 0.04em;
+    }
+
+    .theme-icon-sun { display: none; }
+    [data-theme="dark"] .theme-icon-sun { display: inline; }
+    [data-theme="dark"] .theme-icon-moon { display: none; }
+
+    .brand .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: "Noto Serif SC", serif;
+      font-size: clamp(26px, 3.4vw, 38px);
+      line-height: 1.1;
+    }
+
+    .brand p {
+      max-width: 640px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      margin: 8px 0 0;
+    }
+
+    /* Buttons */
+    button.primary,
+    .button-link.primary {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--accent-text);
+      background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      box-shadow: var(--shadow-btn);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    button.secondary,
+    .button-link.secondary {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 16px;
+      font: inherit;
+      font-weight: 500;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--accent-deep);
+      background: var(--panel);
+      transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+    }
+
+    button.primary:hover,
+    button.secondary:hover {
+      transform: translateY(-1px);
+    }
+
+    button.primary:hover { box-shadow: var(--shadow-btn-hover); }
+    button.secondary:hover { background: var(--panel-strong); border-color: var(--accent); }
+
+    /* Grids */
+    .grid { display: grid; gap: 18px; }
+
+    .summary-grid {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      margin-top: 22px;
+    }
+
+    .content-grid {
+      grid-template-columns: 1.1fr 0.9fr;
+      align-items: start;
+      margin-top: 20px;
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(8px);
+    }
+
+    .panel-header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .panel h2,
+    .panel h3 {
+      margin: 0;
+      font-family: "Noto Serif SC", serif;
+      font-weight: 700;
+    }
+
+    .panel h2 { font-size: 20px; }
+    .panel h3 { font-size: 17px; }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      margin: 4px 0 16px;
+    }
+
+    .panel-section + .panel-section { margin-top: 20px; }
+    .panel-section h3 { margin-bottom: 10px; }
+
+    .divider {
+      height: 1px;
+      background: var(--line-soft);
+      margin: 18px 0;
+      border: 0;
+    }
+
+    /* Metrics */
+    .metric {
+      position: relative;
+      overflow: hidden;
+      padding: 18px 20px;
+    }
+
+    .metric::before {
+      content: "";
+      position: absolute;
+      inset: auto -36px -36px auto;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-soft), transparent 66%);
+      pointer-events: none;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .metric-value {
+      font-size: clamp(26px, 3.6vw, 36px);
+      font-weight: 700;
+      line-height: 1.1;
+      font-family: "Noto Serif SC", serif;
+    }
+
+    .metric-note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    /* Status badges */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .status-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-badge.ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+    .status-badge.err { color: var(--err); background: var(--err-bg); border-color: var(--err-line); }
+
+    /* Lists */
+    .list { display: grid; gap: 14px; }
+
+    .provider-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      background: var(--panel-strong);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .provider-card:hover {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-card-hover);
+    }
+
+    .provider-card.subtle {
+      background: var(--panel-soft);
+      border-style: dashed;
+    }
+
+    .provider-head {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .provider-name {
+      font-family: "Noto Serif SC", serif;
+      font-size: 22px;
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    .provider-meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      line-height: 1.6;
+    }
+
+    .tag-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .tag {
+      font-size: 11.5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .tag.muted { background: var(--accent-soft-2); color: var(--muted-strong); }
+    .tag.ok { background: var(--ok-bg); color: var(--ok); }
+    .tag.err { background: var(--err-bg); color: var(--err); }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .mini {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-input);
+      border: 1px solid var(--line-soft);
+    }
+
+    .mini strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 4px;
+      font-family: "Noto Serif SC", serif;
+    }
+
+    .mini span {
+      font-size: 11.5px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* Forms */
+    form { display: grid; gap: 14px; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--muted-strong);
+      font-weight: 500;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--panel-input);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+      font-size: 14px;
+      min-height: 42px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    input[readonly] {
+      background: var(--panel-input-readonly);
+      color: var(--muted-strong);
+      cursor: default;
+    }
+
+    .checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+      background: var(--panel-input);
+      color: var(--text);
+      font-weight: 500;
+      cursor: pointer;
+      min-height: 42px;
+    }
+
+    .checkbox input {
+      width: 16px;
+      height: 16px;
+      min-height: 16px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .inline-status {
+      min-height: 20px;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .inline-status.error { color: var(--err); }
+    .inline-status.ok { color: var(--ok); }
+
+    /* Key list */
+    .key-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .key-item {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-key);
+      border: 1px solid var(--line-soft);
+    }
+
+    .key-item code {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--accent-deep);
+      font-size: 13px;
+      font-family: "JetBrains Mono", "Consolas", monospace;
+    }
+
+    /* Empty state */
+    .empty {
+      padding: 18px;
+      border-radius: var(--radius-md);
+      background: var(--panel-soft);
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* Legend */
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .legend-item {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-input);
+      border: 1px solid var(--line-soft);
+    }
+
+    .legend-item strong {
+      display: block;
+      font-size: 13px;
+      color: var(--accent-deep);
+      margin-bottom: 2px;
+      font-weight: 600;
+    }
+
+    .legend-item span {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* Hint card */
+    .hint {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-soft-2);
+      border-left: 3px solid var(--accent);
+      font-size: 13px;
+      color: var(--muted-strong);
+      line-height: 1.7;
+    }
+
+    .hint code {
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 12.5px;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Responsive */
+    @media (max-width: 960px) {
+      .content-grid { grid-template-columns: 1fr; }
+      .legend-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100vw - 18px, 100%);
+        margin-top: 12px;
+      }
+
+      .hero, .panel { padding: 16px; border-radius: 22px; }
+
+      .hero-top { flex-direction: column; align-items: stretch; }
+
+      .hero-actions { justify-content: space-between; }
+
+      .nav { flex: 1; }
+      .nav button { flex: 1; }
+
+      .form-grid, .form-grid.three { grid-template-columns: 1fr; }
+
+      .provider-head { flex-direction: column; align-items: stretch; }
+    }
   </style>
 </head>
 <body>
-  <h1>Simple API Pool</h1>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div class="brand">
+          <div class="eyebrow">Simple API Pool</div>
+          <h1 id="hero-title" data-i18n="hero.statusTitle">运行总览</h1>
+          <p id="hero-copy" data-i18n="hero.statusCopy">实时查看各提供商的请求与 Token 用量。</p>
+        </div>
+        <div class="hero-actions">
+          <div class="nav">
+            <button id="nav-status" type="button" data-i18n="nav.status">状态页</button>
+            <button id="nav-admin" type="button" data-i18n="nav.admin">管理页</button>
+          </div>
+          <button id="lang-toggle" class="icon-btn lang-btn" type="button" title="Language" aria-label="Language">
+            <span id="lang-toggle-label">中</span>
+          </button>
+          <button id="theme-toggle" class="icon-btn" type="button" title="Theme" aria-label="Theme">
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="grid summary-grid" id="summary-grid">
+        <article class="panel metric">
+          <div class="metric-label" data-i18n="metric.health">服务状态</div>
+          <div class="metric-value" id="service-health" data-i18n="metric.healthChecking">检测中</div>
+          <div class="metric-note" id="service-health-note" data-i18n="metric.healthCheckingNote">正在检测后端健康接口</div>
+        </article>
+        <article class="panel metric">
+          <div class="metric-label" data-i18n="metric.providers">提供商</div>
+          <div class="metric-value" id="provider-count">0</div>
+          <div class="metric-note" data-i18n="metric.providersNote">已统计的提供商数量</div>
+        </article>
+        <article class="panel metric">
+          <div class="metric-label" data-i18n="metric.success">成功请求</div>
+          <div class="metric-value" id="success-total">0</div>
+          <div class="metric-note" data-i18n="metric.cumulative">所有提供商累计</div>
+        </article>
+        <article class="panel metric">
+          <div class="metric-label" data-i18n="metric.error">错误请求</div>
+          <div class="metric-value" id="error-total">0</div>
+          <div class="metric-note" data-i18n="metric.cumulative">所有提供商累计</div>
+        </article>
+      </div>
+    </section>
 
-  <div id="health" class="status">检查健康状态...</div>
+    <section id="status-view" class="grid content-grid">
+      <article class="panel">
+        <div class="panel-header">
+          <h2 data-i18n="status.detailsTitle">提供商明细</h2>
+          <div class="status-badge" id="status-badge" data-i18n="status.waiting">等待数据</div>
+        </div>
+        <div class="panel-subtitle" data-i18n="status.detailsSub">公开统计，无需登录。</div>
+        <div id="status-list" class="list"></div>
+      </article>
+      <article class="panel">
+        <h2 data-i18n="status.legendTitle">指标说明</h2>
+        <div class="panel-subtitle" data-i18n="status.legendSub">成功率与错误率按各提供商的请求次数换算，无历史时显示「暂无」。</div>
+        <div class="legend-grid">
+          <div class="legend-item"><strong data-i18n="legend.successError">成功 / 错误</strong><span data-i18n="legend.successErrorDesc">累计请求次数</span></div>
+          <div class="legend-item"><strong data-i18n="legend.tokens">输入 / 输出 Token</strong><span data-i18n="legend.tokensDesc">消息体进出统计</span></div>
+          <div class="legend-item"><strong data-i18n="legend.cacheTokens">缓存 Token</strong><span data-i18n="legend.cacheTokensDesc">命中缓存所节省</span></div>
+          <div class="legend-item"><strong data-i18n="legend.cacheHits">缓存命中</strong><span data-i18n="legend.cacheHitsDesc">命中缓存的次数</span></div>
+        </div>
+        <hr class="divider">
+        <h3 data-i18n="status.nextTitle">下一步</h3>
+        <div class="panel-subtitle" data-i18n="status.nextSub">需要配置提供商、导入密钥或调整开关，前往管理页。</div>
+        <div class="actions">
+          <button class="primary" type="button" id="status-to-admin" data-i18n="status.toAdmin">进入管理页</button>
+        </div>
+      </article>
+    </section>
 
-  <div class="card">
-    <h2>API 列表</h2>
-    <ul id="pool-list"><li>加载中...</li></ul>
-  </div>
+    <section id="admin-view" class="grid content-grid hidden">
+      <article class="panel">
+        <h2 data-i18n="admin.workspaceTitle">管理工作区</h2>
+        <div class="panel-subtitle" data-i18n="admin.workspaceSub">登录后维护全局配置、提供商与上游密钥。</div>
+        <div id="admin-action-status" class="inline-status"></div>
 
-  <div class="card">
-    <h2>添加 API</h2>
-    <form id="add-form">
-      <input name="name" placeholder="API 名称" required>
-      <input name="url" placeholder="API 地址" required>
-      <button type="submit">添加</button>
-    </form>
-  </div>
+        <div class="panel-section">
+          <h3 data-i18n="admin.loginTitle">登录</h3>
+          <div class="panel-subtitle" data-i18n="admin.loginSub">登录状态保存在当前浏览器。</div>
+          <form id="login-form">
+            <label data-i18n="admin.adminKey">
+              管理员密钥
+              <input id="login-admin-key" name="admin_key" type="password" data-i18n-placeholder="admin.adminKeyPlaceholder" placeholder="请输入管理员密钥" autocomplete="current-password">
+            </label>
+            <div class="actions">
+              <button class="primary" type="submit" data-i18n="admin.loginBtn">登录</button>
+              <button class="secondary hidden" id="logout-button" type="button" data-i18n="admin.logoutBtn">退出登录</button>
+            </div>
+            <div id="login-status" class="inline-status"></div>
+          </form>
+        </div>
+
+        <div id="admin-workspace" class="hidden">
+          <hr class="divider">
+
+          <div class="hint" data-i18n-html="admin.entryHint">
+            代理入口 <code>/{provider}/...</code> · 缓存入口 <code>/cache/{provider}/...</code>
+          </div>
+
+          <div class="panel-section">
+            <h3 data-i18n="admin.globalTitle">全局配置</h3>
+            <form id="global-config-form">
+              <div class="form-grid">
+                <label data-i18n="admin.adminKey">
+                  管理员密钥
+                  <input id="global-admin-key" name="admin_key" type="text" data-i18n-placeholder="admin.adminKeyPlaceholderHint" placeholder="用于管理接口鉴权">
+                </label>
+                <label class="checkbox">
+                  <input id="global-token-estimation" name="token_estimation_enabled" type="checkbox">
+                  <span data-i18n="admin.tokenEst">上游缺统计时启用 Token 估算</span>
+                </label>
+              </div>
+              <label data-i18n="admin.clientKeys">
+                客户端访问密钥
+                <textarea id="global-client-keys" name="client_keys" data-i18n-placeholder="admin.keysPlaceholder" placeholder="每行一个，或用半角逗号分隔"></textarea>
+              </label>
+              <div class="actions">
+                <button class="primary" type="submit" data-i18n="admin.saveGlobal">保存全局配置</button>
+              </div>
+              <div id="global-status" class="inline-status"></div>
+            </form>
+          </div>
+
+          <div class="panel-section">
+            <h3 data-i18n="admin.newProvider">新增提供商</h3>
+            <form id="provider-create-form">
+              <div class="form-grid">
+                <label data-i18n="provider.name">
+                  名称
+                  <input name="name" type="text" data-i18n-placeholder="provider.namePlaceholder" placeholder="例如 openai" required>
+                </label>
+                <label data-i18n="provider.type">
+                  接口格式
+                  <select name="type">
+                    <option value="openai_chat">OpenAI Chat</option>
+                    <option value="openai_responses">OpenAI Responses</option>
+                    <option value="claude">Claude</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-grid">
+                <label data-i18n="provider.baseUrl">
+                  上游地址
+                  <input name="base_url" type="text" data-i18n-placeholder="provider.baseUrlPlaceholder" placeholder="留空则使用对应类型的默认地址">
+                </label>
+                <label data-i18n="provider.strategy">
+                  密钥策略
+                  <select name="key_strategy">
+                    <option value="round_robin" data-i18n="strategy.roundRobin">轮询</option>
+                    <option value="fill" data-i18n="strategy.fill">填充</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-grid three">
+                <label data-i18n="provider.failThreshold">
+                  失败阈值
+                  <input name="fail_threshold" type="number" min="1" value="3">
+                </label>
+                <label data-i18n="provider.minDisable">
+                  最小禁用秒数
+                  <input name="min_disable_secs" type="number" min="1" value="30">
+                </label>
+                <label data-i18n="provider.maxDisable">
+                  最大禁用秒数
+                  <input name="max_disable_secs" type="number" min="1" value="3600">
+                </label>
+              </div>
+              <div class="form-grid">
+                <label class="checkbox">
+                  <input name="cache_enabled" type="checkbox">
+                  <span data-i18n="provider.cacheEnabled">启用硬盘缓存</span>
+                </label>
+                <label data-i18n="provider.cacheMax">
+                  最大缓存条目
+                  <input name="cache_max_entries" type="number" min="1" value="1000">
+                </label>
+              </div>
+              <div class="actions">
+                <button class="primary" type="submit" data-i18n="admin.saveProvider">保存提供商</button>
+              </div>
+              <div id="provider-create-status" class="inline-status"></div>
+            </form>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
+        </div>
+        <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
+        <div id="provider-list" class="list">
+          <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
+        </div>
+      </article>
+    </section>
+  </main>
 
   <script>
-    const BASE = '/api';
+    const API_BASE = "/api";
+    const STORAGE_KEY = "simple-api-pool-admin-key";
+    const THEME_KEY = "simple-api-pool-theme";
+    const LANG_KEY = "simple-api-pool-lang";
+    const route = location.pathname === "/admin" ? "admin" : "status";
 
-    async function checkHealth() {
-      const el = document.getElementById('health');
-      try {
-        const res = await fetch(`${BASE}/health`);
-        const data = await res.json();
-        el.className = 'status ok';
-        el.textContent = `服务状态: ${data.status}`;
-      } catch {
-        el.className = 'status err';
-        el.textContent = '服务不可达';
+    /* ---------- i18n ---------- */
+
+    const messages = {
+      "zh-CN": {
+        "nav.status": "状态页",
+        "nav.admin": "管理页",
+        "hero.statusTitle": "运行总览",
+        "hero.statusCopy": "实时查看各提供商的请求与 Token 用量。",
+        "hero.adminTitle": "管理控制台",
+        "hero.adminCopy": "维护全局配置、提供商策略与上游密钥。",
+        "metric.health": "服务状态",
+        "metric.healthChecking": "检测中",
+        "metric.healthCheckingNote": "正在检测后端健康接口",
+        "metric.healthOnline": "在线",
+        "metric.healthError": "异常",
+        "metric.healthNote": "健康接口：{status}",
+        "metric.healthUnavailable": "健康接口不可用",
+        "metric.providers": "提供商",
+        "metric.providersNote": "已统计的提供商数量",
+        "metric.success": "成功请求",
+        "metric.error": "错误请求",
+        "metric.cumulative": "所有提供商累计",
+        "status.detailsTitle": "提供商明细",
+        "status.detailsSub": "公开统计，无需登录。",
+        "status.waiting": "等待数据",
+        "status.updated": "数据已更新",
+        "status.failed": "读取失败",
+        "status.legendTitle": "指标说明",
+        "status.legendSub": "成功率与错误率按各提供商的请求次数换算，无历史时显示「暂无」。",
+        "status.nextTitle": "下一步",
+        "status.nextSub": "需要配置提供商、导入密钥或调整开关，前往管理页。",
+        "status.toAdmin": "进入管理页",
+        "status.empty": "暂无统计数据，发起一次代理请求后再回来查看。",
+        "legend.successError": "成功 / 错误",
+        "legend.successErrorDesc": "累计请求次数",
+        "legend.tokens": "输入 / 输出 Token",
+        "legend.tokensDesc": "消息体进出统计",
+        "legend.cacheTokens": "缓存 Token",
+        "legend.cacheTokensDesc": "命中缓存所节省",
+        "legend.cacheHits": "缓存命中",
+        "legend.cacheHitsDesc": "命中缓存的次数",
+        "admin.workspaceTitle": "管理工作区",
+        "admin.workspaceSub": "登录后维护全局配置、提供商与上游密钥。",
+        "admin.loginTitle": "登录",
+        "admin.loginSub": "登录状态保存在当前浏览器。",
+        "admin.adminKey": "管理员密钥",
+        "admin.adminKeyPlaceholder": "请输入管理员密钥",
+        "admin.adminKeyPlaceholderHint": "用于管理接口鉴权",
+        "admin.loginBtn": "登录",
+        "admin.logoutBtn": "退出登录",
+        "admin.entryHint": "代理入口 <code>/{provider}/...</code> · 缓存入口 <code>/cache/{provider}/...</code>",
+        "admin.globalTitle": "全局配置",
+        "admin.tokenEst": "上游缺统计时启用 Token 估算",
+        "admin.clientKeys": "客户端访问密钥",
+        "admin.keysPlaceholder": "每行一个，或用半角逗号分隔",
+        "admin.saveGlobal": "保存全局配置",
+        "admin.newProvider": "新增提供商",
+        "admin.saveProvider": "保存提供商",
+        "admin.providerListTitle": "提供商列表",
+        "admin.providerListSub": "点击卡片内表单可修改配置、导入或删除上游密钥。",
+        "admin.loginToLoad": "登录后加载提供商配置",
+        "admin.pleaseLogin": "请先登录",
+        "admin.localKeyExpired": "本地密钥已失效，请重新登录",
+        "admin.invalidKey": "密钥无效，请重新输入。",
+        "admin.loginSuccess": "登录成功，已记住本设备。",
+        "admin.localKeyLoaded": "已读取本地保存的密钥。",
+        "admin.loggedOut": "已退出登录",
+        "admin.loggedOutMsg": "已退出登录。",
+        "admin.savedGlobal": "全局配置已保存。",
+        "admin.savedTip": "已保存。",
+        "admin.savedProvider": "已保存提供商 {name}。",
+        "admin.importDone": "导入完成。",
+        "admin.importDoneTip": "已导入 {provider} 的密钥。",
+        "admin.deletedProvider": "已删除提供商 {name}。",
+        "admin.deletedKey": "已删除 {provider} 的一个密钥。",
+        "admin.pleaseInputKey": "请输入管理员密钥。",
+        "provider.name": "名称",
+        "provider.namePlaceholder": "例如 openai",
+        "provider.type": "接口格式",
+        "provider.baseUrl": "上游地址",
+        "provider.baseUrlPlaceholder": "留空则使用对应类型的默认地址",
+        "provider.strategy": "密钥策略",
+        "provider.failThreshold": "失败阈值",
+        "provider.minDisable": "最小禁用秒数",
+        "provider.maxDisable": "最大禁用秒数",
+        "provider.cacheEnabled": "启用硬盘缓存",
+        "provider.cacheMax": "最大缓存条目",
+        "provider.empty": "尚未配置提供商，先在左侧新增一个",
+        "provider.noKeys": "尚未导入上游密钥",
+        "provider.defaultUpstream": "默认上游",
+        "provider.upstreamKeys": "上游密钥",
+        "provider.batchImport": "批量导入",
+        "provider.save": "保存",
+        "provider.import": "导入",
+        "provider.delete": "删除",
+        "provider.tagSuccess": "成功 {n}",
+        "provider.tagError": "错误 {n}",
+        "provider.tagCacheHits": "缓存命中 {n}",
+        "provider.tagSuccessRate": "成功率 {n}",
+        "provider.tagErrorRate": "错误率 {n}",
+        "provider.tagKeys": "密钥 {n}",
+        "provider.tagAvailable": "可用 {n}",
+        "provider.tagDisabled": "禁用 {n}",
+        "provider.tagCacheOn": "缓存开",
+        "provider.tagCacheOff": "缓存关",
+        "provider.statSuccess": "成功",
+        "provider.statError": "错误",
+        "provider.statInputTokens": "输入 Token",
+        "provider.statOutputTokens": "输出 Token",
+        "provider.statCacheTokens": "缓存 Token",
+        "provider.statCacheHits": "缓存命中",
+        "provider.fails": "连续失败 {n} 次",
+        "provider.disabledUntil": "禁用至 {time}",
+        "provider.usable": "可用",
+        "provider.notDisabled": "未禁用",
+        "provider.rateNone": "暂无",
+        "strategy.roundRobin": "轮询",
+        "strategy.fill": "填充",
+        "error.healthAbnormal": "健康接口异常",
+        "error.readStatus": "读取状态失败",
+        "error.login": "登录失败",
+        "error.readGlobal": "读取全局配置失败",
+        "error.readProviders": "读取提供商失败",
+        "error.save": "保存失败",
+        "error.import": "导入失败",
+        "error.delete": "删除失败",
+        "error.action": "操作失败",
+        "error.read": "读取失败",
+        "label.lang": "中"
+      },
+      "en": {
+        "nav.status": "Status",
+        "nav.admin": "Admin",
+        "hero.statusTitle": "Live Overview",
+        "hero.statusCopy": "Real-time request and token usage across providers.",
+        "hero.adminTitle": "Admin Console",
+        "hero.adminCopy": "Manage global config, provider policies and upstream keys.",
+        "metric.health": "Service",
+        "metric.healthChecking": "Checking",
+        "metric.healthCheckingNote": "Probing backend health endpoint",
+        "metric.healthOnline": "Online",
+        "metric.healthError": "Down",
+        "metric.healthNote": "Health: {status}",
+        "metric.healthUnavailable": "Health endpoint unavailable",
+        "metric.providers": "Providers",
+        "metric.providersNote": "Tracked provider count",
+        "metric.success": "Successes",
+        "metric.error": "Errors",
+        "metric.cumulative": "All providers, cumulative",
+        "status.detailsTitle": "Providers",
+        "status.detailsSub": "Public stats, no login required.",
+        "status.waiting": "Waiting",
+        "status.updated": "Up to date",
+        "status.failed": "Load failed",
+        "status.legendTitle": "Metric Guide",
+        "status.legendSub": "Rates are computed per provider; shown as N/A when no history.",
+        "status.nextTitle": "Next",
+        "status.nextSub": "To configure providers, import keys or toggle switches, head to Admin.",
+        "status.toAdmin": "Go to Admin",
+        "status.empty": "No stats yet. Make a proxy request and come back.",
+        "legend.successError": "Success / Error",
+        "legend.successErrorDesc": "Cumulative request count",
+        "legend.tokens": "In / Out Tokens",
+        "legend.tokensDesc": "Message body throughput",
+        "legend.cacheTokens": "Cache Tokens",
+        "legend.cacheTokensDesc": "Saved by cache hits",
+        "legend.cacheHits": "Cache Hits",
+        "legend.cacheHitsDesc": "Number of cache hits",
+        "admin.workspaceTitle": "Admin Workspace",
+        "admin.workspaceSub": "Sign in to manage global config, providers and upstream keys.",
+        "admin.loginTitle": "Sign In",
+        "admin.loginSub": "Session is stored in this browser.",
+        "admin.adminKey": "Admin Key",
+        "admin.adminKeyPlaceholder": "Enter admin key",
+        "admin.adminKeyPlaceholderHint": "Used to authenticate admin APIs",
+        "admin.loginBtn": "Sign In",
+        "admin.logoutBtn": "Sign Out",
+        "admin.entryHint": "Proxy: <code>/{provider}/...</code> · Cache: <code>/cache/{provider}/...</code>",
+        "admin.globalTitle": "Global Config",
+        "admin.tokenEst": "Estimate tokens when upstream omits stats",
+        "admin.clientKeys": "Client Access Keys",
+        "admin.keysPlaceholder": "One per line, or comma-separated",
+        "admin.saveGlobal": "Save Global Config",
+        "admin.newProvider": "New Provider",
+        "admin.saveProvider": "Save Provider",
+        "admin.providerListTitle": "Providers",
+        "admin.providerListSub": "Edit, import or delete upstream keys via card forms.",
+        "admin.loginToLoad": "Sign in to load provider config",
+        "admin.pleaseLogin": "Please sign in",
+        "admin.localKeyExpired": "Local key expired, please sign in again",
+        "admin.invalidKey": "Invalid key, please re-enter.",
+        "admin.loginSuccess": "Signed in. Remembered on this device.",
+        "admin.localKeyLoaded": "Loaded saved key from this browser.",
+        "admin.loggedOut": "Signed out",
+        "admin.loggedOutMsg": "Signed out.",
+        "admin.savedGlobal": "Global config saved.",
+        "admin.savedTip": "Saved.",
+        "admin.savedProvider": "Provider {name} saved.",
+        "admin.importDone": "Import complete.",
+        "admin.importDoneTip": "Keys imported for {provider}.",
+        "admin.deletedProvider": "Provider {name} deleted.",
+        "admin.deletedKey": "A key was deleted from {provider}.",
+        "admin.pleaseInputKey": "Please enter the admin key.",
+        "provider.name": "Name",
+        "provider.namePlaceholder": "e.g. openai",
+        "provider.type": "API Format",
+        "provider.baseUrl": "Upstream URL",
+        "provider.baseUrlPlaceholder": "Leave blank to use the default for the type",
+        "provider.strategy": "Key Strategy",
+        "provider.failThreshold": "Fail Threshold",
+        "provider.minDisable": "Min Disable (s)",
+        "provider.maxDisable": "Max Disable (s)",
+        "provider.cacheEnabled": "Enable Disk Cache",
+        "provider.cacheMax": "Max Cache Entries",
+        "provider.empty": "No providers yet — add one on the left",
+        "provider.noKeys": "No upstream keys imported",
+        "provider.defaultUpstream": "default upstream",
+        "provider.upstreamKeys": "Upstream Keys",
+        "provider.batchImport": "Batch Import",
+        "provider.save": "Save",
+        "provider.import": "Import",
+        "provider.delete": "Delete",
+        "provider.tagSuccess": "OK {n}",
+        "provider.tagError": "Err {n}",
+        "provider.tagCacheHits": "Hits {n}",
+        "provider.tagSuccessRate": "OK Rate {n}",
+        "provider.tagErrorRate": "Err Rate {n}",
+        "provider.tagKeys": "Keys {n}",
+        "provider.tagAvailable": "Up {n}",
+        "provider.tagDisabled": "Down {n}",
+        "provider.tagCacheOn": "Cache On",
+        "provider.tagCacheOff": "Cache Off",
+        "provider.statSuccess": "Success",
+        "provider.statError": "Error",
+        "provider.statInputTokens": "Input Tokens",
+        "provider.statOutputTokens": "Output Tokens",
+        "provider.statCacheTokens": "Cache Tokens",
+        "provider.statCacheHits": "Cache Hits",
+        "provider.fails": "Failed {n} in a row",
+        "provider.disabledUntil": "Disabled until {time}",
+        "provider.usable": "available",
+        "provider.notDisabled": "active",
+        "provider.rateNone": "N/A",
+        "strategy.roundRobin": "Round Robin",
+        "strategy.fill": "Fill",
+        "error.healthAbnormal": "Health endpoint error",
+        "error.readStatus": "Failed to load status",
+        "error.login": "Sign-in failed",
+        "error.readGlobal": "Failed to load global config",
+        "error.readProviders": "Failed to load providers",
+        "error.save": "Save failed",
+        "error.import": "Import failed",
+        "error.delete": "Delete failed",
+        "error.action": "Operation failed",
+        "error.read": "Read failed",
+        "label.lang": "EN"
       }
+    };
+
+    function detectInitialLang() {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved && messages[saved]) return saved;
+      const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+      return nav.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
     }
 
-    async function loadPool() {
-      const el = document.getElementById('pool-list');
-      try {
-        const res = await fetch(`${BASE}/pool`);
-        const apis = await res.json();
-        if (!apis.length) {
-          el.innerHTML = '<li>暂无 API</li>';
-          return;
+    function detectInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === "light" || saved === "dark") return saved;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    const state = {
+      adminKey: localStorage.getItem(STORAGE_KEY) || "",
+      providers: [],
+      stats: {},
+      lang: detectInitialLang(),
+      theme: detectInitialTheme(),
+      themeManual: localStorage.getItem(THEME_KEY) !== null
+    };
+
+    function t(key, params) {
+      const dict = messages[state.lang] || messages["en"];
+      let value = dict[key];
+      if (value === undefined) {
+        value = (messages["en"][key] !== undefined) ? messages["en"][key] : key;
+      }
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          value = value.replaceAll(`{${k}}`, String(v));
         }
-        el.innerHTML = apis.map(a => `<li><strong>${a.name}</strong> <span>${a.url}</span></li>`).join('');
-      } catch {
-        el.innerHTML = '<li>加载失败</li>';
+      }
+      return value;
+    }
+
+    function applyI18nStatic() {
+      document.documentElement.lang = state.lang === "en" ? "en" : "zh-CN";
+      document.body.dataset.lang = state.lang === "en" ? "en" : "zh";
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const key = el.getAttribute("data-i18n");
+        const text = t(key);
+        if (el.tagName === "LABEL") {
+          // Replace the first non-empty text node so nested <input> stays intact
+          for (const node of el.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
+              node.nodeValue = "\n              " + text + "\n              ";
+              return;
+            }
+          }
+          // No existing text node — prepend one before the first input
+          const txt = document.createTextNode("\n              " + text + "\n              ");
+          el.insertBefore(txt, el.firstChild);
+        } else if (el.children.length === 0) {
+          el.textContent = text;
+        }
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        el.placeholder = t(el.getAttribute("data-i18n-placeholder"));
+      });
+      document.querySelectorAll("[data-i18n-html]").forEach((el) => {
+        el.innerHTML = t(el.getAttribute("data-i18n-html"));
+      });
+      const langLabel = document.getElementById("lang-toggle-label");
+      if (langLabel) langLabel.textContent = t("label.lang");
+    }
+
+    function applyTheme() {
+      document.documentElement.dataset.theme = state.theme;
+    }
+
+    function setTheme(theme) {
+      state.theme = theme;
+      state.themeManual = true;
+      localStorage.setItem(THEME_KEY, theme);
+      applyTheme();
+    }
+
+    function setLang(lang) {
+      state.lang = messages[lang] ? lang : "en";
+      localStorage.setItem(LANG_KEY, state.lang);
+      applyI18nStatic();
+      // Re-render dynamic content
+      setRouteView();
+      renderStatusCards(state.stats);
+      if (state.providers && state.providers.length) {
+        renderProviders(state.providers);
       }
     }
 
-    document.getElementById('add-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const form = e.target;
-      const api = { name: form.name.value, url: form.url.value };
-      await fetch(`${BASE}/pool`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(api)
+    /* ---------- core ---------- */
+
+    const refs = {
+      heroTitle: document.getElementById("hero-title"),
+      heroCopy: document.getElementById("hero-copy"),
+      navStatus: document.getElementById("nav-status"),
+      navAdmin: document.getElementById("nav-admin"),
+      statusView: document.getElementById("status-view"),
+      adminView: document.getElementById("admin-view"),
+      serviceHealth: document.getElementById("service-health"),
+      serviceHealthNote: document.getElementById("service-health-note"),
+      providerCount: document.getElementById("provider-count"),
+      successTotal: document.getElementById("success-total"),
+      errorTotal: document.getElementById("error-total"),
+      statusBadge: document.getElementById("status-badge"),
+      statusList: document.getElementById("status-list"),
+      statusToAdmin: document.getElementById("status-to-admin"),
+      loginForm: document.getElementById("login-form"),
+      loginKey: document.getElementById("login-admin-key"),
+      loginStatus: document.getElementById("login-status"),
+      adminActionStatus: document.getElementById("admin-action-status"),
+      logoutButton: document.getElementById("logout-button"),
+      adminWorkspace: document.getElementById("admin-workspace"),
+      globalForm: document.getElementById("global-config-form"),
+      globalAdminKey: document.getElementById("global-admin-key"),
+      globalTokenEstimation: document.getElementById("global-token-estimation"),
+      globalClientKeys: document.getElementById("global-client-keys"),
+      globalStatus: document.getElementById("global-status"),
+      createForm: document.getElementById("provider-create-form"),
+      createStatus: document.getElementById("provider-create-status"),
+      providerList: document.getElementById("provider-list"),
+      themeToggle: document.getElementById("theme-toggle"),
+      langToggle: document.getElementById("lang-toggle")
+    };
+
+    function setRouteView() {
+      const onStatus = route !== "admin";
+      refs.statusView.classList.toggle("hidden", !onStatus);
+      refs.adminView.classList.toggle("hidden", onStatus);
+      refs.navStatus.classList.toggle("active", onStatus);
+      refs.navAdmin.classList.toggle("active", !onStatus);
+      refs.heroTitle.textContent = t(onStatus ? "hero.statusTitle" : "hero.adminTitle");
+      refs.heroCopy.textContent = t(onStatus ? "hero.statusCopy" : "hero.adminCopy");
+    }
+
+    function goTo(path) {
+      window.location.href = path;
+    }
+
+    function escapeHTML(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setMessage(element, text, kind = "") {
+      element.textContent = text || "";
+      element.className = "inline-status";
+      if (kind) {
+        element.classList.add(kind);
+      }
+    }
+
+    function setStoredAdminKey(key) {
+      state.adminKey = key;
+      if (key) {
+        localStorage.setItem(STORAGE_KEY, key);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+
+    function formatTimestamp(value) {
+      if (!value) {
+        return t("provider.notDisabled");
+      }
+      const date = new Date(Number(value) * 1000);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      const locale = state.lang === "en" ? "en-US" : "zh-CN";
+      return date.toLocaleString(locale, { hour12: false });
+    }
+
+    function summarizeProviderKeys(keys) {
+      const now = Date.now();
+      let available = 0;
+      let disabled = 0;
+      for (const key of keys) {
+        const disabledUntilMs = Number(key.disabled_until || 0) * 1000;
+        if (disabledUntilMs > now) {
+          disabled += 1;
+          continue;
+        }
+        available += 1;
+      }
+      return { available, disabled };
+    }
+
+    async function parseErrorMessage(response, fallback) {
+      try {
+        const data = await response.json();
+        return data.error || fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    async function request(path, options = {}, requireAdmin = false) {
+      const headers = new Headers(options.headers || {});
+      if (!headers.has("Content-Type") && options.body && typeof options.body === "string") {
+        headers.set("Content-Type", "application/json");
+      }
+      if (requireAdmin && state.adminKey) {
+        headers.set("Authorization", `Bearer ${state.adminKey}`);
+      }
+      return fetch(`${API_BASE}${path}`, { ...options, headers });
+    }
+
+    async function loadHealth() {
+      try {
+        const response = await request("/health");
+        if (!response.ok) {
+          throw new Error(t("error.healthAbnormal"));
+        }
+        const data = await response.json();
+        refs.serviceHealth.textContent = t("metric.healthOnline");
+        refs.serviceHealthNote.textContent = t("metric.healthNote", { status: data.status || "ok" });
+        refs.statusBadge.textContent = t("status.updated");
+        refs.statusBadge.className = "status-badge ok";
+      } catch (error) {
+        refs.serviceHealth.textContent = t("metric.healthError");
+        refs.serviceHealthNote.textContent = error.message || t("metric.healthUnavailable");
+        refs.statusBadge.textContent = t("status.failed");
+        refs.statusBadge.className = "status-badge err";
+      }
+    }
+
+    function renderStatusCards(statsMap) {
+      const entries = Object.entries(statsMap || {});
+      state.stats = statsMap || {};
+      refs.providerCount.textContent = String(entries.length);
+
+      const totalSuccess = entries.reduce((sum, [, item]) => sum + (item.success_count || 0), 0);
+      const totalError = entries.reduce((sum, [, item]) => sum + (item.error_count || 0), 0);
+      refs.successTotal.textContent = String(totalSuccess);
+      refs.errorTotal.textContent = String(totalError);
+
+      if (!entries.length) {
+        refs.statusList.innerHTML = `<div class="empty">${escapeHTML(t("status.empty"))}</div>`;
+        return;
+      }
+
+      refs.statusList.innerHTML = entries.map(([name, item]) => {
+        const success = item.success_count || 0;
+        const error = item.error_count || 0;
+        const total = success + error;
+        const successRate = total ? `${((success / total) * 100).toFixed(1)}%` : t("provider.rateNone");
+        const errorRate = total ? `${((error / total) * 100).toFixed(1)}%` : t("provider.rateNone");
+
+        return `
+          <article class="provider-card">
+            <div class="provider-head">
+              <div>
+                <h3 class="provider-name">${escapeHTML(name)}</h3>
+                <div class="tag-row">
+                  <span class="tag ok">${escapeHTML(t("provider.tagSuccessRate", { n: successRate }))}</span>
+                  <span class="tag err">${escapeHTML(t("provider.tagErrorRate", { n: errorRate }))}</span>
+                  <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: item.cache_hits || 0 }))}</span>
+                </div>
+              </div>
+            </div>
+            <div class="stats-grid">
+              <div class="mini"><strong>${success}</strong><span>${escapeHTML(t("provider.statSuccess"))}</span></div>
+              <div class="mini"><strong>${error}</strong><span>${escapeHTML(t("provider.statError"))}</span></div>
+              <div class="mini"><strong>${item.input_tokens || 0}</strong><span>${escapeHTML(t("provider.statInputTokens"))}</span></div>
+              <div class="mini"><strong>${item.output_tokens || 0}</strong><span>${escapeHTML(t("provider.statOutputTokens"))}</span></div>
+              <div class="mini"><strong>${item.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
+              <div class="mini"><strong>${item.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function loadStatus() {
+      try {
+        const response = await request("/status/stats");
+        if (!response.ok) {
+          throw new Error(await parseErrorMessage(response, t("error.readStatus")));
+        }
+        const data = await response.json();
+        renderStatusCards(data);
+      } catch (error) {
+        refs.statusList.innerHTML = `<div class="empty">${escapeHTML(error.message || t("error.readStatus"))}</div>`;
+        refs.statusBadge.textContent = t("status.failed");
+        refs.statusBadge.className = "status-badge err";
+      }
+    }
+
+    async function loginAdmin(adminKey) {
+      const response = await request("/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ admin_key: adminKey })
       });
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.login")));
+      }
+      setStoredAdminKey(adminKey);
+      refs.loginKey.value = adminKey;
+      refs.logoutButton.classList.remove("hidden");
+      setMessage(refs.loginStatus, t("admin.loginSuccess"), "ok");
+    }
+
+    async function loadAdminData() {
+      if (!state.adminKey) {
+        refs.adminWorkspace.classList.add("hidden");
+        refs.logoutButton.classList.add("hidden");
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
+        return;
+      }
+
+      refs.loginKey.value = state.adminKey;
+      refs.logoutButton.classList.remove("hidden");
+
+      const [configResponse, providersResponse] = await Promise.all([
+        request("/admin/config", {}, true),
+        request("/admin/providers", {}, true)
+      ]);
+
+      if (configResponse.status === 401 || providersResponse.status === 401) {
+        setStoredAdminKey("");
+        refs.adminWorkspace.classList.add("hidden");
+        refs.logoutButton.classList.add("hidden");
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
+        setMessage(refs.loginStatus, t("admin.invalidKey"), "error");
+        return;
+      }
+
+      if (!configResponse.ok) {
+        throw new Error(await parseErrorMessage(configResponse, t("error.readGlobal")));
+      }
+      if (!providersResponse.ok) {
+        throw new Error(await parseErrorMessage(providersResponse, t("error.readProviders")));
+      }
+
+      const globalConfig = await configResponse.json();
+      const providers = await providersResponse.json();
+      state.providers = providers;
+
+      refs.globalAdminKey.value = globalConfig.admin_key || "";
+      refs.globalTokenEstimation.checked = Boolean(globalConfig.token_estimation_enabled);
+      refs.globalClientKeys.value = (globalConfig.client_keys || []).join("\n");
+      refs.adminWorkspace.classList.remove("hidden");
+      setMessage(refs.adminActionStatus, "", "");
+      renderProviders(providers);
+    }
+
+    function providerTypeOptions(selected) {
+      const options = [
+        ["openai_chat", "OpenAI Chat"],
+        ["openai_responses", "OpenAI Responses"],
+        ["claude", "Claude"],
+        ["gemini", "Gemini"]
+      ];
+      return options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
+    }
+
+    function providerStrategyOptions(selected) {
+      const options = [
+        ["round_robin", t("strategy.roundRobin")],
+        ["fill", t("strategy.fill")]
+      ];
+      return options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
+    }
+
+    function renderProviders(providers) {
+      if (!providers.length) {
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("provider.empty"))}</div>`;
+        return;
+      }
+
+      refs.providerList.innerHTML = providers.map((provider) => {
+        const stats = state.stats[provider.name] || {};
+        const keys = provider.keys || [];
+        const keySummary = summarizeProviderKeys(keys);
+        const keyHTML = keys.length
+          ? `<div class="key-list">${keys.map((key) => {
+              const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
+              const stateText = isDisabled
+                ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
+                : t("provider.usable");
+              return `
+                <div class="key-item">
+                  <div>
+                    <code>${escapeHTML(key.value)}</code>
+                    <div class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))} · ${escapeHTML(stateText)}</div>
+                  </div>
+                  <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}">${escapeHTML(t("provider.delete"))}</button>
+                </div>
+              `;
+            }).join("")}</div>`
+          : `<div class="empty">${escapeHTML(t("provider.noKeys"))}</div>`;
+
+        return `
+          <article class="provider-card">
+            <div class="provider-head">
+              <div>
+                <h3 class="provider-name">${escapeHTML(provider.name)}</h3>
+                <div class="provider-meta">${escapeHTML(provider.type)} · ${escapeHTML(provider.base_url || t("provider.defaultUpstream"))}</div>
+                <div class="tag-row">
+                  <span class="tag ok">${escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 }))}</span>
+                  <span class="tag err">${escapeHTML(t("provider.tagError", { n: stats.error_count || 0 }))}</span>
+                  <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: stats.cache_hits || 0 }))}</span>
+                  <span class="tag">${escapeHTML(t("provider.tagKeys", { n: keys.length }))}</span>
+                  <span class="tag ok">${escapeHTML(t("provider.tagAvailable", { n: keySummary.available }))}</span>
+                  <span class="tag err">${escapeHTML(t("provider.tagDisabled", { n: keySummary.disabled }))}</span>
+                  <span class="tag ${provider.cache_enabled ? "ok" : "muted"}">${escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff"))}</span>
+                </div>
+              </div>
+              <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
+            </div>
+
+            <hr class="divider">
+
+            <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
+              <div class="form-grid">
+                <label>
+                  ${escapeHTML(t("provider.name"))}
+                  <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.type"))}
+                  <select name="type">${providerTypeOptions(provider.type)}</select>
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  ${escapeHTML(t("provider.baseUrl"))}
+                  <input name="base_url" type="text" value="${escapeHTML(provider.base_url || "")}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.strategy"))}
+                  <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
+                </label>
+              </div>
+              <div class="form-grid three">
+                <label>
+                  ${escapeHTML(t("provider.failThreshold"))}
+                  <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.minDisable"))}
+                  <input name="min_disable_secs" type="number" min="1" value="${Number(provider.min_disable_secs || 30)}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.maxDisable"))}
+                  <input name="max_disable_secs" type="number" min="1" value="${Number(provider.max_disable_secs || 3600)}">
+                </label>
+              </div>
+              <div class="form-grid">
+                <label class="checkbox">
+                  <input name="cache_enabled" type="checkbox" ${provider.cache_enabled ? "checked" : ""}>
+                  <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.cacheMax"))}
+                  <input name="cache_max_entries" type="number" min="1" value="${Number(provider.cache_max_entries || 1000)}">
+                </label>
+              </div>
+              <div class="actions">
+                <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+              </div>
+              <div class="inline-status" data-role="provider-status"></div>
+            </form>
+
+            <hr class="divider">
+
+            <h3>${escapeHTML(t("provider.upstreamKeys"))}</h3>
+            <form class="provider-keys-form" data-provider="${escapeHTML(provider.name)}">
+              <label>
+                ${escapeHTML(t("provider.batchImport"))}
+                <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}"></textarea>
+              </label>
+              <div class="actions">
+                <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+              </div>
+              <div class="inline-status" data-role="keys-status"></div>
+            </form>
+            ${keyHTML}
+          </article>
+        `;
+      }).join("");
+    }
+
+    function readProviderPayload(form) {
+      const formData = new FormData(form);
+      return {
+        name: String(formData.get("name") || "").trim(),
+        type: String(formData.get("type") || "").trim(),
+        base_url: String(formData.get("base_url") || "").trim(),
+        key_strategy: String(formData.get("key_strategy") || "").trim(),
+        fail_threshold: Number(formData.get("fail_threshold") || 3),
+        min_disable_secs: Number(formData.get("min_disable_secs") || 30),
+        max_disable_secs: Number(formData.get("max_disable_secs") || 3600),
+        cache_enabled: form.querySelector('[name="cache_enabled"]').checked,
+        cache_max_entries: Number(formData.get("cache_max_entries") || 1000)
+      };
+    }
+
+    async function saveProvider(form, statusElement) {
+      const payload = readProviderPayload(form);
+      const response = await request("/admin/providers", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }, true);
+
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.save")));
+      }
+
+      if (form === refs.createForm) {
+        form.reset();
+        form.querySelector('[name="fail_threshold"]').value = 3;
+        form.querySelector('[name="min_disable_secs"]').value = 30;
+        form.querySelector('[name="max_disable_secs"]').value = 3600;
+        form.querySelector('[name="cache_max_entries"]').value = 1000;
+      }
+
+      setMessage(statusElement, t("admin.savedTip"), "ok");
+      setMessage(refs.adminActionStatus, t("admin.savedProvider", { name: payload.name }), "ok");
+      await loadAdminData();
+      await loadStatus();
+    }
+
+    async function saveGlobalConfig() {
+      const payload = {
+        admin_key: refs.globalAdminKey.value.trim(),
+        token_estimation_enabled: refs.globalTokenEstimation.checked,
+        client_keys: refs.globalClientKeys.value
+          .split(/\r?\n|,/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      };
+
+      const response = await request("/admin/config", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      }, true);
+
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.save")));
+      }
+
+      if (payload.admin_key && payload.admin_key !== state.adminKey) {
+        setStoredAdminKey(payload.admin_key);
+        refs.loginKey.value = payload.admin_key;
+      }
+      setMessage(refs.globalStatus, t("admin.savedTip"), "ok");
+      setMessage(refs.adminActionStatus, t("admin.savedGlobal"), "ok");
+    }
+
+    async function importKeys(form, statusElement) {
+      const provider = form.dataset.provider;
+      const formData = new FormData(form);
+      const response = await request(`/admin/providers/${encodeURIComponent(provider)}/keys`, {
+        method: "POST",
+        body: JSON.stringify({ keys: String(formData.get("keys") || "") })
+      }, true);
+
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.import")));
+      }
+
       form.reset();
-      loadPool();
+      setMessage(statusElement, t("admin.importDone"), "ok");
+      setMessage(refs.adminActionStatus, t("admin.importDoneTip", { provider }), "ok");
+      await loadAdminData();
+    }
+
+    async function deleteProvider(name) {
+      const response = await request(`/admin/providers/${encodeURIComponent(name)}`, {
+        method: "DELETE"
+      }, true);
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.delete")));
+      }
+      setMessage(refs.adminActionStatus, t("admin.deletedProvider", { name }), "ok");
+      await loadAdminData();
+      await loadStatus();
+    }
+
+    async function deleteKey(provider, key) {
+      const response = await request(`/admin/providers/${encodeURIComponent(provider)}/${encodeURIComponent(key)}`, {
+        method: "DELETE"
+      }, true);
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.delete")));
+      }
+      setMessage(refs.adminActionStatus, t("admin.deletedKey", { provider }), "ok");
+      await loadAdminData();
+    }
+
+    /* ---------- listeners ---------- */
+
+    refs.navStatus.addEventListener("click", () => goTo("/status"));
+    refs.navAdmin.addEventListener("click", () => goTo("/admin"));
+    refs.statusToAdmin.addEventListener("click", () => goTo("/admin"));
+
+    refs.themeToggle.addEventListener("click", () => {
+      setTheme(state.theme === "dark" ? "light" : "dark");
     });
 
-    checkHealth();
-    loadPool();
+    refs.langToggle.addEventListener("click", () => {
+      setLang(state.lang === "zh-CN" ? "en" : "zh-CN");
+    });
+
+    // Follow system theme until user manually overrides
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
+        if (!state.themeManual) {
+          state.theme = event.matches ? "dark" : "light";
+          applyTheme();
+        }
+      });
+    }
+
+    refs.loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const adminKey = refs.loginKey.value.trim();
+      if (!adminKey) {
+        setMessage(refs.loginStatus, t("admin.pleaseInputKey"), "error");
+        return;
+      }
+
+      try {
+        await loginAdmin(adminKey);
+        await loadAdminData();
+      } catch (error) {
+        setMessage(refs.loginStatus, error.message || t("error.login"), "error");
+      }
+    });
+
+    refs.logoutButton.addEventListener("click", () => {
+      setStoredAdminKey("");
+      refs.loginKey.value = "";
+      refs.adminWorkspace.classList.add("hidden");
+      refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.loggedOut"))}</div>`;
+      refs.logoutButton.classList.add("hidden");
+      setMessage(refs.adminActionStatus, "", "");
+      setMessage(refs.loginStatus, t("admin.loggedOutMsg"), "ok");
+    });
+
+    refs.globalForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await saveGlobalConfig();
+      } catch (error) {
+        setMessage(refs.globalStatus, error.message || t("error.save"), "error");
+      }
+    });
+
+    refs.createForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await saveProvider(refs.createForm, refs.createStatus);
+      } catch (error) {
+        setMessage(refs.createStatus, error.message || t("error.save"), "error");
+      }
+    });
+
+    refs.providerList.addEventListener("submit", async (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) {
+        return;
+      }
+
+      event.preventDefault();
+
+      try {
+        if (form.classList.contains("provider-edit-form")) {
+          const statusElement = form.querySelector('[data-role="provider-status"]');
+          await saveProvider(form, statusElement);
+        }
+        if (form.classList.contains("provider-keys-form")) {
+          const statusElement = form.querySelector('[data-role="keys-status"]');
+          await importKeys(form, statusElement);
+        }
+      } catch (error) {
+        const role = form.classList.contains("provider-edit-form") ? "provider-status" : "keys-status";
+        const statusElement = form.querySelector(`[data-role="${role}"]`);
+        setMessage(statusElement, error.message || t("error.action"), "error");
+      }
+    });
+
+    refs.providerList.addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) {
+        return;
+      }
+
+      const action = button.dataset.action;
+      const provider = button.dataset.provider;
+      const key = button.dataset.key;
+
+      try {
+        if (action === "delete-provider") {
+          await deleteProvider(provider);
+        }
+        if (action === "delete-key") {
+          await deleteKey(provider, key);
+        }
+      } catch (error) {
+        setMessage(refs.adminActionStatus, error.message || t("error.action"), "error");
+      }
+    });
+
+    async function init() {
+      applyTheme();
+      applyI18nStatic();
+      setRouteView();
+      await loadHealth();
+      await loadStatus();
+
+      if (route === "admin") {
+        if (state.adminKey) {
+          refs.loginKey.value = state.adminKey;
+          setMessage(refs.loginStatus, t("admin.localKeyLoaded"), "ok");
+        }
+        try {
+          await loadAdminData();
+        } catch (error) {
+          setMessage(refs.loginStatus, error.message || t("error.read"), "error");
+        }
+      }
+    }
+
+    init();
   </script>
 </body>
 </html>

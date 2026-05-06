@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-backend/tmp/
+tmp/
 
 # Test binary
 *.test
@@ -24,6 +24,14 @@ Thumbs.db
 
 # Docker
 .docker/
+data/
+backend/data/
+local-logs/
+
+# Coverage
+backend/coverage
+backend/coverage.out
+backend/coverage_profile
 
 # Env
 .env

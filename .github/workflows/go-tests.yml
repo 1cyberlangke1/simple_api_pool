@@ -1,0 +1,47 @@
+name: Go Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+        shell: pwsh
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: 运行基础测试
+        run: go test ./...
+
+      - name: 输出覆盖率摘要
+        run: |
+          go test ./tests -coverpkg='simple-api-pool/auth,simple-api-pool/cache,simple-api-pool/config,simple-api-pool/handler,simple-api-pool/keyring,simple-api-pool/stats,simple-api-pool/store,simple-api-pool/token' -coverprofile=coverage_profile
+          go tool cover -func=coverage_profile
+
+      - name: 校验覆盖率下限
+        run: |
+          $total = go tool cover -func=coverage_profile | Select-String '^total:'
+          if (-not $total) {
+            Write-Error '未找到覆盖率汇总'
+            exit 1
+          }
+          $value = [double](($total.ToString() -split '\s+')[-1].TrimEnd('%'))
+          if ($value -lt 80) {
+            Write-Error "覆盖率不足 80%，当前为 $value%"
+            exit 1
+          }
+          Write-Host "覆盖率达标：$value%"
+
+      - name: 运行 race 测试
+        run: go test -race ./tests
