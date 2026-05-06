@@ -55,7 +55,6 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		body := string(bodyBytes)
 
 		mustContain(t, body, `<button id="nav-admin"`)
-		mustContain(t, body, `id="status-to-admin"`)
 		mustContain(t, body, `id="login-form"`)
 		mustContain(t, body, `id="admin-workspace"`)
 		mustContain(t, body, `id="provider-list"`)
@@ -64,13 +63,25 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `request("/admin/login"`)
 		mustContain(t, body, `localStorage.getItem(STORAGE_KEY)`)
 		mustContain(t, body, `provider.tagAvailableKeys`)
+		mustContain(t, body, `data-action="clear-cache"`)
+		mustContain(t, body, `/admin/providers/${encodeURIComponent(provider)}/cache`)
 	}
 
-	if !strings.Contains(string(indexHTML), `refs.statusToAdmin.addEventListener("click", () => goTo("/admin"))`) {
-		t.Fatal("期望状态页保留跳转到管理页的前端交互")
-	}
 	if !strings.Contains(string(indexHTML), `refs.navStatus.addEventListener("click", () => goTo("/status"))`) {
 		t.Fatal("期望管理页保留跳转到状态页的前端交互")
+	}
+	if !strings.Contains(string(indexHTML), `const STATUS_POLL_INTERVAL_MS =`) {
+		t.Fatal("期望前端定义状态轮询间隔")
+	}
+	if !strings.Contains(string(indexHTML), `function startStatusPolling()`) {
+		t.Fatal("期望前端具备状态轮询逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `await loadStatus();`) || !strings.Contains(string(indexHTML), `await loadAdminData();
+      await loadStatus();`) {
+		t.Fatal("期望前端在管理操作后刷新状态统计")
+	}
+	if strings.Contains(string(indexHTML), `status.legendTitle`) || strings.Contains(string(indexHTML), `legend.successError`) || strings.Contains(string(indexHTML), `status.nextTitle`) {
+		t.Fatal("期望前端移除状态页指标说明和下一步文案")
 	}
 }
 

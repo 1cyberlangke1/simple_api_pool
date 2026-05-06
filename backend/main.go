@@ -32,7 +32,7 @@ func main() {
 	defer cacheStore.Close()
 
 	proxyHandler := handler.NewProxyHandler(cfg, statsMgr, kr, cacheStore, 50)
-	adminHandler := handler.NewAdminHandler(cfg, statsMgr)
+	adminHandler := handler.NewAdminHandler(cfg, statsMgr, cacheStore)
 	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
 	frontendRoot := resolveFrontendRoot()
 

@@ -174,6 +174,30 @@ func (s *Store) Set(providerName string, providerType config.ProviderType, model
 	_ = tx.Commit()
 }
 
+func (s *Store) ClearProvider(provider string) error {
+	s.mu.Lock()
+	db, ok := s.dbs[provider]
+	s.mu.Unlock()
+
+	if !ok {
+		if _, err := os.Stat(s.file(provider)); err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+
+		var err error
+		db, err = s.dbFor(provider)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := db.Exec(`DELETE FROM cache_entries`)
+	return err
+}
+
 func (s *Store) dbFor(provider string) (*sql.DB, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

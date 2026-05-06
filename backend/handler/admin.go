@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"simple-api-pool/auth"
+	"simple-api-pool/cache"
 	"simple-api-pool/config"
 	"simple-api-pool/stats"
 )
@@ -15,10 +16,11 @@ import (
 type AdminHandler struct {
 	cfg   *config.Config
 	stats *stats.Manager
+	cache *cache.Store
 }
 
-func NewAdminHandler(cfg *config.Config, sm *stats.Manager) *AdminHandler {
-	return &AdminHandler{cfg: cfg, stats: sm}
+func NewAdminHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *AdminHandler {
+	return &AdminHandler{cfg: cfg, stats: sm, cache: cs}
 }
 
 func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +44,12 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ah.handleProviderKeys(w, r)
+	case strings.HasPrefix(path, "providers/") && strings.HasSuffix(path, "/cache"):
+		if !auth.CheckAdminKey(r, ah.cfg) {
+			writeJSONError(w, http.StatusUnauthorized, "未授权")
+			return
+		}
+		ah.handleProviderCache(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "providers/") && strings.Count(path, "/") >= 2:
 		if !auth.CheckAdminKey(r, ah.cfg) {
 			writeJSONError(w, http.StatusUnauthorized, "未授权")
@@ -165,6 +173,36 @@ func (ah *AdminHandler) handleProviderKeys(w http.ResponseWriter, r *http.Reques
 	default:
 		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
+}
+
+func (ah *AdminHandler) handleProviderCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		return
+	}
+
+	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/providers/")
+	name := strings.TrimSuffix(rest, "/cache")
+	name = strings.TrimSuffix(name, "/")
+	if name == "" {
+		writeJSONError(w, http.StatusBadRequest, "请求路径无效")
+		return
+	}
+
+	if provider, _ := ah.cfg.Provider(name); provider == nil {
+		writeJSONError(w, http.StatusNotFound, "提供商不存在")
+		return
+	}
+	if ah.cache == nil {
+		writeJSONError(w, http.StatusInternalServerError, "缓存服务不可用")
+		return
+	}
+	if err := ah.cache.ClearProvider(name); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "清空缓存失败")
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
 }
 
 func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {

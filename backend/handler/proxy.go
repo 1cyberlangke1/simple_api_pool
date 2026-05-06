@@ -81,6 +81,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logFields.ProviderType = string(p.Type)
+	cacheEligible := p.CacheEnabled && !isModelDiscoveryRequest(r.Method, parts.suffix)
 
 	targetURL := buildTargetURL(p.Type, p.BaseURL, parts.suffix, r.URL.RawQuery)
 	if targetURL == "" {
@@ -106,7 +107,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	isStream := isStreamRequest(r, bodyBytes)
 	logFields.Stream = isStream
 
-	if useCache && p.CacheEnabled {
+	if useCache && cacheEligible {
 		if entry, ok := h.cache.Get(parts.provider, p.Type, model, bodyBytes); ok {
 			h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
 			logFields.CacheHit = true
@@ -184,7 +185,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isStream {
-		h.handleStream(w, resp, parts.provider, upstreamKey, p.Type, model, bodyBytes, p.CacheEnabled, int64(p.CacheMaxEntries), &logFields)
+		h.handleStream(w, resp, parts.provider, upstreamKey, p.Type, model, bodyBytes, cacheEligible, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
@@ -207,7 +208,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.stats.RecordSuccess(parts.provider, usage.InputTokens, usage.OutputTokens)
 	h.keyring.RecordSuccess(parts.provider, upstreamKey)
 
-	if p.CacheEnabled {
+	if cacheEligible {
 		headers := make(map[string]string)
 		for k := range resp.Header {
 			headers[k] = resp.Header.Get(k)
@@ -413,6 +414,9 @@ func isStreamRequest(r *http.Request, body []byte) bool {
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
 		return true
 	}
+	if strings.EqualFold(r.URL.Query().Get("alt"), "sse") {
+		return true
+	}
 
 	var payload struct {
 		Stream bool `json:"stream"`
@@ -421,6 +425,19 @@ func isStreamRequest(r *http.Request, body []byte) bool {
 		return true
 	}
 	return false
+}
+
+func isModelDiscoveryRequest(method, suffix string) bool {
+	if method != http.MethodGet {
+		return false
+	}
+
+	switch strings.TrimSuffix(suffix, "/") {
+	case "/v1/models", "/v1beta/models":
+		return true
+	default:
+		return false
+	}
 }
 
 func canonicalResponseFromStream(providerType string, body []byte) ([]byte, bool) {

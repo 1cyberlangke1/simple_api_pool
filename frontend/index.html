@@ -776,22 +776,6 @@
         <div class="panel-subtitle" data-i18n="status.detailsSub">公开统计，无需登录。</div>
         <div id="status-list" class="list"></div>
       </article>
-      <article class="panel">
-        <h2 data-i18n="status.legendTitle">指标说明</h2>
-        <div class="panel-subtitle" data-i18n="status.legendSub">成功率与错误率按各提供商的请求次数换算，无历史时显示「暂无」。</div>
-        <div class="legend-grid">
-          <div class="legend-item"><strong data-i18n="legend.successError">成功 / 错误</strong><span data-i18n="legend.successErrorDesc">累计请求次数</span></div>
-          <div class="legend-item"><strong data-i18n="legend.tokens">输入 / 输出 Token</strong><span data-i18n="legend.tokensDesc">消息体进出统计</span></div>
-          <div class="legend-item"><strong data-i18n="legend.cacheTokens">缓存 Token</strong><span data-i18n="legend.cacheTokensDesc">命中缓存所节省</span></div>
-          <div class="legend-item"><strong data-i18n="legend.cacheHits">缓存命中</strong><span data-i18n="legend.cacheHitsDesc">命中缓存的次数</span></div>
-        </div>
-        <hr class="divider">
-        <h3 data-i18n="status.nextTitle">下一步</h3>
-        <div class="panel-subtitle" data-i18n="status.nextSub">需要配置提供商、导入密钥或调整开关，前往管理页。</div>
-        <div class="actions">
-          <button class="primary" type="button" id="status-to-admin" data-i18n="status.toAdmin">进入管理页</button>
-        </div>
-      </article>
     </section>
 
     <section id="admin-view" class="grid content-grid hidden">
@@ -925,10 +909,12 @@
 
   <script>
     const API_BASE = "/api";
+    const STATUS_POLL_INTERVAL_MS = 5000;
     const STORAGE_KEY = "simple-api-pool-admin-key";
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
     const route = location.pathname === "/admin" ? "admin" : "status";
+    let statusPollTimer = null;
 
     /* ---------- i18n ---------- */
 
@@ -957,20 +943,7 @@
         "status.waiting": "等待数据",
         "status.updated": "数据已更新",
         "status.failed": "读取失败",
-        "status.legendTitle": "指标说明",
-        "status.legendSub": "成功率与错误率按各提供商的请求次数换算，无历史时显示「暂无」。",
-        "status.nextTitle": "下一步",
-        "status.nextSub": "需要配置提供商、导入密钥或调整开关，前往管理页。",
-        "status.toAdmin": "进入管理页",
         "status.empty": "暂无统计数据，发起一次代理请求后再回来查看。",
-        "legend.successError": "成功 / 错误",
-        "legend.successErrorDesc": "累计请求次数",
-        "legend.tokens": "输入 / 输出 Token",
-        "legend.tokensDesc": "消息体进出统计",
-        "legend.cacheTokens": "缓存 Token",
-        "legend.cacheTokensDesc": "命中缓存所节省",
-        "legend.cacheHits": "缓存命中",
-        "legend.cacheHitsDesc": "命中缓存的次数",
         "admin.workspaceTitle": "管理工作区",
         "admin.workspaceSub": "登录后维护全局配置、提供商与上游密钥。",
         "admin.loginTitle": "登录",
@@ -1005,6 +978,7 @@
         "admin.importDoneTip": "已导入 {provider} 的密钥。",
         "admin.deletedProvider": "已删除提供商 {name}。",
         "admin.deletedKey": "已删除 {provider} 的一个密钥。",
+        "admin.clearedCache": "已清空 {provider} 的缓存。",
         "admin.pleaseInputKey": "请输入管理员密钥。",
         "provider.name": "名称",
         "provider.namePlaceholder": "例如 openai",
@@ -1023,6 +997,7 @@
         "provider.upstreamKeys": "上游密钥",
         "provider.batchImport": "批量导入",
         "provider.save": "保存",
+        "provider.clearCache": "清空缓存",
         "provider.import": "导入",
         "provider.delete": "删除",
         "provider.tagSuccess": "成功 {n}",
@@ -1086,20 +1061,7 @@
         "status.waiting": "Waiting",
         "status.updated": "Up to date",
         "status.failed": "Load failed",
-        "status.legendTitle": "Metric Guide",
-        "status.legendSub": "Rates are computed per provider; shown as N/A when no history.",
-        "status.nextTitle": "Next",
-        "status.nextSub": "To configure providers, import keys or toggle switches, head to Admin.",
-        "status.toAdmin": "Go to Admin",
         "status.empty": "No stats yet. Make a proxy request and come back.",
-        "legend.successError": "Success / Error",
-        "legend.successErrorDesc": "Cumulative request count",
-        "legend.tokens": "In / Out Tokens",
-        "legend.tokensDesc": "Message body throughput",
-        "legend.cacheTokens": "Cache Tokens",
-        "legend.cacheTokensDesc": "Saved by cache hits",
-        "legend.cacheHits": "Cache Hits",
-        "legend.cacheHitsDesc": "Number of cache hits",
         "admin.workspaceTitle": "Admin Workspace",
         "admin.workspaceSub": "Sign in to manage global config, providers and upstream keys.",
         "admin.loginTitle": "Sign In",
@@ -1134,6 +1096,7 @@
         "admin.importDoneTip": "Keys imported for {provider}.",
         "admin.deletedProvider": "Provider {name} deleted.",
         "admin.deletedKey": "A key was deleted from {provider}.",
+        "admin.clearedCache": "Cleared cache for {provider}.",
         "admin.pleaseInputKey": "Please enter the admin key.",
         "provider.name": "Name",
         "provider.namePlaceholder": "e.g. openai",
@@ -1152,6 +1115,7 @@
         "provider.upstreamKeys": "Upstream Keys",
         "provider.batchImport": "Batch Import",
         "provider.save": "Save",
+        "provider.clearCache": "Clear Cache",
         "provider.import": "Import",
         "provider.delete": "Delete",
         "provider.tagSuccess": "OK {n}",
@@ -1299,7 +1263,6 @@
       errorTotal: document.getElementById("error-total"),
       statusBadge: document.getElementById("status-badge"),
       statusList: document.getElementById("status-list"),
-      statusToAdmin: document.getElementById("status-to-admin"),
       loginForm: document.getElementById("login-form"),
       loginKey: document.getElementById("login-admin-key"),
       loginStatus: document.getElementById("login-status"),
@@ -1499,6 +1462,18 @@
       }
     }
 
+    function startStatusPolling() {
+      if (statusPollTimer !== null) {
+        clearInterval(statusPollTimer);
+      }
+      statusPollTimer = setInterval(() => {
+        if (document.visibilityState === "hidden") {
+          return;
+        }
+        void loadStatus();
+      }, STATUS_POLL_INTERVAL_MS);
+    }
+
     async function loginAdmin(adminKey) {
       const response = await request("/admin/login", {
         method: "POST",
@@ -1671,6 +1646,7 @@
               </div>
               <div class="actions">
                 <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+                <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
               </div>
               <div class="inline-status" data-role="provider-status"></div>
             </form>
@@ -1759,6 +1735,7 @@
       }
       setMessage(refs.globalStatus, t("admin.savedTip"), "ok");
       setMessage(refs.adminActionStatus, t("admin.savedGlobal"), "ok");
+      await loadStatus();
     }
 
     async function importKeys(form, statusElement) {
@@ -1777,6 +1754,7 @@
       setMessage(statusElement, t("admin.importDone"), "ok");
       setMessage(refs.adminActionStatus, t("admin.importDoneTip", { provider }), "ok");
       await loadAdminData();
+      await loadStatus();
     }
 
     async function deleteProvider(name) {
@@ -1800,13 +1778,25 @@
       }
       setMessage(refs.adminActionStatus, t("admin.deletedKey", { provider }), "ok");
       await loadAdminData();
+      await loadStatus();
+    }
+
+    async function clearProviderCache(provider) {
+      const response = await request(`/admin/providers/${encodeURIComponent(provider)}/cache`, {
+        method: "DELETE"
+      }, true);
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.action")));
+      }
+      setMessage(refs.adminActionStatus, t("admin.clearedCache", { provider }), "ok");
+      await loadAdminData();
+      await loadStatus();
     }
 
     /* ---------- listeners ---------- */
 
     refs.navStatus.addEventListener("click", () => goTo("/status"));
     refs.navAdmin.addEventListener("click", () => goTo("/admin"));
-    refs.statusToAdmin.addEventListener("click", () => goTo("/admin"));
 
     refs.themeToggle.addEventListener("click", () => {
       setTheme(state.theme === "dark" ? "light" : "dark");
@@ -1814,6 +1804,12 @@
 
     refs.langToggle.addEventListener("click", () => {
       setLang(state.lang === "zh-CN" ? "en" : "zh-CN");
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        void loadStatus();
+      }
     });
 
     // Follow system theme until user manually overrides
@@ -1911,6 +1907,9 @@
         if (action === "delete-key") {
           await deleteKey(provider, key);
         }
+        if (action === "clear-cache") {
+          await clearProviderCache(provider);
+        }
       } catch (error) {
         setMessage(refs.adminActionStatus, error.message || t("error.action"), "error");
       }
@@ -1920,6 +1919,7 @@
       applyTheme();
       applyI18nStatic();
       setRouteView();
+      startStatusPolling();
       await loadHealth();
       await loadStatus();
 

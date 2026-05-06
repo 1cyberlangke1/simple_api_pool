@@ -686,6 +686,86 @@ func TestGeminiFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	}
 }
 
+func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		events := []string{
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\n",
+			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
+		}
+		for _, event := range events {
+			if _, err := w.Write([]byte(event)); err != nil {
+				t.Fatalf("写入 Gemini alt=sse 流式事件失败: %v", err)
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "gemini",
+		Type:            config.Gemini,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "gemini-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	body := `{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", strings.NewReader(body))
+	firstReq.Header.Set("Authorization", "Bearer client-key")
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstRec := httptest.NewRecorder()
+	proxy.ServeHTTP(firstRec, firstReq)
+
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("第一次 Gemini alt=sse 请求期望状态码 %d，实际是 %d", http.StatusOK, firstRec.Code)
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", strings.NewReader(body))
+	secondReq.Header.Set("Authorization", "Bearer client-key")
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondRec := httptest.NewRecorder()
+	proxy.ServeHTTP(secondRec, secondReq)
+
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("第二次 Gemini alt=sse 请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望 Gemini alt=sse 第二次请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	}
+
+	snapshot := statsMgr.Snapshot()
+	stat, ok := snapshot["gemini"]
+	if !ok {
+		t.Fatal("期望 Gemini 产生缓存统计")
+	}
+	if stat.CacheHits != 1 {
+		t.Fatalf("期望 Gemini 缓存命中次数为 1，实际是 %d", stat.CacheHits)
+	}
+	if stat.CacheTokens != 11 {
+		t.Fatalf("期望 Gemini alt=sse 缓存 token 为 11，实际是 %d", stat.CacheTokens)
+	}
+}
+
 func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
@@ -724,6 +804,167 @@ func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	usage := payload["usage"].(map[string]any)
 	if usage["cache_tokens"] != float64(10) {
 		t.Fatalf("期望 cache_tokens 为 10，实际是 %#v", usage["cache_tokens"])
+	}
+}
+
+func TestGeminiModelListRequestDoesNotUseCacheRoute(t *testing.T) {
+	upstreamCalls := 0
+	responseBody := `{"models":[{"name":"models/gemini-2.5-flash"}]}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(responseBody))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "gemini",
+		Type:            config.Gemini,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/cache/gemini/v1beta/models?pageSize=5", nil)
+		req.Header.Set("Authorization", "Bearer client-key")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次模型列表请求期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if strings.TrimSpace(rec.Body.String()) != responseBody {
+			t.Fatalf("第 %d 次模型列表请求期望原样透传，实际是 %s", i+1, rec.Body.String())
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望模型列表请求始终直通上游 2 次，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestOpenAIModelListRequestDoesNotUseCacheRoute(t *testing.T) {
+	upstreamCalls := 0
+	responseBody := `{"object":"list","data":[{"id":"gpt-4.1","object":"model","owned_by":"openai"}]}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(responseBody))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/cache/openai/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer client-key")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次 OpenAI 模型列表请求期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if strings.TrimSpace(rec.Body.String()) != responseBody {
+			t.Fatalf("第 %d 次 OpenAI 模型列表请求期望原样透传，实际是 %s", i+1, rec.Body.String())
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 OpenAI 模型列表请求始终直通上游 2 次，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestNonCacheRouteRefreshesExistingCacheEntry(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"fresh","usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
+	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"stale","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
+
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	nonCacheReq := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", bytes.NewReader(body))
+	nonCacheReq.Header.Set("Authorization", "Bearer client-key")
+	nonCacheReq.Header.Set("Content-Type", "application/json")
+	nonCacheRec := httptest.NewRecorder()
+	proxy.ServeHTTP(nonCacheRec, nonCacheReq)
+
+	if nonCacheRec.Code != http.StatusOK {
+		t.Fatalf("普通端点请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, nonCacheRec.Code, nonCacheRec.Body.String())
+	}
+	if !strings.Contains(nonCacheRec.Body.String(), `"id":"fresh"`) {
+		t.Fatalf("普通端点请求期望返回新响应，实际是 %s", nonCacheRec.Body.String())
+	}
+
+	cacheReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
+	cacheReq.Header.Set("Authorization", "Bearer client-key")
+	cacheReq.Header.Set("Content-Type", "application/json")
+	cacheRec := httptest.NewRecorder()
+	proxy.ServeHTTP(cacheRec, cacheReq)
+
+	if cacheRec.Code != http.StatusOK {
+		t.Fatalf("缓存端点请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, cacheRec.Code, cacheRec.Body.String())
+	}
+	if !strings.Contains(cacheRec.Body.String(), `"id":"fresh"`) {
+		t.Fatalf("缓存端点期望读到普通端点刚更新的新响应，实际是 %s", cacheRec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望只有普通端点访问上游 1 次，实际上游调用次数是 %d", upstreamCalls)
 	}
 }
 

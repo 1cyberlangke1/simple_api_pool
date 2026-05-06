@@ -18,7 +18,7 @@ func TestAdminLoginAllowsRequestBodyKey(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())))
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"admin_key": "secret-admin"})
 	if err != nil {
@@ -45,7 +45,7 @@ func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())))
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"keys": " key1 \nkey2, key3 ,, \n"})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestAdminBulkImportDeduplicatesExistingAndIncomingKeys(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())))
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"keys": "key-2\nkey-3, key-3 , key-4"})
 	if err != nil {
@@ -132,7 +132,7 @@ func TestAdminDeleteSingleKey(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())))
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai/key-1", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")
@@ -150,6 +150,41 @@ func TestAdminDeleteSingleKey(t *testing.T) {
 	}
 	if len(provider.Keys) != 1 || provider.Keys[0].Value != "key-2" {
 		t.Fatalf("期望只剩 key-2，实际是 %+v", provider.Keys)
+	}
+}
+
+func TestAdminClearProviderCache(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	cacheStore := newTestCacheStore(t)
+	requestBody := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
+	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", requestBody, []byte(`{"id":"cached","usage":{"prompt_tokens":1,"completion_tokens":1}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
+	if _, ok := cacheStore.Get("openai", config.OpenAIChat, "gpt-4.1", requestBody); !ok {
+		t.Fatal("预期清空前缓存已存在")
+	}
+
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), cacheStore)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai/cache", nil)
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if _, ok := cacheStore.Get("openai", config.OpenAIChat, "gpt-4.1", requestBody); ok {
+		t.Fatal("期望清空缓存后不再命中")
 	}
 }
 
