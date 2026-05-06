@@ -1,6 +1,9 @@
 name: Publish GHCR Image
 
 on:
+  push:
+    tags:
+      - 'v*'
   release:
     types:
       - published
@@ -29,6 +32,9 @@ jobs:
           version="${{ github.event.inputs.version }}"
           if [ -z "$version" ]; then
             version="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$version" ]; then
+            version="${{ github.ref_name }}"
           fi
           version="${version#v}"
           if [ -z "$version" ]; then
