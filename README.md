@@ -71,7 +71,7 @@ data/           运行时数据目录
 - 服务默认监听 `18080`
 - 如果没有显式设置 `GOMEMLIMIT`，程序默认按 `32MiB` 运行内存上限启动
 - 首次启动前，需要先提供管理员密钥
-- 管理员密钥可以通过环境变量 `ADMIN_KEY` 提供
+- 管理员密钥需要提前配置到环境变量 `ADMIN_KEY`
 - 如果配置了客户端访问密钥，代理请求必须带 `Authorization: Bearer <CLIENT_KEY>`
 - 项目不提供 Nginx 配置文件，反向代理由你自己决定
 - 仓库根目录提供了环境变量示例文件 `.env.example`
@@ -84,18 +84,19 @@ data/           运行时数据目录
 cd backend
 ```
 
-#### 2. 提供管理员密钥并启动
+#### 2. 先配置环境变量，再启动
 
-Linux / macOS:
+本机运行时，程序直接读取当前系统环境变量。
 
-```bash
-ADMIN_KEY=admin-demo go run .
+至少需要提前配置：
+
+```text
+ADMIN_KEY=你的管理员密钥
 ```
 
-PowerShell:
+配置完成后启动：
 
-```powershell
-$env:ADMIN_KEY="admin-demo"
+```bash
 go run .
 ```
 
@@ -119,19 +120,25 @@ curl http://127.0.0.1:18080/api/health
 
 ### 方式二：Docker Compose 本地构建部署
 
-#### 1. 在仓库根目录准备环境变量
+#### 1. 在仓库根目录准备 `.env`
 
-Linux / macOS:
+先复制环境变量示例文件：
 
 ```bash
-export ADMIN_KEY=admin-demo
-docker compose up --build -d
+cp .env.example .env
 ```
 
-PowerShell:
+然后修改 `.env`，至少填写：
 
-```powershell
-$env:ADMIN_KEY="admin-demo"
+```text
+ADMIN_KEY=你的管理员密钥
+```
+
+`docker-compose.yml` 会自动读取这个 `.env` 文件。
+
+启动服务：
+
+```bash
 docker compose up --build -d
 ```
 
