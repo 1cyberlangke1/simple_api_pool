@@ -1024,6 +1024,7 @@
         "provider.tagCacheHits": "缓存命中 {n}",
         "provider.tagSuccessRate": "成功率 {n}",
         "provider.tagErrorRate": "错误率 {n}",
+        "provider.tagAvailableKeys": "可用 Key {available} / 总 Key {total}",
         "provider.tagKeys": "密钥 {n}",
         "provider.tagAvailable": "可用 {n}",
         "provider.tagDisabled": "禁用 {n}",
@@ -1151,6 +1152,7 @@
         "provider.tagCacheHits": "Hits {n}",
         "provider.tagSuccessRate": "OK Rate {n}",
         "provider.tagErrorRate": "Err Rate {n}",
+        "provider.tagAvailableKeys": "Usable keys {available} / total {total}",
         "provider.tagKeys": "Keys {n}",
         "provider.tagAvailable": "Up {n}",
         "provider.tagDisabled": "Down {n}",
@@ -1435,6 +1437,8 @@
         const total = success + error;
         const successRate = total ? `${((success / total) * 100).toFixed(1)}%` : t("provider.rateNone");
         const errorRate = total ? `${((error / total) * 100).toFixed(1)}%` : t("provider.rateNone");
+        const availableKeys = item.available_keys || 0;
+        const totalKeys = item.total_keys || 0;
 
         return `
           <article class="provider-card">
@@ -1445,6 +1449,7 @@
                   <span class="tag ok">${escapeHTML(t("provider.tagSuccessRate", { n: successRate }))}</span>
                   <span class="tag err">${escapeHTML(t("provider.tagErrorRate", { n: errorRate }))}</span>
                   <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: item.cache_hits || 0 }))}</span>
+                  <span class="tag">${escapeHTML(t("provider.tagAvailableKeys", { available: availableKeys, total: totalKeys }))}</span>
                 </div>
               </div>
             </div>

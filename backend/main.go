@@ -31,7 +31,7 @@ func main() {
 
 	proxyHandler := handler.NewProxyHandler(cfg, statsMgr, kr, cacheStore, 50)
 	adminHandler := handler.NewAdminHandler(cfg, statsMgr)
-	statusHandler := handler.NewStatusHandler(statsMgr)
+	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
 	frontendRoot := resolveFrontendRoot()
 
 	mux := http.NewServeMux()

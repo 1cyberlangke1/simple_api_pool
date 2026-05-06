@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"simple-api-pool/config"
 	"simple-api-pool/handler"
@@ -916,7 +917,19 @@ func Test状态接口返回的统计可以被前端直接消费(t *testing.T) {
 	statsMgr.RecordError("openai")
 	statsMgr.RecordCacheHit("openai", 18)
 
-	statusHandler := handler.NewStatusHandler(statsMgr)
+	cfg := newTestConfig(t)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "key-a"},
+			{Value: "key-b", DisabledUntil: time.Now().Add(10 * time.Minute).Unix()},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
 	req := httptest.NewRequest(http.MethodGet, "/api/status/stats", nil)
 	rec := httptest.NewRecorder()
 
@@ -938,5 +951,52 @@ func Test状态接口返回的统计可以被前端直接消费(t *testing.T) {
 	}
 	if payload["openai"]["cache_hits"] != 1 {
 		t.Fatalf("期望 cache_hits 为 1，实际是 %d", payload["openai"]["cache_hits"])
+	}
+	if payload["openai"]["available_keys"] != 1 {
+		t.Fatalf("期望 available_keys 为 1，实际是 %d", payload["openai"]["available_keys"])
+	}
+	if payload["openai"]["total_keys"] != 2 {
+		t.Fatalf("期望 total_keys 为 2，实际是 %d", payload["openai"]["total_keys"])
+	}
+}
+
+func Test状态接口会返回尚未产生请求统计的提供商密钥概览(t *testing.T) {
+	cfg := newTestConfig(t)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "gemini",
+		Type: config.Gemini,
+		Keys: []config.Key{
+			{Value: "key-1"},
+			{Value: "key-2"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+
+	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	req := httptest.NewRequest(http.MethodGet, "/api/status/stats", nil)
+	rec := httptest.NewRecorder()
+
+	statusHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d", http.StatusOK, rec.Code)
+	}
+
+	var payload map[string]map[string]int64
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析状态响应失败: %v", err)
+	}
+	if payload["gemini"]["available_keys"] != 2 {
+		t.Fatalf("期望 available_keys 为 2，实际是 %d", payload["gemini"]["available_keys"])
+	}
+	if payload["gemini"]["total_keys"] != 2 {
+		t.Fatalf("期望 total_keys 为 2，实际是 %d", payload["gemini"]["total_keys"])
+	}
+	if payload["gemini"]["success_count"] != 0 {
+		t.Fatalf("期望 success_count 默认为 0，实际是 %d", payload["gemini"]["success_count"])
 	}
 }

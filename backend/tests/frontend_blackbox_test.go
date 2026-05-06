@@ -63,6 +63,7 @@ func Test状态页和管理页可直接访问并包含关键前端入口(t *test
 		mustContain(t, body, `request("/status/stats")`)
 		mustContain(t, body, `request("/admin/login"`)
 		mustContain(t, body, `localStorage.getItem(STORAGE_KEY)`)
+		mustContain(t, body, `provider.tagAvailableKeys`)
 	}
 
 	if !strings.Contains(string(indexHTML), `refs.statusToAdmin.addEventListener("click", () => goTo("/admin"))`) {
