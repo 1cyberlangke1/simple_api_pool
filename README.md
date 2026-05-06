@@ -45,10 +45,11 @@ data/           运行时数据目录
 
 ### 部署方式
 
-当前仓库推荐两种方式：
+当前仓库推荐三种方式：
 
 1. 使用 Docker Compose 本地构建部署
 2. 本机直接运行 Go 后端
+3. 使用已发布的 Docker 镜像部署
 
 ### 环境准备
 
@@ -65,6 +66,12 @@ data/           运行时数据目录
 
 - Docker
 - Docker Compose
+
+#### 方式三：已发布 Docker 镜像
+
+需要：
+
+- Docker
 
 ### 部署前要知道的事
 
@@ -157,6 +164,75 @@ curl http://127.0.0.1:18080/api/health
 
 ```bash
 docker compose down
+```
+
+### 方式三：使用已发布 GHCR 镜像部署
+
+镜像地址：
+
+```text
+ghcr.io/1cyberlangke1/simple_api_pool
+```
+
+#### 1. 在当前目录准备 `.env`
+
+先复制环境变量示例文件：
+
+```bash
+cp .env.example .env
+```
+
+然后修改 `.env`，至少填写：
+
+```text
+ADMIN_KEY=你的管理员密钥
+```
+
+#### 2. 直接使用 `docker run` 启动
+
+```bash
+docker run -d \
+  --name simple-api-pool \
+  --restart unless-stopped \
+  --env-file .env \
+  -p 18080:18080 \
+  -v simple-api-pool-data:/app/data \
+  ghcr.io/1cyberlangke1/simple_api_pool:latest
+```
+
+#### 3. 验证健康状态
+
+```bash
+curl http://127.0.0.1:18080/api/health
+```
+
+#### 4. 查看页面
+
+- 状态页：`http://127.0.0.1:18080/status`
+- 管理页：`http://127.0.0.1:18080/admin`
+
+#### 5. 停止并删除容器
+
+```bash
+docker rm -f simple-api-pool
+```
+
+如果你更习惯 Compose，也可以直接写一个最小部署文件：
+
+```yaml
+services:
+  app:
+    image: ghcr.io/1cyberlangke1/simple_api_pool:latest
+    env_file:
+      - .env
+    ports:
+      - "18080:18080"
+    volumes:
+      - app-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  app-data:
 ```
 
 ### 部署后的数据位置
