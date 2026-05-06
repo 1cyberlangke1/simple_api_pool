@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/config"
 )
 
-func Test同一提供商的缓存不会散落成多个SQLite主文件(t *testing.T) {
+func TestProviderCacheUsesSingleSQLiteMainFile(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
 	t.Cleanup(func() { _ = store.Close() })
@@ -37,7 +37,7 @@ func Test同一提供商的缓存不会散落成多个SQLite主文件(t *testing
 	}
 }
 
-func Test缓存条目超过上限时会淘汰旧条目(t *testing.T) {
+func TestCacheEvictsOldEntriesWhenLimitExceeded(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
 	t.Cleanup(func() { _ = store.Close() })
@@ -56,7 +56,7 @@ func Test缓存条目超过上限时会淘汰旧条目(t *testing.T) {
 	}
 }
 
-func TestOpenAIChat缓存键不再包含RouteKey并且只看Model和Messages(t *testing.T) {
+func TestOpenAIChatCacheKeyUsesOnlyModelAndMessagesWithoutRouteKey(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
 	t.Cleanup(func() { _ = store.Close() })
@@ -75,7 +75,7 @@ func TestOpenAIChat缓存键不再包含RouteKey并且只看Model和Messages(t *
 	}
 }
 
-func Test不同提供商类型会使用各自的核心消息字段作为缓存键(t *testing.T) {
+func TestCacheKeyUsesProviderSpecificCoreMessageFields(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
 	t.Cleanup(func() { _ = store.Close() })

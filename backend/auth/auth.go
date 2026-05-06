@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"simple-api-pool/config"
@@ -12,7 +13,7 @@ func CheckClientKey(r *http.Request, cfg *config.Config) bool {
 	if len(keys) == 0 {
 		return true
 	}
-	key := extractBearer(r)
+	key := extractClientKey(r, cfg)
 	if key == "" {
 		return false
 	}
@@ -33,6 +34,15 @@ func CheckAdminKey(r *http.Request, cfg *config.Config) bool {
 	return key == adminKey
 }
 
+func extractClientKey(r *http.Request, cfg *config.Config) string {
+	if providerType, ok := providerTypeFromRequest(r, cfg); ok {
+		if key := extractProviderKey(r, providerType); key != "" {
+			return key
+		}
+	}
+	return extractBearer(r)
+}
+
 func extractBearer(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
@@ -42,4 +52,50 @@ func extractBearer(r *http.Request) string {
 		return auth[7:]
 	}
 	return auth
+}
+
+func providerTypeFromRequest(r *http.Request, cfg *config.Config) (config.ProviderType, bool) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if path == "" {
+		return "", false
+	}
+
+	segments := strings.Split(path, "/")
+	idx := 0
+	if len(segments) > 0 && segments[0] == "cache" {
+		idx++
+	}
+	if len(segments) <= idx {
+		return "", false
+	}
+
+	provider, _ := cfg.Provider(segments[idx])
+	if provider == nil {
+		return "", false
+	}
+	return provider.Type, true
+}
+
+func extractProviderKey(r *http.Request, providerType config.ProviderType) string {
+	switch providerType {
+	case config.Claude:
+		if key := strings.TrimSpace(r.Header.Get("x-api-key")); key != "" {
+			return key
+		}
+	case config.Gemini:
+		if key := strings.TrimSpace(r.Header.Get("x-goog-api-key")); key != "" {
+			return key
+		}
+		if key := queryKey(r.URL.Query(), "key"); key != "" {
+			return key
+		}
+	}
+	return extractBearer(r)
+}
+
+func queryKey(values url.Values, key string) string {
+	if values == nil {
+		return ""
+	}
+	return strings.TrimSpace(values.Get(key))
 }

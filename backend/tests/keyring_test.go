@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test填充策略会跳过禁用中的密钥(t *testing.T) {
+func TestFillStrategySkipsDisabledKeys(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name:        "openai",
@@ -33,7 +33,7 @@ func Test填充策略会跳过禁用中的密钥(t *testing.T) {
 	}
 }
 
-func Test连续失败达到阈值后会禁用密钥(t *testing.T) {
+func TestKeyIsDisabledAfterFailureThreshold(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name:           "claude",

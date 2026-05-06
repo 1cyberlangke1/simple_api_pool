@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test轮询策略会在可用密钥之间切换(t *testing.T) {
+func TestRoundRobinSwitchesBetweenAvailableKeys(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name:        "openai",
@@ -33,7 +33,7 @@ func Test轮询策略会在可用密钥之间切换(t *testing.T) {
 	}
 }
 
-func Test不存在提供商或没有可用密钥时返回空字符串(t *testing.T) {
+func TestGetKeyReturnsEmptyForMissingProviderOrUnavailableKeys(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	kr := keyring.New(cfg)
 
@@ -64,7 +64,7 @@ func Test不存在提供商或没有可用密钥时返回空字符串(t *testing
 	}
 }
 
-func Test成功记录会重置失败次数和禁用时间(t *testing.T) {
+func TestRecordSuccessResetsFailureCountAndDisabledUntil(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name: "gemini",
@@ -85,7 +85,7 @@ func Test成功记录会重置失败次数和禁用时间(t *testing.T) {
 	}
 }
 
-func Test失败禁用时间会按指数退避增长并受最大值限制(t *testing.T) {
+func TestFailureBackoffGrowsExponentiallyAndRespectsMaxDuration(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name:           "responses",

@@ -190,13 +190,31 @@ func (c *Config) AddKeys(providerName string, keys []string) error {
 	defer c.mu.Unlock()
 	for i, p := range c.state.Providers {
 		if p.Name == providerName {
+			seen := make(map[string]struct{}, len(c.state.Providers[i].Keys)+len(keys))
+			deduped := make([]Key, 0, len(c.state.Providers[i].Keys)+len(keys))
+			for _, existing := range c.state.Providers[i].Keys {
+				existing.Value = strings.TrimSpace(existing.Value)
+				if existing.Value == "" {
+					continue
+				}
+				if _, ok := seen[existing.Value]; ok {
+					continue
+				}
+				seen[existing.Value] = struct{}{}
+				deduped = append(deduped, existing)
+			}
 			for _, k := range keys {
 				k = strings.TrimSpace(k)
 				if k == "" {
 					continue
 				}
-				c.state.Providers[i].Keys = append(c.state.Providers[i].Keys, Key{Value: k})
+				if _, ok := seen[k]; ok {
+					continue
+				}
+				seen[k] = struct{}{}
+				deduped = append(deduped, Key{Value: k})
 			}
+			c.state.Providers[i].Keys = deduped
 			c.save()
 			return nil
 		}

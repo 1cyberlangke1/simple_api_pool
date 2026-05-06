@@ -6,7 +6,7 @@ import (
 	"simple-api-pool/token"
 )
 
-func Test提取OpenAI响应里的Token计数(t *testing.T) {
+func TestExtractOpenAIResponseTokenCounts(t *testing.T) {
 	body := []byte(`{"usage":{"prompt_tokens":12,"completion_tokens":7}}`)
 
 	got := token.Extract("openai_chat", body, false)
@@ -16,7 +16,7 @@ func Test提取OpenAI响应里的Token计数(t *testing.T) {
 	}
 }
 
-func Test提取OpenAIResponses顶层Usage里的Token计数(t *testing.T) {
+func TestExtractOpenAIResponsesTopLevelUsageTokenCounts(t *testing.T) {
 	body := []byte(`{"id":"resp_123","object":"response","usage":{"input_tokens":18,"output_tokens":9,"total_tokens":27}}`)
 
 	got := token.Extract("openai_responses", body, false)
@@ -26,7 +26,7 @@ func Test提取OpenAIResponses顶层Usage里的Token计数(t *testing.T) {
 	}
 }
 
-func Test缺少Token统计时会回退到估算(t *testing.T) {
+func TestMissingTokenUsageFallsBackToEstimation(t *testing.T) {
 	body := []byte(`{"message":"missing usage block"}`)
 
 	got := token.Extract("openai_chat", body, true)
@@ -36,7 +36,7 @@ func Test缺少Token统计时会回退到估算(t *testing.T) {
 	}
 }
 
-func Test流式响应会读取最后一个带Usage的块(t *testing.T) {
+func TestStreamResponseUsesLastChunkWithUsage(t *testing.T) {
 	stream := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":3}}\n\ndata: [DONE]\n")
 
 	got := token.ExtractFromStream("openai_chat", stream, false)

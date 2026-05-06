@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test保存提供商时自动补默认值(t *testing.T) {
+func TestSaveProviderAppliesDefaultValues(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 
 	err := cfg.SaveProvider(config.Provider{
@@ -35,7 +35,7 @@ func Test保存提供商时自动补默认值(t *testing.T) {
 	}
 }
 
-func Test保留名称不能作为提供商名(t *testing.T) {
+func TestReservedNamesCannotBeProviderNames(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 
 	err := cfg.SaveProvider(config.Provider{Name: "admin", Type: config.OpenAIChat})
@@ -44,7 +44,7 @@ func Test保留名称不能作为提供商名(t *testing.T) {
 	}
 }
 
-func Test默认监听地址不再使用8080(t *testing.T) {
+func TestDefaultListenAddrIsNot8080(t *testing.T) {
 	t.Setenv("PORT", "")
 
 	got := config.ListenAddr()
@@ -54,7 +54,7 @@ func Test默认监听地址不再使用8080(t *testing.T) {
 	}
 }
 
-func TestPORT环境变量可以覆盖默认监听地址(t *testing.T) {
+func TestPortEnvOverridesDefaultListenAddr(t *testing.T) {
 	t.Setenv("PORT", "19090")
 
 	got := config.ListenAddr()

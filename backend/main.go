@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 
+	"simple-api-pool/applog"
 	"simple-api-pool/auth"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
@@ -20,6 +21,7 @@ func main() {
 	if v := os.Getenv("GOMEMLIMIT"); v == "" {
 		debug.SetMemoryLimit(32 << 20) // 32 MiB
 	}
+	applog.InitFromEnv()
 
 	store := store.New("data")
 	cfg := config.New(store)
@@ -60,8 +62,9 @@ func main() {
 	}))
 
 	addr := config.ListenAddr()
+	muxWithLogs := applog.LoggingMiddleware(mux)
 	log.Printf("simple-api-pool listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, muxWithLogs); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

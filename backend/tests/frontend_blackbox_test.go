@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func Test状态页和管理页可直接访问并包含关键前端入口(t *testing.T) {
+func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("读取测试文件路径失败")

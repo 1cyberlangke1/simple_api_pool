@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func TestDefaultBaseURL覆盖所有已支持提供商类型(t *testing.T) {
+func TestDefaultBaseURLCoversAllSupportedProviderTypes(t *testing.T) {
 	cases := []struct {
 		name string
 		in   config.ProviderType
@@ -31,7 +31,7 @@ func TestDefaultBaseURL覆盖所有已支持提供商类型(t *testing.T) {
 	}
 }
 
-func Test配置支持删除提供商更新密钥状态和读取全局配置(t *testing.T) {
+func TestConfigSupportsDeleteProviderUpdateKeyStateAndReadGlobalConfig(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name: "openai",
@@ -71,7 +71,7 @@ func Test配置支持删除提供商更新密钥状态和读取全局配置(t *t
 	}
 }
 
-func Test配置删除不存在密钥和新增到不存在提供商会返回NotExist(t *testing.T) {
+func TestConfigReturnsNotExistForMissingKeyDeletionAndUnknownProviderKeyAdd(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 
 	if err := cfg.AddKeys("missing", []string{"a"}); !errors.Is(err, os.ErrNotExist) {

@@ -13,7 +13,7 @@ import (
 	"simple-api-pool/config"
 )
 
-func TestSQLite缓存支持同一提供商并发读写(t *testing.T) {
+func TestSQLiteCacheSupportsConcurrentReadWriteWithinProvider(t *testing.T) {
 	baseDir := t.TempDir()
 	store := newTestCacheStoreAt(t, baseDir)
 
@@ -67,7 +67,7 @@ func TestSQLite缓存支持同一提供商并发读写(t *testing.T) {
 	}
 }
 
-func TestSQLite缓存支持多提供商并发隔离(t *testing.T) {
+func TestSQLiteCacheSupportsConcurrentIsolationAcrossProviders(t *testing.T) {
 	baseDir := t.TempDir()
 	store := newTestCacheStoreAt(t, baseDir)
 
@@ -147,7 +147,7 @@ func TestSQLite缓存支持多提供商并发隔离(t *testing.T) {
 	}
 }
 
-func TestSQLite缓存关闭后重新打开仍可命中(t *testing.T) {
+func TestSQLiteCachePersistsAcrossReopen(t *testing.T) {
 	baseDir := t.TempDir()
 	store := newTestCacheStoreAt(t, baseDir)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"persist"}]}`)

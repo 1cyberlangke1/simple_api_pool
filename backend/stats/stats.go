@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,9 +16,18 @@ type ProviderStats struct {
 	OutputTokens atomic.Int64 `json:"output_tokens"`
 	CacheTokens  atomic.Int64 `json:"cache_tokens"`
 	CacheHits    atomic.Int64 `json:"cache_hits"`
+	errorTypesMu sync.Mutex
+	ErrorTypes   map[string]int64
 }
 
 func (s *ProviderStats) Snapshot() Snapshot {
+	s.errorTypesMu.Lock()
+	errorTypes := make(map[string]int64, len(s.ErrorTypes))
+	for code, count := range s.ErrorTypes {
+		errorTypes[code] = count
+	}
+	s.errorTypesMu.Unlock()
+
 	return Snapshot{
 		SuccessCount: s.SuccessCount.Load(),
 		ErrorCount:   s.ErrorCount.Load(),
@@ -25,16 +35,18 @@ func (s *ProviderStats) Snapshot() Snapshot {
 		OutputTokens: s.OutputTokens.Load(),
 		CacheTokens:  s.CacheTokens.Load(),
 		CacheHits:    s.CacheHits.Load(),
+		ErrorTypes:   errorTypes,
 	}
 }
 
 type Snapshot struct {
-	SuccessCount int64 `json:"success_count"`
-	ErrorCount   int64 `json:"error_count"`
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
-	CacheTokens  int64 `json:"cache_tokens"`
-	CacheHits    int64 `json:"cache_hits"`
+	SuccessCount int64            `json:"success_count"`
+	ErrorCount   int64            `json:"error_count"`
+	InputTokens  int64            `json:"input_tokens"`
+	OutputTokens int64            `json:"output_tokens"`
+	CacheTokens  int64            `json:"cache_tokens"`
+	CacheHits    int64            `json:"cache_hits"`
+	ErrorTypes   map[string]int64 `json:"error_types,omitempty"`
 }
 
 type Manager struct {
@@ -68,6 +80,10 @@ func (m *Manager) load() {
 			ps.OutputTokens.Store(snap.OutputTokens)
 			ps.CacheTokens.Store(snap.CacheTokens)
 			ps.CacheHits.Store(snap.CacheHits)
+			ps.ErrorTypes = make(map[string]int64, len(snap.ErrorTypes))
+			for code, count := range snap.ErrorTypes {
+				ps.ErrorTypes[code] = count
+			}
 			m.stats[name] = ps
 		}
 	}
@@ -109,7 +125,7 @@ func (m *Manager) getOrCreate(name string) *ProviderStats {
 	if s, ok := m.stats[name]; ok {
 		return s
 	}
-	s := &ProviderStats{}
+	s := &ProviderStats{ErrorTypes: make(map[string]int64)}
 	m.stats[name] = s
 	return s
 }
@@ -121,9 +137,16 @@ func (m *Manager) RecordSuccess(provider string, input, output int64) {
 	s.OutputTokens.Add(output)
 }
 
-func (m *Manager) RecordError(provider string) {
+func (m *Manager) RecordError(provider string, statusCode int) {
 	s := m.getOrCreate(provider)
 	s.ErrorCount.Add(1)
+	if statusCode <= 0 {
+		return
+	}
+	code := strconv.Itoa(statusCode)
+	s.errorTypesMu.Lock()
+	s.ErrorTypes[code]++
+	s.errorTypesMu.Unlock()
 }
 
 func (m *Manager) RecordCacheHit(provider string, tokens int64) {

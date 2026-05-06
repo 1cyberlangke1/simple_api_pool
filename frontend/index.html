@@ -599,6 +599,12 @@
 
     .inline-status.error { color: var(--err); }
     .inline-status.ok { color: var(--ok); }
+    .error-type-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
 
     /* Key list */
     .key-list {
@@ -1036,6 +1042,7 @@
         "provider.statOutputTokens": "输出 Token",
         "provider.statCacheTokens": "缓存 Token",
         "provider.statCacheHits": "缓存命中",
+        "provider.errorTypeTitle": "错误类型",
         "provider.fails": "连续失败 {n} 次",
         "provider.disabledUntil": "禁用至 {time}",
         "provider.usable": "可用",
@@ -1164,6 +1171,7 @@
         "provider.statOutputTokens": "Output Tokens",
         "provider.statCacheTokens": "Cache Tokens",
         "provider.statCacheHits": "Cache Hits",
+        "provider.errorTypeTitle": "Error Types",
         "provider.fails": "Failed {n} in a row",
         "provider.disabledUntil": "Disabled until {time}",
         "provider.usable": "available",
@@ -1439,6 +1447,15 @@
         const errorRate = total ? `${((error / total) * 100).toFixed(1)}%` : t("provider.rateNone");
         const availableKeys = item.available_keys || 0;
         const totalKeys = item.total_keys || 0;
+        const errorTypes = Object.entries(item.error_types || {}).filter(([, count]) => Number(count) > 0);
+        const errorTypeMarkup = errorTypes.length
+          ? `
+            <div class="error-type-row">
+              <span class="tag muted">${escapeHTML(t("provider.errorTypeTitle"))}</span>
+              ${errorTypes.map(([code, count]) => `<span class="tag err">${escapeHTML(`${code} × ${count}`)}</span>`).join("")}
+            </div>
+          `
+          : "";
 
         return `
           <article class="provider-card">
@@ -1461,6 +1478,7 @@
               <div class="mini"><strong>${item.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
               <div class="mini"><strong>${item.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
             </div>
+            ${errorTypeMarkup}
           </article>
         `;
       }).join("");

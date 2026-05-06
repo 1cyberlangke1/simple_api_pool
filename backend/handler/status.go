@@ -15,14 +15,15 @@ type StatusHandler struct {
 }
 
 type StatusSnapshot struct {
-	SuccessCount  int64 `json:"success_count"`
-	ErrorCount    int64 `json:"error_count"`
-	InputTokens   int64 `json:"input_tokens"`
-	OutputTokens  int64 `json:"output_tokens"`
-	CacheTokens   int64 `json:"cache_tokens"`
-	CacheHits     int64 `json:"cache_hits"`
-	AvailableKeys int64 `json:"available_keys"`
-	TotalKeys     int64 `json:"total_keys"`
+	SuccessCount  int64            `json:"success_count"`
+	ErrorCount    int64            `json:"error_count"`
+	InputTokens   int64            `json:"input_tokens"`
+	OutputTokens  int64            `json:"output_tokens"`
+	CacheTokens   int64            `json:"cache_tokens"`
+	CacheHits     int64            `json:"cache_hits"`
+	ErrorTypes    map[string]int64 `json:"error_types,omitempty"`
+	AvailableKeys int64            `json:"available_keys"`
+	TotalKeys     int64            `json:"total_keys"`
 }
 
 func NewStatusHandler(cfg *config.Config, sm *stats.Manager) *StatusHandler {
@@ -40,6 +41,7 @@ func (sh *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			OutputTokens: snap.OutputTokens,
 			CacheTokens:  snap.CacheTokens,
 			CacheHits:    snap.CacheHits,
+			ErrorTypes:   snap.ErrorTypes,
 		}
 	}
 

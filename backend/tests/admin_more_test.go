@@ -12,7 +12,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test管理员接口在未授权和非法请求下返回对应错误(t *testing.T) {
+func TestAdminEndpointsReturnExpectedErrorsForUnauthorizedAndInvalidRequests(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 	if err := cfg.SaveProvider(config.Provider{
@@ -46,7 +46,7 @@ func Test管理员接口在未授权和非法请求下返回对应错误(t *test
 	}
 }
 
-func Test管理员接口对不支持的方法返回MethodNotAllowed(t *testing.T) {
+func TestAdminEndpointsReturnMethodNotAllowedForUnsupportedMethods(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())))

@@ -17,7 +17,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test代理请求会完整透传多级路径查询参数请求体和鉴权头(t *testing.T) {
+func TestProxyPassesThroughMethodPathQueryBodyAndAuth(t *testing.T) {
 	received := struct {
 		Method string
 		Path   string
@@ -88,7 +88,7 @@ func Test代理请求会完整透传多级路径查询参数请求体和鉴权�
 	}
 }
 
-func Test上游错误会原样透传给下游(t *testing.T) {
+func TestProxyPassesThroughUpstreamErrors(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -128,7 +128,55 @@ func Test上游错误会原样透传给下游(t *testing.T) {
 	}
 }
 
-func Test缓存命中时返回缓存响应并累计缓存统计(t *testing.T) {
+func TestErrorResponsesAreNotCached(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":{"message":"quota exceeded"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hi"}]}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		proxy.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("第 %d 次请求期望状态码 %d，实际是 %d", i+1, http.StatusTooManyRequests, rec.Code)
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望错误响应不被缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{
@@ -187,7 +235,7 @@ func Test缓存命中时返回缓存响应并累计缓存统计(t *testing.T) {
 	}
 }
 
-func Test缓存命中时即使没有可用上游密钥也能直接返回(t *testing.T) {
+func TestCacheHitReturnsWithoutAvailableUpstreamKey(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{
@@ -228,7 +276,7 @@ func Test缓存命中时即使没有可用上游密钥也能直接返回(t *test
 	}
 }
 
-func Test缓存会忽略Stream差异并按流式格式返回命中结果(t *testing.T) {
+func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -294,7 +342,7 @@ func Test缓存会忽略Stream差异并按流式格式返回命中结果(t *test
 	}
 }
 
-func Test首次流式响应也会落成非流式缓存并支持后续非流式命中(t *testing.T) {
+func TestFirstStreamResponseBuildsNonStreamCacheForLaterNonStreamHits(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -381,7 +429,7 @@ func Test首次流式响应也会落成非流式缓存并支持后续非流式�
 	}
 }
 
-func TestClaude首次流式响应也会落成非流式缓存并支持后续非流式命中(t *testing.T) {
+func TestClaudeFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -468,7 +516,7 @@ func TestClaude首次流式响应也会落成非流式缓存并支持后续非�
 	}
 }
 
-func TestOpenAIResponses首次流式响应也会落成非流式缓存并支持后续非流式命中(t *testing.T) {
+func TestOpenAIResponsesFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -554,7 +602,7 @@ func TestOpenAIResponses首次流式响应也会落成非流式缓存并支持�
 	}
 }
 
-func TestGemini首次流式响应也会落成非流式缓存并支持后续非流式命中(t *testing.T) {
+func TestGeminiFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -638,7 +686,7 @@ func TestGemini首次流式响应也会落成非流式缓存并支持后续非�
 	}
 }
 
-func Test缓存命中时会把缓存Token写回OpenAIChatUsage(t *testing.T) {
+func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{
@@ -679,7 +727,7 @@ func Test缓存命中时会把缓存Token写回OpenAIChatUsage(t *testing.T) {
 	}
 }
 
-func Test缓存命中时会把缓存Token写回GeminiUsageMetadata(t *testing.T) {
+func TestCacheHitWritesCacheTokensIntoGeminiUsageMetadata(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{
@@ -720,7 +768,7 @@ func Test缓存命中时会把缓存Token写回GeminiUsageMetadata(t *testing.T)
 	}
 }
 
-func TestGemini格式会注入GoogApiKey(t *testing.T) {
+func TestGeminiProviderInjectsGoogAPIKey(t *testing.T) {
 	var gotHeader string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("x-goog-api-key")
@@ -761,7 +809,7 @@ func TestGemini格式会注入GoogApiKey(t *testing.T) {
 	}
 }
 
-func Test多模态OpenAIChat请求会原样透传(t *testing.T) {
+func TestMultimodalOpenAIChatRequestPassesThroughUnchanged(t *testing.T) {
 	var gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -808,7 +856,7 @@ func Test多模态OpenAIChat请求会原样透传(t *testing.T) {
 	}
 }
 
-func Test多模态Gemini请求会原样透传(t *testing.T) {
+func TestMultimodalGeminiRequestPassesThroughUnchanged(t *testing.T) {
 	var gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -855,7 +903,7 @@ func Test多模态Gemini请求会原样透传(t *testing.T) {
 	}
 }
 
-func Test多模态消息数组也能正确命中缓存(t *testing.T) {
+func TestMultimodalMessageArrayMatchesCacheCorrectly(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -910,11 +958,12 @@ func Test多模态消息数组也能正确命中缓存(t *testing.T) {
 	}
 }
 
-func Test状态接口返回的统计可以被前端直接消费(t *testing.T) {
+func TestStatusEndpointReturnsFrontendReadyStats(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	statsMgr.RecordSuccess("openai", 11, 7)
-	statsMgr.RecordError("openai")
+	statsMgr.RecordError("openai", 401)
+	statsMgr.RecordError("openai", 404)
 	statsMgr.RecordCacheHit("openai", 18)
 
 	cfg := newTestConfig(t)
@@ -939,28 +988,33 @@ func Test状态接口返回的统计可以被前端直接消费(t *testing.T) {
 		t.Fatalf("期望状态码 %d，实际是 %d", http.StatusOK, rec.Code)
 	}
 
-	var payload map[string]map[string]int64
+	var payload map[string]map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析状态响应失败: %v", err)
 	}
-	if payload["openai"]["success_count"] != 1 {
-		t.Fatalf("期望 success_count 为 1，实际是 %d", payload["openai"]["success_count"])
+	openaiPayload := payload["openai"]
+	if openaiPayload["success_count"].(float64) != 1 {
+		t.Fatalf("期望 success_count 为 1，实际是 %v", openaiPayload["success_count"])
 	}
-	if payload["openai"]["error_count"] != 1 {
-		t.Fatalf("期望 error_count 为 1，实际是 %d", payload["openai"]["error_count"])
+	if openaiPayload["error_count"].(float64) != 2 {
+		t.Fatalf("期望 error_count 为 2，实际是 %v", openaiPayload["error_count"])
 	}
-	if payload["openai"]["cache_hits"] != 1 {
-		t.Fatalf("期望 cache_hits 为 1，实际是 %d", payload["openai"]["cache_hits"])
+	if openaiPayload["cache_hits"].(float64) != 1 {
+		t.Fatalf("期望 cache_hits 为 1，实际是 %v", openaiPayload["cache_hits"])
 	}
-	if payload["openai"]["available_keys"] != 1 {
-		t.Fatalf("期望 available_keys 为 1，实际是 %d", payload["openai"]["available_keys"])
+	if openaiPayload["available_keys"].(float64) != 1 {
+		t.Fatalf("期望 available_keys 为 1，实际是 %v", openaiPayload["available_keys"])
 	}
-	if payload["openai"]["total_keys"] != 2 {
-		t.Fatalf("期望 total_keys 为 2，实际是 %d", payload["openai"]["total_keys"])
+	if openaiPayload["total_keys"].(float64) != 2 {
+		t.Fatalf("期望 total_keys 为 2，实际是 %v", openaiPayload["total_keys"])
+	}
+	errorTypes := openaiPayload["error_types"].(map[string]any)
+	if errorTypes["401"].(float64) != 1 || errorTypes["404"].(float64) != 1 {
+		t.Fatalf("期望 error_types 包含 401 和 404 各 1 次，实际是 %+v", errorTypes)
 	}
 }
 
-func Test状态接口会返回尚未产生请求统计的提供商密钥概览(t *testing.T) {
+func TestStatusEndpointReturnsKeyOverviewWithoutRequestStats(t *testing.T) {
 	cfg := newTestConfig(t)
 	if err := cfg.SaveProvider(config.Provider{
 		Name: "gemini",
@@ -986,17 +1040,21 @@ func Test状态接口会返回尚未产生请求统计的提供商密钥概览(t
 		t.Fatalf("期望状态码 %d，实际是 %d", http.StatusOK, rec.Code)
 	}
 
-	var payload map[string]map[string]int64
+	var payload map[string]map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析状态响应失败: %v", err)
 	}
-	if payload["gemini"]["available_keys"] != 2 {
-		t.Fatalf("期望 available_keys 为 2，实际是 %d", payload["gemini"]["available_keys"])
+	geminiPayload := payload["gemini"]
+	if geminiPayload["available_keys"].(float64) != 2 {
+		t.Fatalf("期望 available_keys 为 2，实际是 %v", geminiPayload["available_keys"])
 	}
-	if payload["gemini"]["total_keys"] != 2 {
-		t.Fatalf("期望 total_keys 为 2，实际是 %d", payload["gemini"]["total_keys"])
+	if geminiPayload["total_keys"].(float64) != 2 {
+		t.Fatalf("期望 total_keys 为 2，实际是 %v", geminiPayload["total_keys"])
 	}
-	if payload["gemini"]["success_count"] != 0 {
-		t.Fatalf("期望 success_count 默认为 0，实际是 %d", payload["gemini"]["success_count"])
+	if geminiPayload["success_count"].(float64) != 0 {
+		t.Fatalf("期望 success_count 默认为 0，实际是 %v", geminiPayload["success_count"])
+	}
+	if _, ok := geminiPayload["error_types"]; ok {
+		t.Fatalf("期望没有错误类型时不返回 error_types，实际是 %+v", geminiPayload["error_types"])
 	}
 }

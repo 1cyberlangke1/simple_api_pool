@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"simple-api-pool/applog"
 	"simple-api-pool/auth"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
@@ -40,7 +42,19 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 }
 
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	logFields := proxyLogFields{
+		Method: r.Method,
+		Path:   r.URL.Path,
+		Query:  r.URL.RawQuery,
+	}
+	defer func() {
+		h.logProxyResult(start, logFields)
+	}()
+
 	if !auth.CheckClientKey(r, h.cfg) {
+		logFields.Status = http.StatusUnauthorized
+		logFields.Error = "未授权"
 		writeJSONError(w, http.StatusUnauthorized, "未授权")
 		return
 	}
@@ -48,7 +62,11 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() { <-h.sema }()
 
 	parts := parsePath(r.URL.Path)
+	logFields.Provider = parts.provider
+	logFields.CacheRoute = parts.useCache
 	if parts.provider == "" {
+		logFields.Status = http.StatusBadRequest
+		logFields.Error = "未指定提供商"
 		writeJSONError(w, http.StatusBadRequest, "未指定提供商")
 		return
 	}
@@ -57,33 +75,49 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p, _ := h.cfg.Provider(parts.provider)
 	if p == nil {
+		logFields.Status = http.StatusNotFound
+		logFields.Error = "提供商不存在"
 		writeJSONError(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
+	logFields.ProviderType = string(p.Type)
 
-	targetURL := buildTargetURL(p.BaseURL, parts.suffix, r.URL.RawQuery)
+	targetURL := buildTargetURL(p.Type, p.BaseURL, parts.suffix, r.URL.RawQuery)
 	if targetURL == "" {
+		logFields.Status = http.StatusInternalServerError
+		logFields.Error = "上游地址无效"
 		writeJSONError(w, http.StatusInternalServerError, "上游地址无效")
 		return
 	}
+	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(targetURL)
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
+		logFields.Status = http.StatusBadRequest
+		logFields.Error = "读取请求体失败"
 		writeJSONError(w, http.StatusBadRequest, "读取请求体失败")
 		return
 	}
 	r.Body.Close()
+	logFields.RequestBytes = len(bodyBytes)
 
 	model := extractModel(bodyBytes)
+	logFields.Model = model
 	isStream := isStreamRequest(r, bodyBytes)
+	logFields.Stream = isStream
 
 	if useCache && p.CacheEnabled {
 		if entry, ok := h.cache.Get(parts.provider, p.Type, model, bodyBytes); ok {
 			h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
+			logFields.CacheHit = true
+			logFields.Status = entry.StatusCode
+			logFields.UpstreamStatus = entry.StatusCode
+			logFields.ResponseBytes = len(entry.CachedBody)
 			headers := entry.Headers
 			if isStream {
 				headers["Content-Type"] = "text/event-stream"
 				delete(headers, "Content-Length")
+				logFields.ResponseBytes = len(entry.CachedStreamBody)
 			}
 			for k, v := range headers {
 				w.Header().Set(k, v)
@@ -100,35 +134,46 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	upstreamKey, err := h.keyring.GetKey(parts.provider)
 	if err != nil || upstreamKey == "" {
-		h.stats.RecordError(parts.provider)
+		h.stats.RecordError(parts.provider, http.StatusServiceUnavailable)
+		logFields.Status = http.StatusServiceUnavailable
+		logFields.Error = "没有可用的上游密钥"
 		writeJSONError(w, http.StatusServiceUnavailable, "没有可用的上游密钥")
 		return
 	}
+	logFields.KeyRef = applog.MaskSecret(upstreamKey)
 
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		h.stats.RecordError(parts.provider)
+		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
+		logFields.Status = http.StatusInternalServerError
+		logFields.Error = "创建上游请求失败"
 		writeJSONError(w, http.StatusInternalServerError, "创建上游请求失败")
 		return
 	}
 
 	copyHeaders(upstreamReq.Header, r.Header)
-	upstreamReq.Header.Del("Authorization")
+	clearClientAuth(upstreamReq, p.Type)
 	setAuthHeader(upstreamReq, p.Type, upstreamKey)
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
-		h.stats.RecordError(parts.provider)
+		h.stats.RecordError(parts.provider, http.StatusBadGateway)
 		h.keyring.RecordFailure(parts.provider, upstreamKey)
+		logFields.Status = http.StatusBadGateway
+		logFields.Error = fmt.Sprintf("上游请求失败: %v", err)
 		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("上游请求失败: %v", err))
 		return
 	}
 	defer resp.Body.Close()
+	logFields.UpstreamStatus = resp.StatusCode
 
 	if resp.StatusCode >= 400 {
-		h.stats.RecordError(parts.provider)
+		h.stats.RecordError(parts.provider, resp.StatusCode)
 		errBody, _ := io.ReadAll(resp.Body)
+		logFields.Status = resp.StatusCode
+		logFields.ResponseBytes = len(errBody)
+		logFields.Error = strings.TrimSpace(string(errBody))
 		copyHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		w.Write(errBody)
@@ -139,16 +184,20 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isStream {
-		h.handleStream(w, resp, parts.provider, upstreamKey, p.Type, model, bodyBytes, p.CacheEnabled, int64(p.CacheMaxEntries))
+		h.handleStream(w, resp, parts.provider, upstreamKey, p.Type, model, bodyBytes, p.CacheEnabled, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		h.stats.RecordError(parts.provider)
+		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
+		logFields.Status = http.StatusInternalServerError
+		logFields.Error = "读取上游响应失败"
 		writeJSONError(w, http.StatusInternalServerError, "读取上游响应失败")
 		return
 	}
+	logFields.Status = resp.StatusCode
+	logFields.ResponseBytes = len(respBody)
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
@@ -167,9 +216,11 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, provider, upstreamKey string, providerType config.ProviderType, model string, requestBody []byte, cacheEnabled bool, cacheMaxEntries int64) {
+func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, provider, upstreamKey string, providerType config.ProviderType, model string, requestBody []byte, cacheEnabled bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		logFields.Status = http.StatusInternalServerError
+		logFields.Error = "当前响应不支持流式转发"
 		writeJSONError(w, http.StatusInternalServerError, "当前响应不支持流式转发")
 		return
 	}
@@ -192,6 +243,8 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 		}
 	}
 
+	logFields.Status = resp.StatusCode
+	logFields.ResponseBytes = collected.Len()
 	usage := token.ExtractFromStream(string(providerType), collected.Bytes(), h.cfg.TokenEstimationEnabled())
 	h.stats.RecordSuccess(provider, usage.InputTokens, usage.OutputTokens)
 	h.keyring.RecordSuccess(provider, upstreamKey)
@@ -201,6 +254,62 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 			h.cache.Set(provider, providerType, model, requestBody, canonicalBody, resp.StatusCode, cacheableHeaders(resp.Header), usage.InputTokens, usage.OutputTokens, cacheMaxEntries)
 		}
 	}
+}
+
+type proxyLogFields struct {
+	Method         string
+	Path           string
+	Query          string
+	Provider       string
+	ProviderType   string
+	Model          string
+	CacheRoute     bool
+	CacheHit       bool
+	Stream         bool
+	Status         int
+	UpstreamStatus int
+	RequestBytes   int
+	ResponseBytes  int
+	UpstreamHost   string
+	UpstreamPath   string
+	KeyRef         string
+	Error          string
+}
+
+func (h *ProxyHandler) logProxyResult(start time.Time, fields proxyLogFields) {
+	attrs := []any{
+		"method", fields.Method,
+		"path", fields.Path,
+		"query", fields.Query,
+		"provider", fields.Provider,
+		"provider_type", fields.ProviderType,
+		"model", fields.Model,
+		"cache_route", fields.CacheRoute,
+		"cache_hit", fields.CacheHit,
+		"stream", fields.Stream,
+		"status", fields.Status,
+		"upstream_status", fields.UpstreamStatus,
+		"request_bytes", fields.RequestBytes,
+		"response_bytes", fields.ResponseBytes,
+		"duration_ms", time.Since(start).Milliseconds(),
+	}
+	if fields.UpstreamHost != "" {
+		attrs = append(attrs, "upstream_host", fields.UpstreamHost)
+	}
+	if fields.UpstreamPath != "" {
+		attrs = append(attrs, "upstream_path", fields.UpstreamPath)
+	}
+	if fields.KeyRef != "" {
+		attrs = append(attrs, "key_ref", fields.KeyRef)
+	}
+
+	logger := slog.Default()
+	if fields.Error != "" || fields.Status >= 400 {
+		attrs = append(attrs, "error", fields.Error)
+		logger.Error("proxy_request", attrs...)
+		return
+	}
+	logger.Info("proxy_request", attrs...)
 }
 
 type pathParts struct {
@@ -232,13 +341,43 @@ func parsePath(path string) pathParts {
 	return p
 }
 
-func buildTargetURL(baseURL, suffix, rawQuery string) string {
+func buildTargetURL(providerType config.ProviderType, baseURL, suffix, rawQuery string) string {
 	base, err := url.Parse(strings.TrimRight(baseURL, "/") + suffix)
 	if err != nil {
 		return ""
 	}
-	base.RawQuery = rawQuery
+	queryValues, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return ""
+	}
+	sanitizeClientAuthQuery(queryValues, providerType)
+	base.RawQuery = queryValues.Encode()
 	return base.String()
+}
+
+func splitUpstreamURL(targetURL string) (string, string) {
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return "", ""
+	}
+	return u.Host, u.Path
+}
+
+func clearClientAuth(req *http.Request, providerType config.ProviderType) {
+	req.Header.Del("Authorization")
+	req.Header.Del("x-api-key")
+	req.Header.Del("x-goog-api-key")
+
+	queryValues := req.URL.Query()
+	sanitizeClientAuthQuery(queryValues, providerType)
+	req.URL.RawQuery = queryValues.Encode()
+}
+
+func sanitizeClientAuthQuery(values url.Values, providerType config.ProviderType) {
+	switch providerType {
+	case config.Gemini:
+		values.Del("key")
+	}
 }
 
 func extractModel(body []byte) string {

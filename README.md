@@ -170,6 +170,20 @@ docker compose ps
 docker compose logs -f app
 ```
 
+这里建议直接用 `docker compose logs -f app`，不要自己猜容器名。
+
+当前仓库自带的 `docker-compose.yml` 已经固定容器名为：
+
+```text
+simple-api-pool
+```
+
+如果你确实要核对容器名，可以先执行：
+
+```bash
+docker compose ps
+```
+
 如果你只想看最近 100 行：
 
 ```bash
@@ -327,6 +341,7 @@ docker run -d \
 services:
   app:
     image: ghcr.io/1cyberlangke1/simple_api_pool:latest
+    container_name: simple-api-pool
     env_file:
       - .env
     ports:
@@ -354,12 +369,17 @@ docker ps
 docker logs -f simple-api-pool
 ```
 
+这里的 `simple-api-pool` 来自上面的 `--name simple-api-pool`。
+
 如果你使用 Compose：
 
 ```bash
 docker compose ps
 docker compose logs -f app
+docker logs -f simple-api-pool
 ```
+
+当前文档里的 Compose 示例已经固定 `container_name: simple-api-pool`，所以也可以直接使用 `docker logs -f simple-api-pool`。
 
 健康检查：
 

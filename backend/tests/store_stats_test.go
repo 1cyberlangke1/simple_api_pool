@@ -9,7 +9,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func TestStore可以保存加载并检查文件存在(t *testing.T) {
+func TestStoreCanSaveLoadAndCheckExistence(t *testing.T) {
 	st := store.New(t.TempDir())
 	payload := map[string]any{
 		"name":  "demo",
@@ -32,7 +32,7 @@ func TestStore可以保存加载并检查文件存在(t *testing.T) {
 	}
 }
 
-func TestStore读取不存在文件时返回NotExist(t *testing.T) {
+func TestStoreReturnsNotExistForMissingFile(t *testing.T) {
 	st := store.New(t.TempDir())
 	var payload map[string]any
 
@@ -49,12 +49,12 @@ func TestStore读取不存在文件时返回NotExist(t *testing.T) {
 	}
 }
 
-func TestStatsManager会在Stop时刷新并在重启后恢复(t *testing.T) {
+func TestStatsManagerFlushesOnStopAndRestoresOnRestart(t *testing.T) {
 	st := store.New(t.TempDir())
 
 	first := stats.NewManager(st)
 	first.RecordSuccess("openai", 11, 7)
-	first.RecordError("openai")
+	first.RecordError("openai", 401)
 	first.RecordCacheHit("openai", 18)
 	first.RecordSuccess("gemini", 5, 3)
 	first.Stop()
@@ -76,6 +76,9 @@ func TestStatsManager会在Stop时刷新并在重启后恢复(t *testing.T) {
 	}
 	if openai.CacheHits != 1 || openai.CacheTokens != 18 {
 		t.Fatalf("期望恢复 openai 缓存计数，实际是 %+v", openai)
+	}
+	if openai.ErrorTypes["401"] != 1 {
+		t.Fatalf("期望恢复 openai 401 错误计数，实际是 %+v", openai.ErrorTypes)
 	}
 
 	gemini := snapshot["gemini"]

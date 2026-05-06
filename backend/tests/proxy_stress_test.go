@@ -15,7 +15,7 @@ import (
 	"simple-api-pool/store"
 )
 
-func Test缓存命中路径支持高并发读取(t *testing.T) {
+func TestCacheHitPathSupportsHighConcurrencyReads(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{

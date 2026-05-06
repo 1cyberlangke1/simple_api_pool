@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"simple-api-pool/auth"
+	"simple-api-pool/config"
 	"simple-api-pool/store"
 )
 
-func Test未配置客户端密钥时允许直接访问(t *testing.T) {
+func TestClientKeyAllowsAccessWhenUnconfigured(t *testing.T) {
 	cfg := newTestConfig(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -18,7 +19,7 @@ func Test未配置客户端密钥时允许直接访问(t *testing.T) {
 	}
 }
 
-func Test客户端密钥支持Bearer和原始Header两种格式(t *testing.T) {
+func TestClientKeyAcceptsBearerAndRawAuthorization(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-a", "client-b"})
 
@@ -35,7 +36,7 @@ func Test客户端密钥支持Bearer和原始Header两种格式(t *testing.T) {
 	}
 }
 
-func Test客户端密钥错误或缺失时拒绝访问(t *testing.T) {
+func TestClientKeyRejectsMissingOrInvalidValues(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-a"})
 
@@ -51,7 +52,46 @@ func Test客户端密钥错误或缺失时拒绝访问(t *testing.T) {
 	}
 }
 
-func Test管理员密钥校验支持Bearer和原始Header格式(t *testing.T) {
+func TestClientKeyAcceptsGeminiApiKeyHeaderAndQueryKey(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"gem-header", "gem-query"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "gemini",
+		Type: config.Gemini,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	headerReq := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models", nil)
+	headerReq.Header.Set("x-goog-api-key", "gem-header")
+	if !auth.CheckClientKey(headerReq, cfg) {
+		t.Fatal("Gemini 的 x-goog-api-key 应当通过客户端鉴权")
+	}
+
+	queryReq := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models?key=gem-query", nil)
+	if !auth.CheckClientKey(queryReq, cfg) {
+		t.Fatal("Gemini 的 query key 应当通过客户端鉴权")
+	}
+}
+
+func TestClientKeyAcceptsClaudeApiKeyHeader(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"claude-client"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "claude",
+		Type: config.Claude,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/claude/v1/messages", nil)
+	req.Header.Set("x-api-key", "claude-client")
+	if !auth.CheckClientKey(req, cfg) {
+		t.Fatal("Claude 的 x-api-key 应当通过客户端鉴权")
+	}
+}
+
+func TestAdminKeyAcceptsBearerAndRawAuthorization(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 
@@ -68,7 +108,7 @@ func Test管理员密钥校验支持Bearer和原始Header格式(t *testing.T) {
 	}
 }
 
-func Test未配置管理员密钥时不会放行(t *testing.T) {
+func TestAdminKeyRejectsWhenUnconfigured(t *testing.T) {
 	cfg := newTestConfig(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer anything")
@@ -78,7 +118,7 @@ func Test未配置管理员密钥时不会放行(t *testing.T) {
 	}
 }
 
-func Test配置构造时会读取环境变量里的管理员和客户端密钥(t *testing.T) {
+func TestConfigLoadsAdminAndClientKeysFromEnvironment(t *testing.T) {
 	t.Setenv("ADMIN_KEY", "env-admin")
 	t.Setenv("CLIENT_KEYS", "a, b ,c")
 
