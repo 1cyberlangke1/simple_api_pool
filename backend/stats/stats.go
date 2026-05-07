@@ -51,6 +51,7 @@ type Snapshot struct {
 
 type Manager struct {
 	st     *store.Store
+	mu     sync.RWMutex
 	stats  map[string]*ProviderStats
 	stopCh chan struct{}
 	stopMu sync.Once
@@ -72,6 +73,8 @@ func NewManager(st *store.Store) *Manager {
 func (m *Manager) load() {
 	var data map[string]Snapshot
 	if err := m.st.Load("stats/all.json", &data); err == nil {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		for name, snap := range data {
 			ps := &ProviderStats{}
 			ps.SuccessCount.Store(snap.SuccessCount)
@@ -105,10 +108,7 @@ func (m *Manager) flusher() {
 }
 
 func (m *Manager) flush() {
-	data := make(map[string]Snapshot)
-	for name, ps := range m.stats {
-		data[name] = ps.Snapshot()
-	}
+	data := m.Snapshot()
 	if len(data) > 0 {
 		m.st.Save("stats/all.json", &data)
 	}
@@ -122,6 +122,15 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) getOrCreate(name string) *ProviderStats {
+	m.mu.RLock()
+	if s, ok := m.stats[name]; ok {
+		m.mu.RUnlock()
+		return s
+	}
+	m.mu.RUnlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if s, ok := m.stats[name]; ok {
 		return s
 	}
@@ -156,8 +165,15 @@ func (m *Manager) RecordCacheHit(provider string, tokens int64) {
 }
 
 func (m *Manager) Snapshot() map[string]Snapshot {
-	out := make(map[string]Snapshot)
+	m.mu.RLock()
+	providers := make(map[string]*ProviderStats, len(m.stats))
 	for name, ps := range m.stats {
+		providers[name] = ps
+	}
+	m.mu.RUnlock()
+
+	out := make(map[string]Snapshot, len(providers))
+	for name, ps := range providers {
 		out[name] = ps.Snapshot()
 	}
 	return out

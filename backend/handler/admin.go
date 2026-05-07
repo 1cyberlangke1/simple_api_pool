@@ -16,9 +16,9 @@ import (
 )
 
 type AdminHandler struct {
-	cfg   *config.Config
-	stats *stats.Manager
-	cache *cache.Store
+	cfg     *config.Config
+	stats   *stats.Manager
+	cache   *cache.Store
 	limiter *auth.FailureLimiter
 }
 
@@ -176,6 +176,12 @@ func (ah *AdminHandler) handleSingleProvider(w http.ResponseWriter, r *http.Requ
 			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
+		if ah.cache != nil {
+			if err := ah.cache.ClearProvider(name); err != nil {
+				writeErrorResponse(w, http.StatusInternalServerError, "删除提供商缓存失败")
+				return
+			}
+		}
 		ah.cfg.DeleteProvider(name)
 		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
@@ -278,8 +284,8 @@ func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPut:
 		var body struct {
-			AdminKey               *string  `json:"admin_key"`
-			TokenEstimationEnabled *bool    `json:"token_estimation_enabled"`
+			AdminKey               *string   `json:"admin_key"`
+			TokenEstimationEnabled *bool     `json:"token_estimation_enabled"`
 			ClientKeys             *[]string `json:"client_keys"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

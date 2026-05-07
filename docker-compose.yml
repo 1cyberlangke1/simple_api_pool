@@ -4,10 +4,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - .env
+    environment:
+      ADMIN_KEY: ${ADMIN_KEY:-admin-demo}
+      CLIENT_KEYS: ${CLIENT_KEYS:-client-demo-1,client-demo-2}
+      PORT: ${PORT:-18080}
+      GOMEMLIMIT: ${GOMEMLIMIT:-32MiB}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-false}
     ports:
-      - "18080:18080"
+      - "${PORT:-18080}:${PORT:-18080}"
     volumes:
       - app-data:/app/data
     restart: unless-stopped

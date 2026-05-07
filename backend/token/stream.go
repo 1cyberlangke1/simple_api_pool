@@ -3,7 +3,6 @@ package token
 import (
 	"encoding/json"
 	"strings"
-	"unicode/utf8"
 )
 
 // ExtractFromStream tries to extract token usage from accumulated streamed response bytes
@@ -25,7 +24,7 @@ func ExtractFromStream(providerType string, body []byte, estimateEnabled bool) U
 	}
 
 	if u.InputTokens == 0 && u.OutputTokens == 0 && estimateEnabled && len(body) > 0 {
-		est := int64(utf8.RuneCount(body) / 4)
+		est := int64(len(body) / 4)
 		if est < 1 {
 			est = 1
 		}

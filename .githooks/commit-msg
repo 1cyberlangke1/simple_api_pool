@@ -6,4 +6,73 @@ if command -v pwsh >/dev/null 2>&1; then
   exec pwsh -NoProfile -ExecutionPolicy Bypass -File "$HOOK_DIR/commit-msg.ps1" "$1"
 fi
 
-exec powershell -NoProfile -ExecutionPolicy Bypass -File "$HOOK_DIR/commit-msg.ps1" "$1"
+if command -v powershell >/dev/null 2>&1; then
+  exec powershell -NoProfile -ExecutionPolicy Bypass -File "$HOOK_DIR/commit-msg.ps1" "$1"
+fi
+
+MESSAGE_FILE=$1
+
+trim() {
+  printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+if [ ! -f "$MESSAGE_FILE" ]; then
+  printf '%s\n' "未找到提交信息文件" >&2
+  exit 1
+fi
+
+FIRST_LINE=$(sed -n '1p' "$MESSAGE_FILE" | tr -d '\r')
+FIRST_LINE=$(trim "$FIRST_LINE")
+
+if [ -z "$FIRST_LINE" ]; then
+  printf '%s\n' "提交标题不能为空" >&2
+  exit 1
+fi
+
+SEPARATOR=
+case "$FIRST_LINE" in
+  *:* ) SEPARATOR=':' ;;
+esac
+case "$FIRST_LINE" in
+  *'：'* )
+    case "$FIRST_LINE" in
+      *:* )
+        PREFIX_ASCII=${FIRST_LINE%%:*}
+        PREFIX_FULL=${FIRST_LINE%%：*}
+        if [ ${#PREFIX_FULL} -lt ${#PREFIX_ASCII} ]; then
+          SEPARATOR='：'
+        fi
+        ;;
+      * )
+        SEPARATOR='：'
+        ;;
+    esac
+    ;;
+esac
+
+if [ -z "$SEPARATOR" ]; then
+  printf '%s\n' "提交标题格式必须为：中文分类: 中文说明" >&2
+  exit 1
+fi
+
+CATEGORY=${FIRST_LINE%%"$SEPARATOR"*}
+SUMMARY=${FIRST_LINE#*"$SEPARATOR"}
+CATEGORY=$(trim "$CATEGORY")
+SUMMARY=$(trim "$SUMMARY")
+
+if [ -z "$CATEGORY" ] || [ -z "$SUMMARY" ]; then
+  printf '%s\n' "提交标题格式必须为：中文分类: 中文说明" >&2
+  exit 1
+fi
+
+if printf '%s' "$CATEGORY" | grep -Eq '[^一-龥0-9 ]'; then
+  printf '%s\n' "提交标题格式必须为：中文分类: 中文说明" >&2
+  exit 1
+fi
+
+if ! printf '%s' "$SUMMARY" | grep -Eq '[一-龥]'; then
+  printf '%s\n' "提交标题格式必须为：中文分类: 中文说明" >&2
+  exit 1
+fi
+
+exit 0

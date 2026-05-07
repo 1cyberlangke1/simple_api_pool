@@ -2,7 +2,6 @@ package token
 
 import (
 	"encoding/json"
-	"unicode/utf8"
 )
 
 type Usage struct {
@@ -23,7 +22,7 @@ func Extract(providerType string, body []byte, estimateEnabled bool) Usage {
 	}
 
 	if u.InputTokens == 0 && u.OutputTokens == 0 && estimateEnabled && len(body) > 0 {
-		est := int64(utf8.RuneCount(body) / 4)
+		est := int64(len(body) / 4)
 		if est < 1 {
 			est = 1
 		}
@@ -57,12 +56,6 @@ func extractOpenAI(body []byte) Usage {
 		}
 	}
 
-	var arr struct {
-		Usage struct {
-			PromptTokens     int64 `json:"prompt_tokens"`
-			CompletionTokens int64 `json:"completion_tokens"`
-		} `json:"usage"`
-	}
 	var responses struct {
 		Output []struct {
 			Usage struct {
@@ -78,7 +71,6 @@ func extractOpenAI(body []byte) Usage {
 			}
 		}
 	}
-	_ = arr
 	return Usage{}
 }
 

@@ -10,7 +10,7 @@ jobs:
     defaults:
       run:
         working-directory: backend
-        shell: pwsh
+        shell: bash
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
@@ -31,17 +31,17 @@ jobs:
 
       - name: 校验覆盖率下限
         run: |
-          $total = go tool cover -func=coverage_profile | Select-String '^total:'
-          if (-not $total) {
-            Write-Error '未找到覆盖率汇总'
+          total_line=$(go tool cover -func=coverage_profile | tail -n 1)
+          if [ -z "$total_line" ]; then
+            echo '未找到覆盖率汇总' >&2
+            exit 1
+          fi
+          value=$(printf '%s\n' "$total_line" | awk '{gsub("%", "", $3); print $3}')
+          awk -v current="$value" 'BEGIN { if (current + 0 < 80) exit 1 }' || {
+            echo "覆盖率不足 80%，当前为 ${value}%" >&2
             exit 1
           }
-          $value = [double](($total.ToString() -split '\s+')[-1].TrimEnd('%'))
-          if ($value -lt 80) {
-            Write-Error "覆盖率不足 80%，当前为 $value%"
-            exit 1
-          }
-          Write-Host "覆盖率达标：$value%"
+          echo "覆盖率达标：${value}%"
 
       - name: 运行 race 测试
         run: go test -race ./tests

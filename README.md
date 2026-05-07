@@ -97,6 +97,7 @@ docker compose version
 | `CLIENT_KEYS` | 否 | 空 | 客户端访问密钥，多个值用半角逗号分隔 |
 | `PORT` | 否 | `18080` | 服务监听端口 |
 | `GOMEMLIMIT` | 否 | `32MiB` | Go 运行时内存限制 |
+| `ADMIN_COOKIE_SECURE` | 否 | `true` | 管理员会话 Cookie 是否仅通过 HTTPS 发送；本地纯 HTTP 调试可临时设为 `false` |
 
 最小可用配置通常只需要：
 
@@ -146,6 +147,7 @@ CLIENT_KEYS=client-key-1,client-key-2
 ```text
 PORT=18080
 GOMEMLIMIT=32MiB
+ADMIN_COOKIE_SECURE=false
 ```
 
 #### 3. 启动服务
@@ -316,6 +318,7 @@ ADMIN_KEY=改成你自己的管理员密钥
 CLIENT_KEYS=
 PORT=18080
 GOMEMLIMIT=32MiB
+ADMIN_COOKIE_SECURE=false
 ```
 
 #### 3. 方式 A：直接用 `docker run`
@@ -456,6 +459,7 @@ ADMIN_KEY=你的管理员密钥
 CLIENT_KEYS=client-key-1,client-key-2
 PORT=18080
 GOMEMLIMIT=32MiB
+ADMIN_COOKIE_SECURE=false
 ```
 
 #### 3. 启动服务
@@ -736,7 +740,7 @@ curl -X POST http://127.0.0.1:18080/api/admin/providers \
 提供商名称需要注意两点：
 
 - 必须唯一
-- 不能使用保留名称 `status` 和 `admin`
+- 不能使用保留名称 `api`、`cache`、`status` 和 `admin`
 
 ### 4. 导入上游 key
 
@@ -1027,7 +1031,7 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 
 需要管理员密钥。支持：
 
-- 浏览器本地保存管理员密钥
+- 浏览器同源 Cookie 会话
 - 全局客户端 key 配置
 - Token 估算开关
 - 提供商新增、修改、删除
@@ -1036,6 +1040,8 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - 缓存开关和缓存最大条目数配置
 - 批量导入和删除上游 key
 - 展示每个 key 的失败次数和当前禁用状态
+- 默认会话有效期为 `24` 小时
+- 总览接口支持 ETag 协商缓存，页面刷新时会尽量复用已缓存结果
 
 ## 统计与缓存说明
 

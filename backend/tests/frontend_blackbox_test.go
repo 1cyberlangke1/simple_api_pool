@@ -133,8 +133,14 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if strings.Contains(string(indexHTML), `localStorage.getItem(STORAGE_KEY)`) {
 		t.Fatal("期望前端不再把管理员密钥持久化到本地存储")
 	}
+	if strings.Contains(string(indexHTML), `fonts.googleapis.com`) {
+		t.Fatal("期望前端不依赖外部字体 CDN")
+	}
 	if strings.Contains(string(indexHTML), `Authorization`) || strings.Contains(string(indexHTML), `Bearer`) {
 		t.Fatal("期望前端不再通过 Authorization 头长期携带管理员密钥")
+	}
+	if strings.Contains(string(indexHTML), `.replaceAll(`) {
+		t.Fatal("期望前端避免依赖 replaceAll，兼容旧浏览器")
 	}
 	if !strings.Contains(string(indexHTML), `credentials: "same-origin"`) {
 		t.Fatal("期望前端通过同源 Cookie 维持管理员会话")

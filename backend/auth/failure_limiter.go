@@ -44,6 +44,7 @@ func (limiter *FailureLimiter) Allow(remoteAddr string) bool {
 
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
+	limiter.pruneExpiredEntriesLocked(now)
 
 	entry, exists := limiter.entries[key]
 	if !exists {
@@ -64,6 +65,7 @@ func (limiter *FailureLimiter) RecordFailure(remoteAddr string) {
 
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
+	limiter.pruneExpiredEntriesLocked(now)
 
 	entry := limiter.entries[key]
 	if entry.firstFailure.IsZero() || now.Sub(entry.firstFailure) > limiter.window {
@@ -83,6 +85,21 @@ func (limiter *FailureLimiter) RecordSuccess(remoteAddr string) {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 	delete(limiter.entries, key)
+}
+
+func (limiter *FailureLimiter) pruneExpiredEntriesLocked(now time.Time) {
+	for key, entry := range limiter.entries {
+		if !entry.blockedUntil.IsZero() {
+			if entry.blockedUntil.After(now) {
+				continue
+			}
+			delete(limiter.entries, key)
+			continue
+		}
+		if entry.firstFailure.IsZero() || now.Sub(entry.firstFailure) > limiter.window {
+			delete(limiter.entries, key)
+		}
+	}
 }
 
 func (limiter *FailureLimiter) keyForRemoteAddr(remoteAddr string) string {

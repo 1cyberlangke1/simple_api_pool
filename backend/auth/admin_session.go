@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func SetAdminSessionCookie(w http.ResponseWriter, r *http.Request, cfg *config.C
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   requestIsSecure(r),
+		Secure:   shouldSetAdminSessionSecureCookie(),
 		MaxAge:   int(adminSessionTTL.Seconds()),
 		Expires:  time.Now().Add(adminSessionTTL),
 	})
@@ -64,7 +65,7 @@ func ClearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   requestIsSecure(r),
+		Secure:   shouldSetAdminSessionSecureCookie(),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
@@ -111,12 +112,15 @@ func signAdminSessionPayload(adminKey, payload string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func requestIsSecure(r *http.Request) bool {
-	if r != nil && r.TLS != nil {
+func shouldSetAdminSessionSecureCookie() bool {
+	value := strings.TrimSpace(os.Getenv("ADMIN_COOKIE_SECURE"))
+	if value == "" {
 		return true
 	}
-	if r == nil {
-		return false
+
+	secure, err := strconv.ParseBool(value)
+	if err != nil {
+		return true
 	}
-	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	return secure
 }

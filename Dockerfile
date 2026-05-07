@@ -9,7 +9,7 @@ ARG APP_REVISION=local
 ARG APP_BUILD_TIME=unknown
 
 ENV GO_VERSION=1.26.1
-ENV GO_TARBALL_URL=https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${BUILDARCH}.tar.gz
+ENV GO_TARBALL_URL=https://go.dev/dl/go${GO_VERSION}.linux-${BUILDARCH}.tar.gz
 ENV PATH=/usr/local/go/bin:${PATH}
 
 RUN apk add --no-cache ca-certificates tar wget
