@@ -255,6 +255,7 @@ func (s *Store) setCacheEntryByKey(providerName string, providerType config.Prov
 		if err != nil {
 			return false
 		}
+		decoratedStreamBody := DecorateCachedStreamBody(providerType, responseBody, inputTokens, outputTokens)
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
 				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_body, cached_stream_body, input_tokens, output_tokens, updated_at
@@ -266,7 +267,7 @@ func (s *Store) setCacheEntryByKey(providerName string, providerType config.Prov
 				input_tokens = excluded.input_tokens,
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
-		`, storageKey, statusCode, string(headersJSON), responseBody, inputTokens, outputTokens, now); err != nil {
+		`, storageKey, statusCode, string(headersJSON), decoratedStreamBody, inputTokens, outputTokens, now); err != nil {
 			return false
 		}
 	} else {

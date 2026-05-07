@@ -55,6 +55,8 @@ console.log("hello");
 	if strings.Contains(csp, "'sha256-"+trimmedStyleHash+"'") {
 		t.Fatal("期望样式 hash 按原始内联内容计算，不能使用裁剪后的内容")
 	}
+	mustContain(t, csp, "script-src 'self' https://static.cloudflareinsights.com")
+	mustContain(t, csp, "connect-src 'self' https://cloudflareinsights.com")
 }
 
 func sha256Base64(value string) string {

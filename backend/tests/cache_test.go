@@ -247,3 +247,45 @@ func TestPrepareCachedBodiesBuildsLegalClaudeStream(t *testing.T) {
 		t.Fatalf("期望 Claude 流式缓存回放输出 message_stop，实际是 %s", streamBody)
 	}
 }
+
+func TestDecorateCachedStreamBodyUsesOfficialCachedTokenFields(t *testing.T) {
+	openAIChatStream := cache.DecorateCachedStreamBody(
+		config.OpenAIChat,
+		[]byte("data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":6,\"total_tokens\":10}}\n\ndata: [DONE]\n\n"),
+		4,
+		6,
+	)
+	if !strings.Contains(string(openAIChatStream), `"prompt_tokens_details":{"cached_tokens":10}`) {
+		t.Fatalf("期望 OpenAI Chat 流式缓存命中带 prompt_tokens_details.cached_tokens，实际是 %s", openAIChatStream)
+	}
+
+	responsesStream := cache.DecorateCachedStreamBody(
+		config.OpenAIResponses,
+		[]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5\",\"usage\":{\"input_tokens\":9,\"output_tokens\":4,\"total_tokens\":13}}}\n\ndata: [DONE]\n\n"),
+		9,
+		4,
+	)
+	if !strings.Contains(string(responsesStream), `"input_tokens_details":{"cached_tokens":13}`) {
+		t.Fatalf("期望 Responses 流式缓存命中带 input_tokens_details.cached_tokens，实际是 %s", responsesStream)
+	}
+
+	claudeStream := cache.DecorateCachedStreamBody(
+		config.Claude,
+		[]byte("event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":6}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"),
+		8,
+		6,
+	)
+	if !strings.Contains(string(claudeStream), `"cache_read_input_tokens":14`) {
+		t.Fatalf("期望 Claude 流式缓存命中带 cache_read_input_tokens，实际是 %s", claudeStream)
+	}
+
+	geminiStream := cache.DecorateCachedStreamBody(
+		config.Gemini,
+		[]byte("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello gemini\"}]}}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n"),
+		6,
+		5,
+	)
+	if !strings.Contains(string(geminiStream), `"cachedContentTokenCount":11`) {
+		t.Fatalf("期望 Gemini 流式缓存命中带 cachedContentTokenCount，实际是 %s", geminiStream)
+	}
+}

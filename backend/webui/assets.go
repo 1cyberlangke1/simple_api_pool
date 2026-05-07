@@ -14,7 +14,9 @@ import (
 var inlineScriptPattern = regexp.MustCompile(`(?is)<script(?:\s[^>]*)?>(.*?)</script>`)
 var inlineStylePattern = regexp.MustCompile(`(?is)<style(?:\s[^>]*)?>(.*?)</style>`)
 
-const defaultContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+const cloudflareInsightsScriptSource = "https://static.cloudflareinsights.com"
+const cloudflareInsightsConnectSource = "https://cloudflareinsights.com"
+const defaultContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' " + cloudflareInsightsScriptSource + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 func DefaultContentSecurityPolicy() string {
 	return defaultContentSecurityPolicy
@@ -43,7 +45,7 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 	}
 
 	matches := inlineScriptPattern.FindAllSubmatch(indexHTML, -1)
-	scriptSources := []string{"'self'"}
+	scriptSources := []string{"'self'", cloudflareInsightsScriptSource}
 	for _, match := range matches {
 		if len(match) < 2 {
 			continue
@@ -70,7 +72,7 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 		styleSources = append(styleSources, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
 	}
 
-	return "default-src 'self'; img-src 'self' data:; style-src " + strings.Join(styleSources, " ") + "; script-src " + strings.Join(scriptSources, " ") + "; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", nil
+	return "default-src 'self'; img-src 'self' data:; style-src " + strings.Join(styleSources, " ") + "; script-src " + strings.Join(scriptSources, " ") + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", nil
 }
 
 func ServeIndex(w http.ResponseWriter, r *http.Request, frontendRoot string) {

@@ -3,6 +3,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"simple-api-pool/config"
 )
@@ -38,6 +39,22 @@ func buildCachedStreamBody(providerType config.ProviderType, responseBody []byte
 	stream = append(stream, responseBody...)
 	stream = append(stream, []byte("\n\ndata: [DONE]\n\n")...)
 	return stream
+}
+
+func DecorateCachedStreamBody(providerType config.ProviderType, streamBody []byte, inputTokens, outputTokens int64) []byte {
+	totalTokens := inputTokens + outputTokens
+	switch providerType {
+	case config.OpenAIChat:
+		return decorateOpenAIChatStreamUsage(streamBody, totalTokens)
+	case config.OpenAIResponses:
+		return decorateOpenAIResponsesStreamUsage(streamBody, totalTokens)
+	case config.Claude:
+		return decorateClaudeStreamUsage(streamBody, totalTokens)
+	case config.Gemini:
+		return decorateGeminiStreamUsage(streamBody, totalTokens)
+	default:
+		return append([]byte(nil), streamBody...)
+	}
 }
 
 func decorateCachedResponse(providerType config.ProviderType, responseBody []byte, inputTokens, outputTokens int64) []byte {
@@ -91,6 +108,177 @@ func ensureChildMap(parent map[string]any, key string) map[string]any {
 	child := make(map[string]any)
 	parent[key] = child
 	return child
+}
+
+func decorateOpenAIChatStreamUsage(streamBody []byte, totalTokens int64) []byte {
+	var (
+		chunks       []string
+		lastID       any
+		lastModel    any
+		usageUpdated bool
+	)
+	for _, chunk := range splitSSEChunks(streamBody) {
+		payload, ok := sseChunkPayload(chunk)
+		if ok {
+			if id, exists := payload["id"]; exists {
+				lastID = id
+			}
+			if model, exists := payload["model"]; exists {
+				lastModel = model
+			}
+			if usage, exists := payload["usage"].(map[string]any); exists {
+				usage["total_tokens"] = totalTokens
+				promptDetails := ensureChildMap(usage, "prompt_tokens_details")
+				promptDetails["cached_tokens"] = totalTokens
+				chunk = encodeDataOnlySSEChunk(payload)
+				usageUpdated = true
+			}
+		}
+		if isDoneSSEChunk(chunk) && !usageUpdated && lastID != nil {
+			chunks = append(chunks, buildDataOnlySSEChunk(map[string]any{
+				"id":      lastID,
+				"object":  "chat.completion.chunk",
+				"model":   lastModel,
+				"choices": []map[string]any{},
+				"usage": map[string]any{
+					"total_tokens": totalTokens,
+					"prompt_tokens_details": map[string]any{
+						"cached_tokens": totalTokens,
+					},
+				},
+			}))
+			usageUpdated = true
+		}
+		chunks = append(chunks, chunk)
+	}
+	return []byte(strings.Join(chunks, ""))
+}
+
+func decorateOpenAIResponsesStreamUsage(streamBody []byte, totalTokens int64) []byte {
+	var chunks []string
+	for _, chunk := range splitSSEChunks(streamBody) {
+		payload, ok := sseChunkPayload(chunk)
+		if ok {
+			if chunkType, _ := payload["type"].(string); chunkType == "response.completed" {
+				response, _ := payload["response"].(map[string]any)
+				usage := ensureMap(response, "usage")
+				usage["total_tokens"] = totalTokens
+				inputDetails := ensureChildMap(usage, "input_tokens_details")
+				inputDetails["cached_tokens"] = totalTokens
+				payload["response"] = response
+				chunk = encodeDataOnlySSEChunk(payload)
+			}
+		}
+		chunks = append(chunks, chunk)
+	}
+	return []byte(strings.Join(chunks, ""))
+}
+
+func decorateClaudeStreamUsage(streamBody []byte, totalTokens int64) []byte {
+	var (
+		chunks       []string
+		usageUpdated bool
+	)
+	for _, chunk := range splitSSEChunks(streamBody) {
+		payload, ok := sseChunkPayload(chunk)
+		if ok {
+			if usage, exists := payload["usage"].(map[string]any); exists {
+				usage["cache_read_input_tokens"] = totalTokens
+				payload["usage"] = usage
+				chunk = replaceSSEDataChunk(chunk, payload)
+				usageUpdated = true
+			}
+			if chunkType, _ := payload["type"].(string); chunkType == "message_stop" && !usageUpdated {
+				chunks = append(chunks, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"cache_read_input_tokens\":"+fmt.Sprintf("%d", totalTokens)+"}}\n\n")
+				usageUpdated = true
+			}
+		}
+		chunks = append(chunks, chunk)
+	}
+	return []byte(strings.Join(chunks, ""))
+}
+
+func decorateGeminiStreamUsage(streamBody []byte, totalTokens int64) []byte {
+	var chunks []string
+	for _, chunk := range splitSSEChunks(streamBody) {
+		payload, ok := sseChunkPayload(chunk)
+		if ok {
+			usage := ensureMap(payload, "usageMetadata")
+			usage["totalTokenCount"] = totalTokens
+			usage["cachedContentTokenCount"] = totalTokens
+			payload["usageMetadata"] = usage
+			chunk = encodeDataOnlySSEChunk(payload)
+		}
+		chunks = append(chunks, chunk)
+	}
+	return []byte(strings.Join(chunks, ""))
+}
+
+func splitSSEChunks(streamBody []byte) []string {
+	rawChunks := strings.SplitAfter(string(streamBody), "\n\n")
+	chunks := make([]string, 0, len(rawChunks))
+	for _, chunk := range rawChunks {
+		if chunk == "" {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	return chunks
+}
+
+func sseChunkPayload(chunk string) (map[string]any, bool) {
+	lines := strings.Split(strings.TrimSuffix(chunk, "\n\n"), "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		rawJSON := strings.TrimPrefix(line, "data: ")
+		if rawJSON == "[DONE]" {
+			return nil, false
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(rawJSON), &payload); err != nil {
+			return nil, false
+		}
+		return payload, true
+	}
+	return nil, false
+}
+
+func encodeDataOnlySSEChunk(payload map[string]any) string {
+	return buildDataOnlySSEChunk(payload)
+}
+
+func buildDataOnlySSEChunk(payload map[string]any) string {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return "data: " + string(encoded) + "\n\n"
+}
+
+func replaceSSEDataChunk(chunk string, payload map[string]any) string {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return chunk
+	}
+	lines := strings.Split(strings.TrimSuffix(chunk, "\n\n"), "\n")
+	for index, line := range lines {
+		if strings.HasPrefix(line, "data: ") {
+			lines[index] = "data: " + string(encoded)
+			break
+		}
+	}
+	return strings.Join(lines, "\n") + "\n\n"
+}
+
+func isDoneSSEChunk(chunk string) bool {
+	for _, line := range strings.Split(strings.TrimSuffix(chunk, "\n\n"), "\n") {
+		if strings.TrimSpace(line) == "data: [DONE]" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildOpenAIChatCachedStream(responseBody []byte) ([]byte, bool) {

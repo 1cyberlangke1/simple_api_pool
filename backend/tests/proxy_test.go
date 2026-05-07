@@ -450,6 +450,9 @@ func TestSecondStreamRequestHitsStoredStreamCache(t *testing.T) {
 		!strings.Contains(secondRec.Body.String(), "\"delta\":{\"role\":\"assistant\",\"content\":\"cached hello\"}") {
 		t.Fatalf("期望缓存命中后在 delta.content 中返回正文，实际是 %s", secondRec.Body.String())
 	}
+	if !strings.Contains(secondRec.Body.String(), "\"prompt_tokens_details\":{\"cached_tokens\":10}") {
+		t.Fatalf("期望缓存命中后返回本地缓存的 cached token 字段，实际是 %s", secondRec.Body.String())
+	}
 	if !strings.Contains(secondRec.Body.String(), "data: [DONE]") {
 		t.Fatalf("期望缓存命中后返回 SSE 结束标记，实际是 %s", secondRec.Body.String())
 	}

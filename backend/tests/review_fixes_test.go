@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -267,5 +268,80 @@ func TestProxyPassesThroughOversizedNonStreamUpstreamResponseWithoutCaching(t *t
 
 	if upstreamCalls != 2 {
 		t.Fatalf("期望超大非流式响应不进入缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestBrokenStreamResponseIsNotCachedAsCompleteResponse(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("期望测试服务器支持 Hijacker")
+		}
+		conn, rw, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatalf("劫持连接失败: %v", err)
+		}
+		defer conn.Close()
+
+		event := "data: {\"id\":\"partial\"}\n\n"
+		_, _ = rw.WriteString("HTTP/1.1 200 OK\r\n")
+		_, _ = rw.WriteString("Content-Type: text/event-stream\r\n")
+		_, _ = rw.WriteString("Transfer-Encoding: chunked\r\n")
+		_, _ = rw.WriteString("\r\n")
+		_, _ = rw.WriteString(fmt.Sprintf("%x\r\n%s\r\n", len(event), event))
+		_ = rw.Flush()
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
+		t.Fatalf("保存全局配置失败: %v", err)
+	}
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys:            []config.Key{{Value: "upstream-key"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
+
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		rec := httptest.NewRecorder()
+
+		proxyHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次损坏流响应期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"id":"partial"`) {
+			t.Fatalf("第 %d 次损坏流响应期望透传已收到的上游片段，实际是 %s", i+1, rec.Body.String())
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望损坏流响应不写入缓存，第二次继续访问上游，实际上游调用次数是 %d", upstreamCalls)
+	}
+
+	providerStats := statsManager.Snapshot()["openai"]
+	if providerStats.SuccessCount != 0 {
+		t.Fatalf("期望损坏流响应不计为成功，实际 success_count 是 %d", providerStats.SuccessCount)
+	}
+	if providerStats.ErrorCount != 2 {
+		t.Fatalf("期望损坏流响应计入错误两次，实际 error_count 是 %d", providerStats.ErrorCount)
 	}
 }

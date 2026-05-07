@@ -31,6 +31,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	buf := *bufferPtr
 	defer streamCopyBufferPool.Put(bufferPtr)
 	firstByteRecorded := false
+	var streamErr error
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
@@ -40,16 +41,28 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 				firstByteRecorded = true
 			}
 			collected.Write(buf[:n])
-			_, _ = w.Write(buf[:n])
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				streamErr = writeErr
+				break
+			}
 			flusher.Flush()
 		}
 		if err != nil {
+			if err != io.EOF {
+				streamErr = err
+			}
 			break
 		}
 	}
 
 	logFields.Status = resp.StatusCode
 	logFields.ResponseBytes = collected.Len()
+	if streamErr != nil {
+		logFields.Error = "流式透传中断: " + streamErr.Error()
+		h.stats.RecordError(provider, http.StatusBadGateway)
+		return
+	}
+
 	usage := token.ExtractFromStream(string(providerType), collected.Bytes(), h.cfg.TokenEstimationEnabled())
 	h.stats.RecordSuccess(provider, usage.InputTokens, usage.OutputTokens)
 	h.stats.RecordCacheTokens(provider, usage.CacheTokens)
