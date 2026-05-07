@@ -27,60 +27,59 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin")
 	path = strings.TrimPrefix(path, "/")
 
-	w.Header().Set("Content-Type", "application/json")
-
 	switch {
 	case r.Method == http.MethodPost && path == "login":
 		ah.handleLogin(w, r)
 	case r.Method == http.MethodGet && path == "overview":
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleOverview(w, r)
 	case path == "providers":
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleProviders(w, r)
 	case strings.HasPrefix(path, "providers/") && strings.HasSuffix(path, "/keys"):
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleProviderKeys(w, r)
 	case strings.HasPrefix(path, "providers/") && strings.HasSuffix(path, "/cache"):
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleProviderCache(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "providers/") && strings.Count(path, "/") >= 2:
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleProviderKeys(w, r)
 	case strings.HasPrefix(path, "providers/"):
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleSingleProvider(w, r)
 	case path == "config":
-		if !auth.CheckAdminKey(r, ah.cfg) {
-			writeJSONError(w, http.StatusUnauthorized, "未授权")
+		if !ah.authorizeAdminRequest(w, r) {
 			return
 		}
 		ah.handleConfig(w, r)
 	default:
-		writeJSONError(w, http.StatusNotFound, "接口不存在")
+		writeErrorResponse(w, http.StatusNotFound, "接口不存在")
 	}
 }
 
 func (ah *AdminHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
-	_ = json.NewEncoder(w).Encode(buildAdminOverviewResponse(ah.cfg, ah.stats))
+	writeOverviewResponse(w, r, newAdminOverviewResponse(ah.cfg, ah.stats))
+}
+
+func (ah *AdminHandler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) bool {
+	if auth.CheckAdminKey(r, ah.cfg) {
+		return true
+	}
+	writeErrorResponse(w, http.StatusUnauthorized, "未授权")
+	return false
 }
 
 func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -88,38 +87,37 @@ func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		AdminKey string `json:"admin_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "请求体无效")
+		writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 		return
 	}
 	if body.AdminKey == "" || body.AdminKey != ah.cfg.AdminKey() {
-		writeJSONError(w, http.StatusUnauthorized, "管理员密钥错误")
+		writeErrorResponse(w, http.StatusUnauthorized, "管理员密钥错误")
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (ah *AdminHandler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		json.NewEncoder(w).Encode(ah.cfg.Providers())
+		writeJSONResponse(w, http.StatusOK, ah.cfg.Providers())
 	case http.MethodPost:
 		var p config.Provider
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "请求体无效")
+			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
 		if err := ah.cfg.SaveProvider(p); err != nil {
 			if errors.Is(err, os.ErrInvalid) {
-				writeJSONError(w, http.StatusBadRequest, "提供商名称非法或为保留名称")
+				writeErrorResponse(w, http.StatusBadRequest, "提供商名称非法或为保留名称")
 				return
 			}
-			writeJSONError(w, http.StatusBadRequest, "保存提供商失败")
+			writeErrorResponse(w, http.StatusBadRequest, "保存提供商失败")
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(p)
+		writeJSONResponse(w, http.StatusCreated, p)
 	default:
-		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
 }
 
@@ -130,17 +128,17 @@ func (ah *AdminHandler) handleSingleProvider(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodDelete:
 		if p == nil {
-			writeJSONError(w, http.StatusNotFound, "提供商不存在")
+			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
 		ah.cfg.DeleteProvider(name)
-		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		if p == nil {
-			writeJSONError(w, http.StatusNotFound, "提供商不存在")
+			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
-		json.NewEncoder(w).Encode(p)
+		writeJSONResponse(w, http.StatusOK, p)
 	}
 }
 
@@ -148,7 +146,7 @@ func (ah *AdminHandler) handleProviderKeys(w http.ResponseWriter, r *http.Reques
 	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/providers/")
 	parts := strings.SplitN(rest, "/", 2)
 	if len(parts) < 1 {
-		writeJSONError(w, http.StatusBadRequest, "请求路径无效")
+		writeErrorResponse(w, http.StatusBadRequest, "请求路径无效")
 		return
 	}
 	name := parts[0]
@@ -159,35 +157,35 @@ func (ah *AdminHandler) handleProviderKeys(w http.ResponseWriter, r *http.Reques
 			Keys string `json:"keys"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "请求体无效")
+			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
-		keys := parseKeyList(body.Keys)
+		keys := parseImportedKeys(body.Keys)
 		if err := ah.cfg.AddKeys(name, keys); err != nil {
-			writeJSONError(w, http.StatusNotFound, "提供商不存在")
+			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
 		p, _ := ah.cfg.Provider(name)
-		json.NewEncoder(w).Encode(p.Keys)
+		writeJSONResponse(w, http.StatusOK, p.Keys)
 	case http.MethodDelete:
 		if len(parts) < 2 {
-			writeJSONError(w, http.StatusBadRequest, "缺少要删除的密钥")
+			writeErrorResponse(w, http.StatusBadRequest, "缺少要删除的密钥")
 			return
 		}
 		keyValue := parts[1]
 		if err := ah.cfg.DeleteKey(name, keyValue); err != nil {
-			writeJSONError(w, http.StatusNotFound, "指定密钥不存在")
+			writeErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
-		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
 }
 
 func (ah *AdminHandler) handleProviderCache(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 		return
 	}
 
@@ -195,30 +193,30 @@ func (ah *AdminHandler) handleProviderCache(w http.ResponseWriter, r *http.Reque
 	name := strings.TrimSuffix(rest, "/cache")
 	name = strings.TrimSuffix(name, "/")
 	if name == "" {
-		writeJSONError(w, http.StatusBadRequest, "请求路径无效")
+		writeErrorResponse(w, http.StatusBadRequest, "请求路径无效")
 		return
 	}
 
 	if provider, _ := ah.cfg.Provider(name); provider == nil {
-		writeJSONError(w, http.StatusNotFound, "提供商不存在")
+		writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
 	if ah.cache == nil {
-		writeJSONError(w, http.StatusInternalServerError, "缓存服务不可用")
+		writeErrorResponse(w, http.StatusInternalServerError, "缓存服务不可用")
 		return
 	}
 	if err := ah.cache.ClearProvider(name); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "清空缓存失败")
+		writeErrorResponse(w, http.StatusInternalServerError, "清空缓存失败")
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
+	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		json.NewEncoder(w).Encode(ah.cfg.GlobalConfig())
+		writeJSONResponse(w, http.StatusOK, ah.cfg.GlobalConfig())
 	case http.MethodPut:
 		var body struct {
 			AdminKey               string   `json:"admin_key"`
@@ -226,17 +224,17 @@ func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			ClientKeys             []string `json:"client_keys"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "请求体无效")
+			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
 		ah.cfg.UpdateGlobalConfig(body.AdminKey, body.TokenEstimationEnabled, body.ClientKeys)
-		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "updated"})
 	default:
-		writeJSONError(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
 }
 
-func parseKeyList(raw string) []string {
+func parseImportedKeys(raw string) []string {
 	raw = strings.ReplaceAll(raw, "\n", ",")
 	parts := strings.Split(raw, ",")
 	var out []string
@@ -247,10 +245,4 @@ func parseKeyList(raw string) []string {
 		}
 	}
 	return out
-}
-
-func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

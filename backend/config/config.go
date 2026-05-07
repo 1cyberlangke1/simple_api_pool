@@ -121,17 +121,6 @@ func (c *Config) Provider(name string) (*Provider, int) {
 	return nil, -1
 }
 
-func (c *Config) ProviderPtr(name string) *Key {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for i := range c.state.Providers {
-		if c.state.Providers[i].Name == name {
-			return &c.state.Providers[i].Keys[len(c.state.Providers[i].Keys)-1] // dummy, real access via method
-		}
-	}
-	return nil
-}
-
 func (c *Config) SaveProvider(p Provider) error {
 	if ReservedNames[p.Name] {
 		return os.ErrInvalid

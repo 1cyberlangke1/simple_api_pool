@@ -59,10 +59,12 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="admin-workspace"`)
 		mustContain(t, body, `id="provider-list"`)
 		mustContain(t, body, `id="recent-log-list"`)
+		mustContain(t, body, `class="list provider-catalog"`)
 		mustContain(t, body, `const API_BASE = "/api"`)
-		mustContain(t, body, `request("/status/overview")`)
 		mustContain(t, body, `request("/admin/login"`)
-		mustContain(t, body, `request("/admin/overview", {}, true)`)
+		mustContain(t, body, `requestOverview("/admin/overview", "admin", true)`)
+		mustContain(t, body, `requestOverview("/status/overview", "status")`)
+		mustContain(t, body, `If-None-Match`)
 		mustContain(t, body, `localStorage.getItem(STORAGE_KEY)`)
 		mustContain(t, body, `provider.tagAvailableKeys`)
 		mustContain(t, body, `data-action="clear-cache"`)
@@ -77,8 +79,14 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(indexHTML), `const STATUS_POLL_INTERVAL_MS =`) {
 		t.Fatal("期望前端定义状态轮询间隔")
 	}
+	if !strings.Contains(string(indexHTML), `overviewEtags`) {
+		t.Fatal("期望前端维护总览 ETag 状态")
+	}
 	if !strings.Contains(string(indexHTML), `function startOverviewPolling()`) {
 		t.Fatal("期望前端具备总览轮询逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function requestOverview(`) {
+		t.Fatal("期望前端具备总览协商缓存请求逻辑")
 	}
 	if !strings.Contains(string(indexHTML), `await loadStatusOverview();`) || !strings.Contains(string(indexHTML), `await loadAdminOverview();`) {
 		t.Fatal("期望前端使用总览接口刷新状态和管理数据")

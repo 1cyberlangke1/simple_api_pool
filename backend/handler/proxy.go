@@ -55,7 +55,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !auth.CheckClientKey(r, h.cfg) {
 		logFields.Status = http.StatusUnauthorized
 		logFields.Error = "未授权"
-		writeJSONError(w, http.StatusUnauthorized, "未授权")
+		writeErrorResponse(w, http.StatusUnauthorized, "未授权")
 		return
 	}
 	h.sema <- struct{}{}
@@ -67,7 +67,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if parts.provider == "" {
 		logFields.Status = http.StatusBadRequest
 		logFields.Error = "未指定提供商"
-		writeJSONError(w, http.StatusBadRequest, "未指定提供商")
+		writeErrorResponse(w, http.StatusBadRequest, "未指定提供商")
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		logFields.Status = http.StatusNotFound
 		logFields.Error = "提供商不存在"
-		writeJSONError(w, http.StatusNotFound, "提供商不存在")
+		writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
 	logFields.ProviderType = string(p.Type)
@@ -87,7 +87,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if targetURL == "" {
 		logFields.Status = http.StatusInternalServerError
 		logFields.Error = "上游地址无效"
-		writeJSONError(w, http.StatusInternalServerError, "上游地址无效")
+		writeErrorResponse(w, http.StatusInternalServerError, "上游地址无效")
 		return
 	}
 	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(targetURL)
@@ -96,7 +96,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logFields.Status = http.StatusBadRequest
 		logFields.Error = "读取请求体失败"
-		writeJSONError(w, http.StatusBadRequest, "读取请求体失败")
+		writeErrorResponse(w, http.StatusBadRequest, "读取请求体失败")
 		return
 	}
 	r.Body.Close()
@@ -138,7 +138,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.stats.RecordError(parts.provider, http.StatusServiceUnavailable)
 		logFields.Status = http.StatusServiceUnavailable
 		logFields.Error = "没有可用的上游密钥"
-		writeJSONError(w, http.StatusServiceUnavailable, "没有可用的上游密钥")
+		writeErrorResponse(w, http.StatusServiceUnavailable, "没有可用的上游密钥")
 		return
 	}
 	logFields.KeyRef = applog.MaskSecret(upstreamKey)
@@ -148,7 +148,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
 		logFields.Status = http.StatusInternalServerError
 		logFields.Error = "创建上游请求失败"
-		writeJSONError(w, http.StatusInternalServerError, "创建上游请求失败")
+		writeErrorResponse(w, http.StatusInternalServerError, "创建上游请求失败")
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.keyring.RecordFailure(parts.provider, upstreamKey)
 		logFields.Status = http.StatusBadGateway
 		logFields.Error = fmt.Sprintf("上游请求失败: %v", err)
-		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("上游请求失败: %v", err))
+		writeErrorResponse(w, http.StatusBadGateway, fmt.Sprintf("上游请求失败: %v", err))
 		return
 	}
 	defer resp.Body.Close()
@@ -194,7 +194,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
 		logFields.Status = http.StatusInternalServerError
 		logFields.Error = "读取上游响应失败"
-		writeJSONError(w, http.StatusInternalServerError, "读取上游响应失败")
+		writeErrorResponse(w, http.StatusInternalServerError, "读取上游响应失败")
 		return
 	}
 	logFields.Status = resp.StatusCode
@@ -222,7 +222,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
 		logFields.Error = "当前响应不支持流式转发"
-		writeJSONError(w, http.StatusInternalServerError, "当前响应不支持流式转发")
+		writeErrorResponse(w, http.StatusInternalServerError, "当前响应不支持流式转发")
 		return
 	}
 

@@ -33,33 +33,33 @@ type AdminOverviewResponse struct {
 	RecentLogs    []applog.Entry            `json:"recent_logs"`
 }
 
-func buildStatusOverviewResponse(cfg *config.Config, statsManager *stats.Manager) StatusOverviewResponse {
+func newStatusOverviewResponse(cfg *config.Config, statsManager *stats.Manager) StatusOverviewResponse {
 	return StatusOverviewResponse{
-		Health:        buildServiceHealthSnapshot(),
-		ProviderStats: buildProviderStatusSnapshots(cfg, statsManager),
+		Health:        newServiceHealthSnapshot(),
+		ProviderStats: collectProviderStatusSnapshots(cfg, statsManager),
 	}
 }
 
-func buildAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) AdminOverviewResponse {
+func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) AdminOverviewResponse {
 	globalConfig := cfg.GlobalConfig()
 	return AdminOverviewResponse{
-		Health: buildServiceHealthSnapshot(),
+		Health: newServiceHealthSnapshot(),
 		GlobalConfig: GlobalConfigSnapshot{
 			AdminKey:               globalConfig.AdminKey,
 			TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
 			ClientKeys:             append([]string(nil), globalConfig.ClientKeys...),
 		},
 		Providers:     cfg.Providers(),
-		ProviderStats: buildProviderStatusSnapshots(cfg, statsManager),
+		ProviderStats: collectProviderStatusSnapshots(cfg, statsManager),
 		RecentLogs:    applog.RecentEntries(adminRecentLogLimit),
 	}
 }
 
-func buildServiceHealthSnapshot() ServiceHealthSnapshot {
+func newServiceHealthSnapshot() ServiceHealthSnapshot {
 	return ServiceHealthSnapshot{Status: "ok"}
 }
 
-func buildProviderStatusSnapshots(cfg *config.Config, statsManager *stats.Manager) map[string]StatusSnapshot {
+func collectProviderStatusSnapshots(cfg *config.Config, statsManager *stats.Manager) map[string]StatusSnapshot {
 	providerStats := make(map[string]StatusSnapshot)
 	for providerName, statSnapshot := range statsManager.Snapshot() {
 		providerStats[providerName] = StatusSnapshot{

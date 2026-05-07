@@ -1342,3 +1342,42 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 		t.Fatalf("期望状态总览返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
 	}
 }
+
+func TestStatusOverviewReturnsNotModifiedWhenEntityTagMatches(t *testing.T) {
+	cfg := newTestConfig(t)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "gemini",
+		Type: config.Gemini,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	statusHandler := handler.NewStatusHandler(cfg, statsManager)
+
+	firstRequest := httptest.NewRequest(http.MethodGet, "/api/status/overview", nil)
+	firstRecorder := httptest.NewRecorder()
+	statusHandler.ServeHTTP(firstRecorder, firstRequest)
+
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("第一次请求期望状态码 %d，实际是 %d", http.StatusOK, firstRecorder.Code)
+	}
+
+	entityTag := firstRecorder.Header().Get("ETag")
+	if entityTag == "" {
+		t.Fatal("期望状态总览返回 ETag")
+	}
+
+	secondRequest := httptest.NewRequest(http.MethodGet, "/api/status/overview", nil)
+	secondRequest.Header.Set("If-None-Match", entityTag)
+	secondRecorder := httptest.NewRecorder()
+	statusHandler.ServeHTTP(secondRecorder, secondRequest)
+
+	if secondRecorder.Code != http.StatusNotModified {
+		t.Fatalf("命中 ETag 后期望状态码 %d，实际是 %d，响应体: %s", http.StatusNotModified, secondRecorder.Code, secondRecorder.Body.String())
+	}
+	if secondRecorder.Body.Len() != 0 {
+		t.Fatalf("命中 ETag 后期望无响应体，实际是 %q", secondRecorder.Body.String())
+	}
+}

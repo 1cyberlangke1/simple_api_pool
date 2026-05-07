@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"simple-api-pool/config"
@@ -30,11 +29,10 @@ func NewStatusHandler(cfg *config.Config, sm *stats.Manager) *StatusHandler {
 }
 
 func (sh *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	if r.URL.Path == "/api/status/overview" {
-		_ = json.NewEncoder(w).Encode(buildStatusOverviewResponse(sh.cfg, sh.stats))
+		writeOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(buildProviderStatusSnapshots(sh.cfg, sh.stats))
+	writeJSONResponse(w, http.StatusOK, collectProviderStatusSnapshots(sh.cfg, sh.stats))
 }

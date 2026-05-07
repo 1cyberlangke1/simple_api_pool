@@ -59,11 +59,6 @@ func TestConfigSupportsDeleteProviderUpdateKeyStateAndReadGlobalConfig(t *testin
 		t.Fatalf("期望密钥状态被更新，实际是 %+v", provider.Keys[1])
 	}
 
-	keyPtr := cfg.ProviderPtr("openai")
-	if keyPtr == nil || keyPtr.Value != "k2" {
-		t.Fatalf("期望 ProviderPtr 返回最后一个密钥，实际是 %+v", keyPtr)
-	}
-
 	cfg.DeleteProvider("openai")
 	deleted, idx := cfg.Provider("openai")
 	if deleted != nil || idx != -1 {

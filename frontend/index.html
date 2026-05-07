@@ -315,29 +315,36 @@
     }
 
     .admin-dashboard-grid {
-      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
-      align-items: start;
+      grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+      align-items: stretch;
       margin-top: 20px;
+      min-height: clamp(700px, 78vh, 1080px);
     }
 
     .admin-sidebar {
       position: sticky;
       top: 20px;
+      align-self: start;
     }
 
     .admin-workspace-column {
       display: grid;
       gap: 18px;
       min-width: 0;
+      min-height: 0;
+      grid-template-rows: minmax(0, 1fr) minmax(260px, 340px);
     }
 
     .scroll-panel {
       min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
     }
 
     .scroll-panel-body {
       min-height: 0;
-      max-height: min(62vh, 880px);
+      height: 100%;
       overflow-y: auto;
       padding-right: 6px;
     }
@@ -350,6 +357,7 @@
       padding: 22px;
       box-shadow: var(--shadow-sm);
       backdrop-filter: blur(8px);
+      min-width: 0;
     }
 
     .panel-header {
@@ -456,12 +464,18 @@
     /* Lists */
     .list { display: grid; gap: 14px; }
 
+    .provider-catalog {
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      align-items: start;
+    }
+
     .provider-card {
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
       padding: 18px;
       background: var(--panel-strong);
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      min-width: 0;
     }
 
     .provider-card:hover {
@@ -479,7 +493,18 @@
       gap: 12px;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 8px;
+    }
+
+    .provider-body-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+      align-items: start;
+    }
+
+    .provider-config-column,
+    .provider-key-column {
+      min-width: 0;
     }
 
     .provider-name {
@@ -643,7 +668,7 @@
       display: grid;
       gap: 8px;
       margin-top: 12px;
-      max-height: 220px;
+      max-height: min(30vh, 220px);
       overflow-y: auto;
       padding-right: 4px;
     }
@@ -670,7 +695,8 @@
     .recent-log-list {
       display: grid;
       gap: 10px;
-      max-height: 300px;
+      min-height: 0;
+      height: 100%;
       overflow-y: auto;
       padding-right: 6px;
     }
@@ -777,6 +803,9 @@
       .content-grid { grid-template-columns: 1fr; }
       .admin-dashboard-grid { grid-template-columns: 1fr; }
       .admin-sidebar { position: static; }
+      .admin-workspace-column { grid-template-rows: auto auto; }
+      .provider-catalog { grid-template-columns: 1fr; }
+      .provider-body-grid { grid-template-columns: 1fr; }
       .legend-grid { grid-template-columns: 1fr; }
     }
 
@@ -983,19 +1012,21 @@
           </div>
           <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
           <div id="provider-list-panel-body" class="scroll-panel-body">
-            <div id="provider-list" class="list">
+            <div id="provider-list" class="list provider-catalog">
               <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
             </div>
           </div>
         </article>
 
-        <article class="panel">
+        <article class="panel scroll-panel">
           <div class="panel-header">
             <h2 data-i18n="admin.logTitle">最近日志</h2>
           </div>
           <div class="panel-subtitle" data-i18n="admin.logSub">仅展示最近固定条数，便于快速排查代理与鉴权问题。</div>
-          <div id="recent-log-list" class="recent-log-list">
-            <div class="empty" data-i18n="admin.logEmpty">暂无日志</div>
+          <div class="scroll-panel-body">
+            <div id="recent-log-list" class="recent-log-list">
+              <div class="empty" data-i18n="admin.logEmpty">暂无日志</div>
+            </div>
           </div>
         </article>
       </div>
@@ -1276,6 +1307,10 @@
       providers: [],
       stats: {},
       recentLogs: [],
+      overviewEtags: {
+        status: "",
+        admin: ""
+      },
       lang: detectInitialLang(),
       theme: detectInitialTheme(),
       themeManual: localStorage.getItem(THEME_KEY) !== null
@@ -1470,6 +1505,21 @@
       return fetch(`${API_BASE}${path}`, { ...options, headers });
     }
 
+    async function requestOverview(path, overviewScope, requireAdmin = false) {
+      const headers = new Headers();
+      const previousTag = state.overviewEtags[overviewScope] || "";
+      if (previousTag) {
+        headers.set("If-None-Match", previousTag);
+      }
+
+      const response = await request(path, { headers }, requireAdmin);
+      const currentTag = response.headers.get("ETag");
+      if (currentTag) {
+        state.overviewEtags[overviewScope] = currentTag;
+      }
+      return response;
+    }
+
     function applyHealthSnapshot(health) {
       const statusText = health && health.status ? health.status : "ok";
       const healthy = statusText === "ok";
@@ -1593,7 +1643,10 @@
 
     async function loadStatusOverview() {
       try {
-        const response = await request("/status/overview");
+        const response = await requestOverview("/status/overview", "status");
+        if (response.status === 304) {
+          return;
+        }
         if (!response.ok) {
           throw new Error(await parseErrorMessage(response, t("error.readStatus")));
         }
@@ -1634,6 +1687,7 @@
         throw new Error(await parseErrorMessage(response, t("error.login")));
       }
       setStoredAdminKey(adminKey);
+      state.overviewEtags.admin = "";
       refs.loginKey.value = adminKey;
       refs.logoutButton.classList.remove("hidden");
       setMessage(refs.loginStatus, t("admin.loginSuccess"), "ok");
@@ -1641,6 +1695,7 @@
 
     async function loadAdminOverview() {
       if (!state.adminKey) {
+        state.overviewEtags.admin = "";
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
@@ -1651,15 +1706,21 @@
       refs.loginKey.value = state.adminKey;
       refs.logoutButton.classList.remove("hidden");
 
-      const response = await request("/admin/overview", {}, true);
+      const response = await requestOverview("/admin/overview", "admin", true);
 
       if (response.status === 401) {
         setStoredAdminKey("");
+        state.overviewEtags.admin = "";
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
         renderRecentLogs([]);
         setMessage(refs.loginStatus, t("admin.invalidKey"), "error");
+        return;
+      }
+
+      if (response.status === 304) {
+        refs.adminWorkspace.classList.remove("hidden");
         return;
       }
 
@@ -1749,72 +1810,76 @@
 
             <hr class="divider">
 
-            <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
-              <div class="form-grid">
-                <label>
-                  ${escapeHTML(t("provider.name"))}
-                  <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
-                </label>
-                <label>
-                  ${escapeHTML(t("provider.type"))}
-                  <select name="type">${providerTypeOptions(provider.type)}</select>
-                </label>
+            <div class="provider-body-grid">
+              <div class="provider-config-column">
+                <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
+                  <div class="form-grid">
+                    <label>
+                      ${escapeHTML(t("provider.name"))}
+                      <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
+                    </label>
+                    <label>
+                      ${escapeHTML(t("provider.type"))}
+                      <select name="type">${providerTypeOptions(provider.type)}</select>
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label>
+                      ${escapeHTML(t("provider.baseUrl"))}
+                      <input name="base_url" type="text" value="${escapeHTML(provider.base_url || "")}">
+                    </label>
+                    <label>
+                      ${escapeHTML(t("provider.strategy"))}
+                      <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
+                    </label>
+                  </div>
+                  <div class="form-grid three">
+                    <label>
+                      ${escapeHTML(t("provider.failThreshold"))}
+                      <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
+                    </label>
+                    <label>
+                      ${escapeHTML(t("provider.minDisable"))}
+                      <input name="min_disable_secs" type="number" min="1" value="${Number(provider.min_disable_secs || 30)}">
+                    </label>
+                    <label>
+                      ${escapeHTML(t("provider.maxDisable"))}
+                      <input name="max_disable_secs" type="number" min="1" value="${Number(provider.max_disable_secs || 3600)}">
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label class="checkbox">
+                      <input name="cache_enabled" type="checkbox" ${provider.cache_enabled ? "checked" : ""}>
+                      <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
+                    </label>
+                    <label>
+                      ${escapeHTML(t("provider.cacheMax"))}
+                      <input name="cache_max_entries" type="number" min="1" value="${Number(provider.cache_max_entries || 1000)}">
+                    </label>
+                  </div>
+                  <div class="actions">
+                    <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+                    <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
+                  </div>
+                  <div class="inline-status" data-role="provider-status"></div>
+                </form>
               </div>
-              <div class="form-grid">
-                <label>
-                  ${escapeHTML(t("provider.baseUrl"))}
-                  <input name="base_url" type="text" value="${escapeHTML(provider.base_url || "")}">
-                </label>
-                <label>
-                  ${escapeHTML(t("provider.strategy"))}
-                  <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
-                </label>
-              </div>
-              <div class="form-grid three">
-                <label>
-                  ${escapeHTML(t("provider.failThreshold"))}
-                  <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
-                </label>
-                <label>
-                  ${escapeHTML(t("provider.minDisable"))}
-                  <input name="min_disable_secs" type="number" min="1" value="${Number(provider.min_disable_secs || 30)}">
-                </label>
-                <label>
-                  ${escapeHTML(t("provider.maxDisable"))}
-                  <input name="max_disable_secs" type="number" min="1" value="${Number(provider.max_disable_secs || 3600)}">
-                </label>
-              </div>
-              <div class="form-grid">
-                <label class="checkbox">
-                  <input name="cache_enabled" type="checkbox" ${provider.cache_enabled ? "checked" : ""}>
-                  <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
-                </label>
-                <label>
-                  ${escapeHTML(t("provider.cacheMax"))}
-                  <input name="cache_max_entries" type="number" min="1" value="${Number(provider.cache_max_entries || 1000)}">
-                </label>
-              </div>
-              <div class="actions">
-                <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
-                <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
-              </div>
-              <div class="inline-status" data-role="provider-status"></div>
-            </form>
 
-            <hr class="divider">
-
-            <h3>${escapeHTML(t("provider.upstreamKeys"))}</h3>
-            <form class="provider-keys-form" data-provider="${escapeHTML(provider.name)}">
-              <label>
-                ${escapeHTML(t("provider.batchImport"))}
-                <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}"></textarea>
-              </label>
-              <div class="actions">
-                <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+              <div class="provider-key-column">
+                <h3>${escapeHTML(t("provider.upstreamKeys"))}</h3>
+                <form class="provider-keys-form" data-provider="${escapeHTML(provider.name)}">
+                  <label>
+                    ${escapeHTML(t("provider.batchImport"))}
+                    <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}"></textarea>
+                  </label>
+                  <div class="actions">
+                    <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+                  </div>
+                  <div class="inline-status" data-role="keys-status"></div>
+                </form>
+                ${keyHTML}
               </div>
-              <div class="inline-status" data-role="keys-status"></div>
-            </form>
-            ${keyHTML}
+            </div>
           </article>
         `;
       }).join("");
@@ -1989,6 +2054,7 @@
 
     refs.logoutButton.addEventListener("click", () => {
       setStoredAdminKey("");
+      state.overviewEtags.admin = "";
       refs.loginKey.value = "";
       refs.adminWorkspace.classList.add("hidden");
       refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.loggedOut"))}</div>`;

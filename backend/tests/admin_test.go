@@ -261,6 +261,48 @@ func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
 	}
 }
 
+func TestAdminOverviewReturnsNotModifiedWhenEntityTagMatches(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", true, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	handlerInstance := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+
+	firstRequest := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	firstRequest.Header.Set("Authorization", "Bearer secret-admin")
+	firstRecorder := httptest.NewRecorder()
+	handlerInstance.ServeHTTP(firstRecorder, firstRequest)
+
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("第一次请求期望状态码 %d，实际是 %d", http.StatusOK, firstRecorder.Code)
+	}
+
+	entityTag := firstRecorder.Header().Get("ETag")
+	if entityTag == "" {
+		t.Fatal("期望总览响应返回 ETag")
+	}
+
+	secondRequest := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	secondRequest.Header.Set("Authorization", "Bearer secret-admin")
+	secondRequest.Header.Set("If-None-Match", entityTag)
+	secondRecorder := httptest.NewRecorder()
+	handlerInstance.ServeHTTP(secondRecorder, secondRequest)
+
+	if secondRecorder.Code != http.StatusNotModified {
+		t.Fatalf("命中 ETag 后期望状态码 %d，实际是 %d，响应体: %s", http.StatusNotModified, secondRecorder.Code, secondRecorder.Body.String())
+	}
+	if secondRecorder.Body.Len() != 0 {
+		t.Fatalf("命中 ETag 后期望无响应体，实际是 %q", secondRecorder.Body.String())
+	}
+}
+
 func newTestConfig(t *testing.T) *config.Config {
 	t.Helper()
 	return newTestConfigWithStore(t, store.New(t.TempDir()))
