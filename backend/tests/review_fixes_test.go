@@ -213,3 +213,59 @@ func TestProxyStreamsLargeUpstreamErrorBody(t *testing.T) {
 		t.Fatal("期望错误响应体内容保持不变")
 	}
 }
+
+func TestProxyPassesThroughOversizedNonStreamUpstreamResponseWithoutCaching(t *testing.T) {
+	t.Setenv("UPSTREAM_RESPONSE_LIMIT_BYTES", "64")
+
+	oversizedBody := strings.Repeat("abcdefgh", 16)
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(oversizedBody))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
+		t.Fatalf("保存全局配置失败: %v", err)
+	}
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys:            []config.Key{{Value: "upstream-key"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		proxyHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次超大非流式响应期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if rec.Body.String() != oversizedBody {
+			t.Fatalf("第 %d 次超大非流式响应期望原样透传，实际是 %s", i+1, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("第 %d 次超大非流式响应期望保留 Content-Type，实际是 %q", i+1, got)
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望超大非流式响应不进入缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+}

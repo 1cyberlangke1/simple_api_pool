@@ -1,17 +1,19 @@
 package keyring
 
 import (
+	"hash/fnv"
+	"log/slog"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
+	"simple-api-pool/applog"
 	"simple-api-pool/config"
 )
 
 type roundRobinState struct {
-	counter   uint64
-	signature string
+	counter     uint64
+	fingerprint uint64
 }
 
 type KeyRing struct {
@@ -57,7 +59,9 @@ func (k *KeyRing) GetKey(providerName string) (string, error) {
 }
 
 func (k *KeyRing) RecordSuccess(providerName, keyValue string) {
-	k.cfg.UpdateKeyState(providerName, keyValue, 0, 0)
+	if err := k.cfg.UpdateKeyState(providerName, keyValue, 0, 0); err != nil {
+		slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
+	}
 }
 
 func (k *KeyRing) RecordFailure(providerName, keyValue string) {
@@ -74,9 +78,13 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 				if delay > float64(p.MaxDisableSecs) {
 					delay = float64(p.MaxDisableSecs)
 				}
-				k.cfg.UpdateKeyState(providerName, keyValue, time.Now().Unix()+int64(delay), fails)
+				if err := k.cfg.UpdateKeyState(providerName, keyValue, time.Now().Unix()+int64(delay), fails); err != nil {
+					slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
+				}
 			} else {
-				k.cfg.UpdateKeyState(providerName, keyValue, 0, fails)
+				if err := k.cfg.UpdateKeyState(providerName, keyValue, 0, fails); err != nil {
+					slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
+				}
 			}
 			return
 		}
@@ -84,7 +92,7 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 }
 
 func (k *KeyRing) nextRoundRobinIndex(providerName string, keys []config.Key, available []int) int {
-	signature := buildAvailabilitySignature(keys, available)
+	fingerprint := buildAvailabilityFingerprint(keys, available)
 
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -94,8 +102,8 @@ func (k *KeyRing) nextRoundRobinIndex(providerName string, keys []config.Key, av
 		state = &roundRobinState{}
 		k.states[providerName] = state
 	}
-	if state.signature != signature {
-		state.signature = signature
+	if state.fingerprint != fingerprint {
+		state.fingerprint = fingerprint
 		state.counter = 0
 	}
 
@@ -104,11 +112,11 @@ func (k *KeyRing) nextRoundRobinIndex(providerName string, keys []config.Key, av
 	return idx
 }
 
-func buildAvailabilitySignature(keys []config.Key, available []int) string {
-	var builder strings.Builder
+func buildAvailabilityFingerprint(keys []config.Key, available []int) uint64 {
+	hasher := fnv.New64a()
 	for _, index := range available {
-		builder.WriteString(keys[index].Value)
-		builder.WriteByte('\n')
+		_, _ = hasher.Write([]byte(keys[index].Value))
+		_, _ = hasher.Write([]byte{'\n'})
 	}
-	return builder.String()
+	return hasher.Sum64()
 }

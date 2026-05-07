@@ -38,7 +38,9 @@ func (s *Store) Save(path string, v any) error {
 	defer s.mu.Unlock()
 	fullPath := filepath.Join(s.baseDir, path)
 	dir := filepath.Dir(fullPath)
-	os.MkdirAll(dir, 0700)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err

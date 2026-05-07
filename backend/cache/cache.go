@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -74,16 +75,28 @@ func BuildNormalizedCacheKey(model string, normalizedBody []byte) string {
 	return buildCacheKey(model, normalizedBody)
 }
 
+func BuildResponseShapeCacheKey(cacheKey string, isStream bool) string {
+	shape := "non-stream"
+	if isStream {
+		shape = "stream"
+	}
+	return buildCacheKey("response-shape:"+shape, []byte(cacheKey))
+}
+
 func (s *Store) Get(providerName string, providerType config.ProviderType, model string, body []byte) (*Entry, bool) {
-	return s.GetByKey(providerName, BuildRequestCacheKey(providerType, model, body))
+	return s.GetByKeyContext(context.Background(), providerName, BuildRequestCacheKey(providerType, model, body))
 }
 
 func (s *Store) GetByKey(providerName, cacheKey string) (*Entry, bool) {
+	return s.GetByKeyContext(context.Background(), providerName, cacheKey)
+}
+
+func (s *Store) GetByKeyContext(ctx context.Context, providerName, cacheKey string) (*Entry, bool) {
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return nil, false
 	}
-	row := db.QueryRow(`
+	row := db.QueryRowContext(ctx, `
 		SELECT response_body, status_code, headers_json, input_tokens, output_tokens
 		FROM cache_entries
 		WHERE cache_key = ?
@@ -118,20 +131,25 @@ func (s *Store) GetByKey(providerName, cacheKey string) (*Entry, bool) {
 }
 
 func (s *Store) GetForRequest(providerName string, providerType config.ProviderType, model string, body []byte, isStream bool) (*Entry, bool) {
-	return s.GetForRequestByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), isStream)
+	return s.GetForRequestByKeyContext(context.Background(), providerName, providerType, BuildRequestCacheKey(providerType, model, body), isStream)
 }
 
 func (s *Store) GetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, isStream bool) (*Entry, bool) {
+	return s.GetForRequestByKeyContext(context.Background(), providerName, providerType, cacheKey, isStream)
+}
+
+func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName string, providerType config.ProviderType, cacheKey string, isStream bool) (*Entry, bool) {
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return nil, false
 	}
+	storageKey := BuildResponseShapeCacheKey(cacheKey, isStream)
 	if isStream {
-		row := db.QueryRow(`
+		row := db.QueryRowContext(ctx, `
 			SELECT cached_stream_body, status_code, stream_headers_json, input_tokens, output_tokens
 			FROM cache_entries
 			WHERE cache_key = ?
-		`, cacheKey)
+		`, storageKey)
 
 		var (
 			streamBody   []byte
@@ -161,11 +179,11 @@ func (s *Store) GetForRequestByKey(providerName string, providerType config.Prov
 		}, true
 	}
 
-	row := db.QueryRow(`
+	row := db.QueryRowContext(ctx, `
 		SELECT cached_body, response_body, status_code, headers_json, input_tokens, output_tokens
 		FROM cache_entries
 		WHERE cache_key = ?
-	`, cacheKey)
+	`, storageKey)
 
 	var (
 		cachedBody   []byte
@@ -204,7 +222,7 @@ func (s *Store) Set(providerName string, providerType config.ProviderType, model
 }
 
 func (s *Store) SetByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) bool {
-	return s.SetForRequestByKey(providerName, providerType, cacheKey, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
+	return s.setCacheEntryByKey(providerName, providerType, cacheKey, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
 }
 
 func (s *Store) SetForRequest(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
@@ -212,6 +230,10 @@ func (s *Store) SetForRequest(providerName string, providerType config.ProviderT
 }
 
 func (s *Store) SetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
+	return s.setCacheEntryByKey(providerName, providerType, BuildResponseShapeCacheKey(cacheKey, isStream), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, isStream)
+}
+
+func (s *Store) setCacheEntryByKey(providerName string, providerType config.ProviderType, storageKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return false
@@ -223,7 +245,7 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 	}
 	defer tx.Rollback()
 	now := time.Now().UnixNano()
-	existingEntry, err := cacheEntryExists(tx, cacheKey)
+	existingEntry, err := cacheEntryExists(tx, storageKey)
 	if err != nil {
 		return false
 	}
@@ -244,7 +266,7 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 				input_tokens = excluded.input_tokens,
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
-		`, cacheKey, statusCode, string(headersJSON), responseBody, inputTokens, outputTokens, now); err != nil {
+		`, storageKey, statusCode, string(headersJSON), responseBody, inputTokens, outputTokens, now); err != nil {
 			return false
 		}
 	} else {
@@ -264,7 +286,7 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 				input_tokens = excluded.input_tokens,
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
-		`, cacheKey, string(responseBody), statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
+		`, storageKey, string(responseBody), statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
 			return false
 		}
 	}

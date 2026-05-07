@@ -36,3 +36,6 @@ backend/coverage_profile
 # Env
 .env
 .env.local
+
+# Local planning docs
+docs/superpowers/

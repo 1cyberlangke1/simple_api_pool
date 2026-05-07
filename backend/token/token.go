@@ -21,12 +21,8 @@ func Extract(providerType string, body []byte, estimateEnabled bool) Usage {
 		u = extractGemini(body)
 	}
 
-	if u.InputTokens == 0 && u.OutputTokens == 0 && estimateEnabled && len(body) > 0 {
-		est := int64(len(body) / 4)
-		if est < 1 {
-			est = 1
-		}
-		return Usage{InputTokens: est / 2, OutputTokens: est - est/2}
+	if u.InputTokens == 0 && u.OutputTokens == 0 {
+		return estimateUsage(body, estimateEnabled)
 	}
 	return u
 }

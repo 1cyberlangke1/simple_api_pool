@@ -25,7 +25,7 @@
 - 请求体原样转发，不改写消息结构
 - 多模态输入直接透传，数组内容允许任意结构
 - 缓存键兼容多模态消息结构
-- 流式与非流式请求可共用同一份缓存
+- 流式与非流式请求分别使用独立缓存条目
 - 前后端同容器交付
 - 默认端口：`18080`
 - 默认 `GOMEMLIMIT`：`32MiB`
@@ -35,9 +35,19 @@
 ```text
 backend/        Go 后端
 backend/tests/  后端测试
-frontend/       状态页和管理页
+frontend/       前端单文件产物与源码目录
+frontend/src/   前端模板、样式、脚本和 i18n 源文件
+scripts/        检查脚本与前端构建脚本
 data/           运行时数据目录
 ```
+
+前端最终仍然以单文件 `frontend/index.html` 交付，但源码已经拆到 `frontend/src/`。如果你改了模板、样式或脚本，需要重新生成产物：
+
+```bash
+go run ./scripts/build_frontend.go -root .
+```
+
+Docker 构建会自动执行这一步。
 
 ## 部署教程
 
@@ -97,6 +107,7 @@ docker compose version
 | `CLIENT_KEYS` | 否 | 空 | 客户端访问密钥，多个值用半角逗号分隔；为空时代理接口会拒绝所有业务请求 |
 | `PORT` | 否 | `18080` | 服务监听端口 |
 | `GOMEMLIMIT` | 否 | `32MiB` | Go 运行时内存限制 |
+| `UPSTREAM_RESPONSE_LIMIT_BYTES` | 否 | `8388608` | 非流式上游响应的本地可缓存体上限；超过后直接透传且不缓存，避免单次响应撑爆内存 |
 | `ADMIN_COOKIE_SECURE` | 否 | 自动判断 | 管理员会话 Cookie 是否仅通过 HTTPS 发送；未设置时，HTTPS 请求自动启用，HTTP 请求自动关闭 |
 
 最小可用配置通常只需要：
@@ -147,6 +158,7 @@ CLIENT_KEYS=client-key-1,client-key-2
 ```text
 PORT=18080
 GOMEMLIMIT=32MiB
+UPSTREAM_RESPONSE_LIMIT_BYTES=8388608
 ADMIN_COOKIE_SECURE=false
 ```
 
@@ -970,10 +982,11 @@ curl -X POST http://127.0.0.1:18080/gemini/v1beta/models/gemini-2.5-flash:genera
 
 当前缓存键不包含 `routeKey`，也不包含其他生成参数。
 
-这意味着下面两类请求会命中同一份缓存：
+缓存命中还要再区分响应形态：
 
-- `stream` 和 `stream_options` 不同
-- 其他非核心参数不同，但 `model + 消息主体` 一致
+- 流式请求只命中流式缓存
+- 非流式请求只命中非流式缓存
+- 其他非核心参数不同，但 `model + 消息主体` 一致时，仍会命中同形态缓存
 
 ### 非流式缓存示例
 
@@ -987,7 +1000,7 @@ curl -X POST http://127.0.0.1:18080/cache/openai/v1/chat/completions \
   }'
 ```
 
-### 流式和非流式共用缓存
+### 流式和非流式分别缓存
 
 第一次流式请求：
 
@@ -1002,7 +1015,7 @@ curl -N -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-fla
   }'
 ```
 
-后续非流式请求命中同一份缓存：
+后续非流式请求不会直接命中这份流式缓存，而是会按非流式形态单独回源并建立自己的缓存：
 
 ```bash
 curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent \
@@ -1050,8 +1063,14 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - 成功请求会记录输入 / 输出 Token
 - 上游没有返回 Token 时，可按字符串字节数除以 `4` 估算
 - 命中缓存时会记录缓存命中次数
-- 命中缓存时，返回结果会补充缓存 Token 统计
+- 命中缓存时，返回结果会按各提供商官方响应结构补充缓存 Token 字段
+- `OpenAI Chat` 使用 `usage.prompt_tokens_details.cached_tokens`
+- `OpenAI Responses` 使用 `usage.input_tokens_details.cached_tokens`
+- `Claude` 使用 `usage.cache_read_input_tokens`
+- `Gemini` 使用 `usageMetadata.cachedContentTokenCount`
 - 缓存按提供商独立存储为 SQLite 文件，不会为每条记录创建零碎小文件
+- 同一组 `model + 核心消息字段` 的流式响应和非流式响应会分别占用独立缓存条目
+- 非流式上游响应会先按 `UPSTREAM_RESPONSE_LIMIT_BYTES` 作为本地可缓存体上限做探测；在上限内仍按整包路径处理，超过上限时改为直接透传，并放弃依赖完整响应体的缓存和整包后处理，避免内存被单次大响应耗尽
 
 ## 测试
 
@@ -1064,7 +1083,7 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - key 轮询、填充、失败禁用和恢复
 - 管理接口和配置持久化
 - 单提供商单文件缓存
-- 流式与非流式缓存共用
+- 流式与非流式缓存分离
 - OpenAI Chat / Responses / Claude / Gemini 的 Token 提取
 - 多模态请求透传
 - 多模态消息参与缓存命中

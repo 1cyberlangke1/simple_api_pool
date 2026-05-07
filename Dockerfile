@@ -33,8 +33,10 @@ RUN go mod download
 
 COPY backend/ ./
 COPY frontend/ /src/frontend/
+COPY scripts/ /src/scripts/
 
-RUN mkdir -p /out/frontend \
+RUN go run /src/scripts/build_frontend.go -root /src \
+    && mkdir -p /out/frontend \
     && cp -R /src/frontend/. /out/frontend/ \
     && sed -i \
         -e "s|__APP_VERSION__|${APP_VERSION}|g" \

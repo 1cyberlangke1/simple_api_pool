@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
@@ -16,8 +15,10 @@ import (
 	"simple-api-pool/config"
 	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/middleware"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
+	"simple-api-pool/webui"
 )
 
 func main() {
@@ -37,8 +38,8 @@ func main() {
 	proxyHandler := handler.NewProxyHandler(cfg, statsMgr, kr, cacheStore, 50)
 	adminHandler := handler.NewAdminHandler(cfg, statsMgr, cacheStore)
 	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
-	frontendRoot := resolveFrontendRoot()
-	contentSecurityPolicy, err := buildFrontendContentSecurityPolicy(frontendRoot)
+	frontendRoot := webui.ResolveRoot()
+	contentSecurityPolicy, err := webui.BuildContentSecurityPolicy(frontendRoot)
 	if err != nil {
 		log.Fatalf("build content security policy failed: %v", err)
 	}
@@ -56,11 +57,11 @@ func main() {
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "/" || path == "/status" || path == "/admin" {
-			serveFrontendIndex(w, r, frontendRoot)
+			webui.ServeIndex(w, r, frontendRoot)
 			return
 		}
 		if path == "/favicon.svg" {
-			serveFrontendAsset(w, r, frontendRoot, "favicon.svg")
+			webui.ServeAsset(w, r, frontendRoot, "favicon.svg")
 			return
 		}
 		if path == "/favicon.ico" {
@@ -71,7 +72,7 @@ func main() {
 	}))
 
 	addr := config.ListenAddr()
-	muxWithLogs := securityHeadersMiddleware(applog.LoggingMiddleware(mux), contentSecurityPolicy)
+	muxWithLogs := middleware.ApplySecurityHeaders(applog.LoggingMiddleware(mux), contentSecurityPolicy)
 	server := &http.Server{
 		Addr:    addr,
 		Handler: muxWithLogs,
@@ -93,31 +94,4 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)
 	}
-}
-
-func resolveFrontendRoot() string {
-	candidates := []string{"frontend", filepath.Join("..", "frontend")}
-	for _, candidate := range candidates {
-		indexPath := filepath.Join(candidate, "index.html")
-		if _, err := os.Stat(indexPath); err == nil {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func serveFrontendIndex(w http.ResponseWriter, r *http.Request, frontendRoot string) {
-	if frontendRoot == "" {
-		http.Error(w, `{"error":"前端资源不存在"}`, http.StatusServiceUnavailable)
-		return
-	}
-	http.ServeFile(w, r, filepath.Join(frontendRoot, "index.html"))
-}
-
-func serveFrontendAsset(w http.ResponseWriter, r *http.Request, frontendRoot, assetName string) {
-	if frontendRoot == "" {
-		http.Error(w, `{"error":"前端资源不存在"}`, http.StatusServiceUnavailable)
-		return
-	}
-	http.ServeFile(w, r, filepath.Join(frontendRoot, assetName))
 }

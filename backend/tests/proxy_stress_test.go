@@ -35,7 +35,7 @@ func TestCacheHitPathSupportsHighConcurrencyReads(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"load"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
 

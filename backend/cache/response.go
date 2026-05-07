@@ -47,20 +47,26 @@ func decorateCachedResponse(providerType config.ProviderType, responseBody []byt
 	}
 
 	totalTokens := inputTokens + outputTokens
+	cachedInputTokens := inputTokens
 
 	switch providerType {
-	case config.OpenAIChat, config.OpenAIResponses:
+	case config.OpenAIChat:
 		usage := ensureMap(payload, "usage")
-		usage["cache_tokens"] = totalTokens
 		usage["total_tokens"] = totalTokens
+		promptDetails := ensureChildMap(usage, "prompt_tokens_details")
+		promptDetails["cached_tokens"] = cachedInputTokens
+	case config.OpenAIResponses:
+		usage := ensureMap(payload, "usage")
+		usage["total_tokens"] = totalTokens
+		inputDetails := ensureChildMap(usage, "input_tokens_details")
+		inputDetails["cached_tokens"] = cachedInputTokens
 	case config.Claude:
 		usage := ensureMap(payload, "usage")
-		usage["cache_tokens"] = totalTokens
-		usage["total_tokens"] = totalTokens
+		usage["cache_read_input_tokens"] = cachedInputTokens
 	case config.Gemini:
 		usage := ensureMap(payload, "usageMetadata")
 		usage["totalTokenCount"] = totalTokens
-		usage["cacheTokens"] = totalTokens
+		usage["cachedContentTokenCount"] = cachedInputTokens
 	}
 
 	decorated, err := json.Marshal(payload)
@@ -76,6 +82,15 @@ func ensureMap(payload map[string]any, key string) map[string]any {
 	}
 	child := make(map[string]any)
 	payload[key] = child
+	return child
+}
+
+func ensureChildMap(parent map[string]any, key string) map[string]any {
+	if existing, ok := parent[key].(map[string]any); ok {
+		return existing
+	}
+	child := make(map[string]any)
+	parent[key] = child
 	return child
 }
 

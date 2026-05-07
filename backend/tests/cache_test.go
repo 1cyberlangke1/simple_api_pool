@@ -145,11 +145,39 @@ func TestGetForRequestReturnsPreDecoratedCachedBody(t *testing.T) {
 	if !ok {
 		t.Fatal("期望命中非流式缓存")
 	}
-	if !strings.Contains(entry.ResponseBody, `"cache_tokens":10`) {
-		t.Fatalf("期望直接返回已注入 cache_tokens 的缓存体，实际是 %s", entry.ResponseBody)
+	if !strings.Contains(entry.ResponseBody, `"prompt_tokens_details":{"cached_tokens":4}`) {
+		t.Fatalf("期望直接返回已注入 prompt_tokens_details.cached_tokens 的缓存体，实际是 %s", entry.ResponseBody)
 	}
 	if !strings.Contains(entry.ResponseBody, `"total_tokens":10`) {
 		t.Fatalf("期望直接返回已注入 total_tokens 的缓存体，实际是 %s", entry.ResponseBody)
+	}
+}
+
+func TestStreamAndNonStreamRequestCachesUseSeparateEntries(t *testing.T) {
+	baseDir := t.TempDir()
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	nonStreamResponse := []byte(`{"id":"non-stream","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`)
+	streamResponse := []byte("data: {\"id\":\"stream-1\"}\n\ndata: [DONE]\n\n")
+
+	if ok := store.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, nonStreamResponse, 200, map[string]string{"Content-Type": "application/json"}, 4, 6, 1, false); !ok {
+		t.Fatal("写入非流式缓存失败")
+	}
+	if ok := store.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, streamResponse, 200, map[string]string{"Content-Type": "text/event-stream"}, 4, 6, 1, true); !ok {
+		t.Fatal("写入流式缓存失败")
+	}
+
+	if _, ok := store.GetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, false); ok {
+		t.Fatal("期望 maxEntries=1 时，后写入的流式缓存占用独立条目并淘汰旧的非流式缓存")
+	}
+	entry, ok := store.GetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, true)
+	if !ok {
+		t.Fatal("期望保留最新写入的流式缓存")
+	}
+	if !strings.Contains(entry.ResponseBody, `"id":"stream-1"`) {
+		t.Fatalf("期望命中流式缓存内容，实际是 %s", entry.ResponseBody)
 	}
 }
 
@@ -161,8 +189,8 @@ func TestPrepareCachedBodiesBuildsLegalOpenAIChatStream(t *testing.T) {
 		7,
 	)
 
-	if !strings.Contains(string(nonStreamBody), `"cache_tokens":12`) {
-		t.Fatalf("期望 OpenAI Chat 缓存响应注入 cache_tokens，实际是 %s", nonStreamBody)
+	if !strings.Contains(string(nonStreamBody), `"prompt_tokens_details":{"cached_tokens":5}`) {
+		t.Fatalf("期望 OpenAI Chat 缓存响应注入 prompt_tokens_details.cached_tokens，实际是 %s", nonStreamBody)
 	}
 	if !strings.Contains(string(streamBody), `"object":"chat.completion.chunk"`) {
 		t.Fatalf("期望 OpenAI Chat 流式缓存回放使用 chunk 对象，实际是 %s", streamBody)

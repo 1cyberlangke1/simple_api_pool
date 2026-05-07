@@ -1,13 +1,15 @@
-package main
+package middleware
 
 import (
 	"net/http"
 	"strings"
+
+	"simple-api-pool/webui"
 )
 
-func securityHeadersMiddleware(next http.Handler, contentSecurityPolicy string) http.Handler {
+func ApplySecurityHeaders(next http.Handler, contentSecurityPolicy string) http.Handler {
 	if contentSecurityPolicy == "" {
-		contentSecurityPolicy = defaultContentSecurityPolicy()
+		contentSecurityPolicy = webui.DefaultContentSecurityPolicy()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -22,8 +24,4 @@ func securityHeadersMiddleware(next http.Handler, contentSecurityPolicy string) 
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-func defaultContentSecurityPolicy() string {
-	return "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 }

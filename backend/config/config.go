@@ -97,8 +97,8 @@ func parseCommaSep(s string) []string {
 	return out
 }
 
-func (c *Config) save() {
-	c.st.Save("config.json", &c.state)
+func (c *Config) save() error {
+	return c.st.Save("config.json", &c.state)
 }
 
 func (c *Config) Providers() []Provider {
@@ -156,25 +156,23 @@ func (c *Config) SaveProvider(p Provider) error {
 				p.Keys = existing.Keys
 			}
 			c.state.Providers[i] = p
-			c.save()
-			return nil
+			return c.save()
 		}
 	}
 	c.state.Providers = append(c.state.Providers, p)
-	c.save()
-	return nil
+	return c.save()
 }
 
-func (c *Config) DeleteProvider(name string) {
+func (c *Config) DeleteProvider(name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i, p := range c.state.Providers {
 		if p.Name == name {
 			c.state.Providers = append(c.state.Providers[:i], c.state.Providers[i+1:]...)
-			c.save()
-			return
+			return c.save()
 		}
 	}
+	return nil
 }
 
 func (c *Config) AddKeys(providerName string, keys []string) error {
@@ -207,8 +205,7 @@ func (c *Config) AddKeys(providerName string, keys []string) error {
 				deduped = append(deduped, Key{Value: k})
 			}
 			c.state.Providers[i].Keys = deduped
-			c.save()
-			return nil
+			return c.save()
 		}
 	}
 	return os.ErrNotExist
@@ -222,8 +219,7 @@ func (c *Config) DeleteKey(providerName, keyValue string) error {
 			for j, k := range p.Keys {
 				if k.Value == keyValue {
 					c.state.Providers[i].Keys = append(p.Keys[:j], p.Keys[j+1:]...)
-					c.save()
-					return nil
+					return c.save()
 				}
 			}
 		}
@@ -283,14 +279,13 @@ func (c *Config) ApplyKeyAction(providerName, action string, keys []string) erro
 			return os.ErrInvalid
 		}
 
-		c.save()
-		return nil
+		return c.save()
 	}
 
 	return os.ErrNotExist
 }
 
-func (c *Config) UpdateKeyState(providerName, keyValue string, disabledUntil int64, fails int) {
+func (c *Config) UpdateKeyState(providerName, keyValue string, disabledUntil int64, fails int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i, p := range c.state.Providers {
@@ -299,11 +294,12 @@ func (c *Config) UpdateKeyState(providerName, keyValue string, disabledUntil int
 				if k.Value == keyValue {
 					c.state.Providers[i].Keys[j].DisabledUntil = disabledUntil
 					c.state.Providers[i].Keys[j].ConsecutiveFails = fails
-					return
+					return c.save()
 				}
 			}
 		}
 	}
+	return os.ErrNotExist
 }
 
 func (c *Config) GlobalConfig() FileConfig {
@@ -314,16 +310,16 @@ func (c *Config) GlobalConfig() FileConfig {
 	return cfg
 }
 
-func (c *Config) UpdateGlobalConfig(adminKey string, tokenEst bool, clientKeys []string) {
+func (c *Config) UpdateGlobalConfig(adminKey string, tokenEst bool, clientKeys []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.AdminKey = adminKey
 	c.state.TokenEstimationEnabled = tokenEst
 	c.state.ClientKeys = clientKeys
-	c.save()
+	return c.save()
 }
 
-func (c *Config) PatchGlobalConfig(adminKey *string, tokenEstimationEnabled *bool, clientKeys *[]string) {
+func (c *Config) PatchGlobalConfig(adminKey *string, tokenEstimationEnabled *bool, clientKeys *[]string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if adminKey != nil {
@@ -343,7 +339,7 @@ func (c *Config) PatchGlobalConfig(adminKey *string, tokenEstimationEnabled *boo
 		}
 		c.state.ClientKeys = nextClientKeys
 	}
-	c.save()
+	return c.save()
 }
 
 func (c *Config) AdminKey() string {

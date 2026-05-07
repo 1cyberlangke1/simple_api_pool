@@ -297,7 +297,7 @@ func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
@@ -319,8 +319,9 @@ func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 		t.Fatalf("期望缓存响应 id 为 cached，实际是 %#v", payload["id"])
 	}
 	usage := payload["usage"].(map[string]any)
-	if usage["cache_tokens"] != float64(10) {
-		t.Fatalf("期望 cache_tokens 为 10，实际是 %#v", usage["cache_tokens"])
+	promptTokenDetails := usage["prompt_tokens_details"].(map[string]any)
+	if promptTokenDetails["cached_tokens"] != float64(4) {
+		t.Fatalf("期望 prompt_tokens_details.cached_tokens 为 4，实际是 %#v", promptTokenDetails["cached_tokens"])
 	}
 	if usage["total_tokens"] != float64(10) {
 		t.Fatalf("期望 total_tokens 为 10，实际是 %#v", usage["total_tokens"])
@@ -334,8 +335,8 @@ func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 	if stat.CacheHits != 1 {
 		t.Fatalf("期望缓存命中次数为 1，实际是 %d", stat.CacheHits)
 	}
-	if stat.CacheTokens != 10 {
-		t.Fatalf("期望缓存 token 为 10，实际是 %d", stat.CacheTokens)
+	if stat.CacheTokens != 4 {
+		t.Fatalf("期望缓存 token 为 4，实际是 %d", stat.CacheTokens)
 	}
 }
 
@@ -356,7 +357,7 @@ func TestCacheHitReturnsWithoutAvailableUpstreamKey(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached-without-key","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached-without-key","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
@@ -558,8 +559,9 @@ func TestFirstStreamResponseRequiresNonStreamBackfillBeforeLaterNonStreamHit(t *
 		t.Fatalf("解析第三次非流式缓存响应失败: %v", err)
 	}
 	thirdUsage := thirdPayload["usage"].(map[string]any)
-	if thirdUsage["cache_tokens"] != float64(12) {
-		t.Fatalf("期望第三次缓存命中时 cache_tokens 为 12，实际是 %#v", thirdUsage["cache_tokens"])
+	thirdPromptDetails := thirdUsage["prompt_tokens_details"].(map[string]any)
+	if thirdPromptDetails["cached_tokens"] != float64(5) {
+		t.Fatalf("期望第三次缓存命中时 prompt_tokens_details.cached_tokens 为 5，实际是 %#v", thirdPromptDetails["cached_tokens"])
 	}
 }
 
@@ -778,11 +780,8 @@ func TestClaudeCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 		t.Fatalf("解析第三次 Claude 非流式缓存响应失败: %v", err)
 	}
 	thirdUsage := thirdPayload["usage"].(map[string]any)
-	if thirdUsage["cache_tokens"] != float64(14) {
-		t.Fatalf("期望 Claude 第三次缓存命中时 cache_tokens 为 14，实际是 %#v", thirdUsage["cache_tokens"])
-	}
-	if thirdUsage["total_tokens"] != float64(14) {
-		t.Fatalf("期望 Claude 第三次缓存命中时 total_tokens 为 14，实际是 %#v", thirdUsage["total_tokens"])
+	if thirdUsage["cache_read_input_tokens"] != float64(8) {
+		t.Fatalf("期望 Claude 第三次缓存命中时 cache_read_input_tokens 为 8，实际是 %#v", thirdUsage["cache_read_input_tokens"])
 	}
 }
 
@@ -889,8 +888,9 @@ func TestOpenAIResponsesCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 		t.Fatalf("解析第三次 Responses 非流式缓存响应失败: %v", err)
 	}
 	thirdUsage := thirdPayload["usage"].(map[string]any)
-	if thirdUsage["cache_tokens"] != float64(13) {
-		t.Fatalf("期望 Responses 第三次缓存命中时 cache_tokens 为 13，实际是 %#v", thirdUsage["cache_tokens"])
+	thirdInputDetails := thirdUsage["input_tokens_details"].(map[string]any)
+	if thirdInputDetails["cached_tokens"] != float64(9) {
+		t.Fatalf("期望 Responses 第三次缓存命中时 input_tokens_details.cached_tokens 为 9，实际是 %#v", thirdInputDetails["cached_tokens"])
 	}
 	if thirdUsage["total_tokens"] != float64(13) {
 		t.Fatalf("期望 Responses 第三次缓存命中时 total_tokens 为 13，实际是 %#v", thirdUsage["total_tokens"])
@@ -998,8 +998,8 @@ func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 		t.Fatalf("解析第三次 Gemini 非流式缓存响应失败: %v", err)
 	}
 	thirdUsage := thirdPayload["usageMetadata"].(map[string]any)
-	if thirdUsage["cacheTokens"] != float64(11) {
-		t.Fatalf("期望 Gemini 第三次缓存命中时 cacheTokens 为 11，实际是 %#v", thirdUsage["cacheTokens"])
+	if thirdUsage["cachedContentTokenCount"] != float64(6) {
+		t.Fatalf("期望 Gemini 第三次缓存命中时 cachedContentTokenCount 为 6，实际是 %#v", thirdUsage["cachedContentTokenCount"])
 	}
 	if thirdUsage["totalTokenCount"] != float64(11) {
 		t.Fatalf("期望 Gemini 第三次缓存命中时 totalTokenCount 为 11，实际是 %#v", thirdUsage["totalTokenCount"])
@@ -1081,8 +1081,8 @@ func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
 	if stat.CacheHits != 1 {
 		t.Fatalf("期望 Gemini 缓存命中次数为 1，实际是 %d", stat.CacheHits)
 	}
-	if stat.CacheTokens != 11 {
-		t.Fatalf("期望 Gemini alt=sse 缓存 token 为 11，实际是 %d", stat.CacheTokens)
+	if stat.CacheTokens != 6 {
+		t.Fatalf("期望 Gemini alt=sse 缓存 token 为 6，实际是 %d", stat.CacheTokens)
 	}
 }
 
@@ -1106,7 +1106,7 @@ func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
@@ -1122,8 +1122,9 @@ func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 		t.Fatalf("解析缓存响应失败: %v", err)
 	}
 	usage := payload["usage"].(map[string]any)
-	if usage["cache_tokens"] != float64(10) {
-		t.Fatalf("期望 cache_tokens 为 10，实际是 %#v", usage["cache_tokens"])
+	promptTokenDetails := usage["prompt_tokens_details"].(map[string]any)
+	if promptTokenDetails["cached_tokens"] != float64(4) {
+		t.Fatalf("期望 prompt_tokens_details.cached_tokens 为 4，实际是 %#v", promptTokenDetails["cached_tokens"])
 	}
 	if usage["total_tokens"] != float64(10) {
 		t.Fatalf("期望 total_tokens 为 10，实际是 %#v", usage["total_tokens"])
@@ -1257,7 +1258,7 @@ func TestNonCacheRouteRefreshesExistingCacheEntry(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"stale","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"stale","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 1, 1, 10, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
@@ -1311,7 +1312,7 @@ func TestCacheHitWritesCacheTokensIntoGeminiUsageMetadata(t *testing.T) {
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
 	body := []byte(`{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`)
-	cacheStore.Set("gemini", config.Gemini, "gemini-2.5-flash", body, []byte(`{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":6,"totalTokenCount":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10)
+	cacheStore.SetForRequest("gemini", config.Gemini, "gemini-2.5-flash", body, []byte(`{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":6,"totalTokenCount":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
@@ -1327,8 +1328,8 @@ func TestCacheHitWritesCacheTokensIntoGeminiUsageMetadata(t *testing.T) {
 		t.Fatalf("解析缓存响应失败: %v", err)
 	}
 	usage := payload["usageMetadata"].(map[string]any)
-	if usage["cacheTokens"] != float64(10) {
-		t.Fatalf("期望 cacheTokens 为 10，实际是 %#v", usage["cacheTokens"])
+	if usage["cachedContentTokenCount"] != float64(4) {
+		t.Fatalf("期望 cachedContentTokenCount 为 4，实际是 %#v", usage["cachedContentTokenCount"])
 	}
 	if usage["totalTokenCount"] != float64(10) {
 		t.Fatalf("期望 totalTokenCount 为 10，实际是 %#v", usage["totalTokenCount"])

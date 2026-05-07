@@ -182,7 +182,10 @@ func (ah *AdminHandler) handleSingleProvider(w http.ResponseWriter, r *http.Requ
 				return
 			}
 		}
-		ah.cfg.DeleteProvider(name)
+		if err := ah.cfg.DeleteProvider(name); err != nil {
+			writeErrorResponse(w, http.StatusInternalServerError, "删除提供商失败")
+			return
+		}
 		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		if p == nil {
@@ -296,7 +299,10 @@ func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeErrorResponse(w, http.StatusBadRequest, "管理员密钥不能为空")
 			return
 		}
-		ah.cfg.PatchGlobalConfig(body.AdminKey, body.TokenEstimationEnabled, body.ClientKeys)
+		if err := ah.cfg.PatchGlobalConfig(body.AdminKey, body.TokenEstimationEnabled, body.ClientKeys); err != nil {
+			writeErrorResponse(w, http.StatusInternalServerError, "更新配置失败")
+			return
+		}
 		if body.AdminKey != nil {
 			if err := auth.SetAdminSessionCookie(w, r, ah.cfg); err != nil {
 				writeErrorResponse(w, http.StatusInternalServerError, "更新管理员会话失败")

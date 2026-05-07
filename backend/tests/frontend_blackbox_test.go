@@ -96,6 +96,7 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `/admin/providers/${encodeURIComponent(provider)}/cache`)
 		mustContain(t, body, `id="status-view" class="grid content-grid single-column-grid"`)
 		mustContain(t, body, `id="admin-view" class="grid admin-dashboard-grid hidden"`)
+		mustContain(t, body, `id="global-admin-key" name="admin_key" type="password"`)
 	}
 
 	faviconResp, err := http.Get(server.URL + "/favicon.svg")
@@ -142,6 +143,12 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if strings.Contains(string(indexHTML), `.replaceAll(`) {
 		t.Fatal("期望前端避免依赖 replaceAll，兼容旧浏览器")
 	}
+	if strings.Contains(string(indexHTML), `?.`) {
+		t.Fatal("期望前端避免依赖可选链语法，兼容旧浏览器")
+	}
+	if strings.Contains(string(indexHTML), `??`) {
+		t.Fatal("期望前端避免依赖空值合并语法，兼容旧浏览器")
+	}
 	if !strings.Contains(string(indexHTML), `credentials: "same-origin"`) {
 		t.Fatal("期望前端通过同源 Cookie 维持管理员会话")
 	}
@@ -184,7 +191,7 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(indexHTML), `function syncProviderDraft(`) {
 		t.Fatal("期望前端具备提供商表单草稿同步逻辑")
 	}
-	if !strings.Contains(string(indexHTML), `draftProvider.max_disable_secs ?? Number(provider.max_disable_secs || 43200)`) {
+	if !strings.Contains(string(indexHTML), `draftProvider.max_disable_secs !== undefined ? draftProvider.max_disable_secs : Number(provider.max_disable_secs || 43200)`) {
 		t.Fatal("期望前端使用 43200 作为最大禁用时长默认值")
 	}
 	if !strings.Contains(string(indexHTML), `function applyBulkKeyAction(`) {

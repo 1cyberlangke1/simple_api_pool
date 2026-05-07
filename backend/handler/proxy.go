@@ -2,17 +2,12 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/tidwall/gjson"
 
 	"simple-api-pool/applog"
 	"simple-api-pool/auth"
@@ -41,23 +36,15 @@ const (
 	maxUpstreamErrorLogBytes     = 4 << 10
 )
 
-type requestAnalysis struct {
-	model         string
-	stream        bool
-	cacheKey      string
-	cacheKeyReady bool
-	requestBody   []byte
-	requestBytes  int
-}
-
 type ProxyHandler struct {
-	cfg     *config.Config
-	stats   *stats.Manager
-	keyring *keyring.KeyRing
-	cache   *cache.Store
-	client  *http.Client
-	sema    chan struct{}
-	limiter *auth.FailureLimiter
+	cfg                         *config.Config
+	stats                       *stats.Manager
+	keyring                     *keyring.KeyRing
+	cache                       *cache.Store
+	client                      *http.Client
+	sema                        chan struct{}
+	limiter                     *auth.FailureLimiter
+	nonStreamResponseLimitBytes int64
 }
 
 type cacheEventLogFields struct {
@@ -95,8 +82,9 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		sema:    make(chan struct{}, maxConcurrent),
-		limiter: auth.NewFailureLimiter(20, time.Minute, 5*time.Minute),
+		sema:                        make(chan struct{}, maxConcurrent),
+		limiter:                     auth.NewFailureLimiter(20, time.Minute, 5*time.Minute),
+		nonStreamResponseLimitBytes: config.UpstreamResponseLimitBytes(),
 	}
 }
 
@@ -199,8 +187,8 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				logFields.Model = analysis.model
 				upstreamBodyReader = bytes.NewReader(analysis.requestBody)
 
-				if entry, ok := h.cache.GetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
-					h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
+				if entry, ok := h.cache.GetForRequestByKeyContext(r.Context(), parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
+					h.stats.RecordCacheHit(parts.provider, entry.InputTokens)
 					logFields.CacheHit = true
 					logFields.Status = entry.StatusCode
 					logFields.UpstreamStatus = entry.StatusCode
@@ -307,12 +295,26 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, fitsWithinLimit, err := readResponseBodyWithinLimit(resp.Body, h.nonStreamResponseLimitBytes)
 	if err != nil {
-		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
-		logFields.Status = http.StatusInternalServerError
-		logFields.Error = "读取上游响应失败"
-		writeErrorResponse(w, http.StatusInternalServerError, "读取上游响应失败")
+		h.stats.RecordError(parts.provider, http.StatusBadGateway)
+		logFields.Status = http.StatusBadGateway
+		logFields.Error = err.Error()
+		writeErrorResponse(w, http.StatusBadGateway, "读取上游响应失败")
+		return
+	}
+	if !fitsWithinLimit {
+		logFields.Status = resp.StatusCode
+		copyHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		responseBytes, copyErr := writeBufferedPassthroughResponse(w, respBody, resp.Body, upstreamStart, &logFields)
+		logFields.ResponseBytes = responseBytes
+		if copyErr != nil {
+			logFields.Error = fmt.Sprintf("透传上游响应失败: %v", copyErr)
+			return
+		}
+		h.stats.RecordSuccess(parts.provider, 0, 0)
+		h.keyring.RecordSuccess(parts.provider, upstreamKey)
 		return
 	}
 	logFields.Status = resp.StatusCode
@@ -329,7 +331,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if cacheEligible {
 		analysis = ensureCacheAnalysis(analysis, p.Type, recordedRequestBody)
 		if analysis.cacheKeyReady {
-			stored := h.cache.SetByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+			stored := h.cache.SetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries), false)
 			if stored {
 				h.logCacheEvent(cacheEventLogFields{
 					Event:         "store",
@@ -342,74 +344,6 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Status:        resp.StatusCode,
 					RequestBytes:  analysis.requestBytes,
 					ResponseBytes: len(respBody),
-					InputTokens:   usage.InputTokens,
-					OutputTokens:  usage.OutputTokens,
-				})
-			}
-		}
-	}
-}
-
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		logFields.Status = http.StatusInternalServerError
-		logFields.Error = "当前响应不支持流式转发"
-		writeErrorResponse(w, http.StatusInternalServerError, "当前响应不支持流式转发")
-		return
-	}
-
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	flusher.Flush()
-
-	collected := streamCaptureBufferPool.Get().(*bytes.Buffer)
-	collected.Reset()
-	defer streamCaptureBufferPool.Put(collected)
-
-	bufferPtr := streamCopyBufferPool.Get().(*[]byte)
-	buf := *bufferPtr
-	defer streamCopyBufferPool.Put(bufferPtr)
-	firstByteRecorded := false
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			if !firstByteRecorded {
-				logFields.FirstByteMs = time.Since(upstreamStart).Milliseconds()
-				logFields.FirstByteMeasured = true
-				firstByteRecorded = true
-			}
-			collected.Write(buf[:n])
-			w.Write(buf[:n])
-			flusher.Flush()
-		}
-		if err != nil {
-			break
-		}
-	}
-
-	logFields.Status = resp.StatusCode
-	logFields.ResponseBytes = collected.Len()
-	usage := token.ExtractFromStream(string(providerType), collected.Bytes(), h.cfg.TokenEstimationEnabled())
-	h.stats.RecordSuccess(provider, usage.InputTokens, usage.OutputTokens)
-	h.keyring.RecordSuccess(provider, upstreamKey)
-
-	if cacheEnabled {
-		analysis = ensureCacheAnalysis(analysis, providerType, recordedRequestBody)
-		if analysis.cacheKeyReady {
-			stored := h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
-			if stored {
-				h.logCacheEvent(cacheEventLogFields{
-					Event:         "store",
-					Provider:      provider,
-					ProviderType:  string(providerType),
-					Model:         analysis.model,
-					CacheKey:      analysis.cacheKey,
-					CacheRoute:    cacheRoute,
-					Stream:        true,
-					Status:        resp.StatusCode,
-					RequestBytes:  analysis.requestBytes,
-					ResponseBytes: collected.Len(),
 					InputTokens:   usage.InputTokens,
 					OutputTokens:  usage.OutputTokens,
 				})
@@ -497,397 +431,4 @@ func (h *ProxyHandler) logCacheEvent(fields cacheEventLogFields) {
 		"output_tokens", fields.OutputTokens,
 		"total_tokens", fields.InputTokens+fields.OutputTokens,
 	)
-}
-
-type pathParts struct {
-	useCache bool
-	provider string
-	suffix   string
-}
-
-func parsePath(path string) pathParts {
-	var p pathParts
-	path = strings.TrimPrefix(path, "/")
-	if path == "" {
-		return p
-	}
-	segments := strings.Split(path, "/")
-
-	idx := 0
-	if len(segments) > idx && segments[idx] == "cache" {
-		p.useCache = true
-		idx++
-	}
-	if len(segments) > idx {
-		p.provider = segments[idx]
-		idx++
-	}
-	if len(segments) > idx {
-		p.suffix = "/" + strings.Join(segments[idx:], "/")
-	}
-	return p
-}
-
-func buildTargetURL(providerType config.ProviderType, baseURL, suffix, rawQuery string) string {
-	base, err := url.Parse(strings.TrimRight(baseURL, "/") + suffix)
-	if err != nil {
-		return ""
-	}
-	queryValues, err := url.ParseQuery(rawQuery)
-	if err != nil {
-		return ""
-	}
-	sanitizeClientAuthQuery(queryValues, providerType)
-	base.RawQuery = queryValues.Encode()
-	return base.String()
-}
-
-func splitUpstreamURL(targetURL string) (string, string) {
-	u, err := url.Parse(targetURL)
-	if err != nil {
-		return "", ""
-	}
-	return u.Host, u.Path
-}
-
-func clearClientAuth(req *http.Request, providerType config.ProviderType) {
-	req.Header.Del("Authorization")
-	req.Header.Del("x-api-key")
-	req.Header.Del("x-goog-api-key")
-
-	queryValues := req.URL.Query()
-	sanitizeClientAuthQuery(queryValues, providerType)
-	req.URL.RawQuery = queryValues.Encode()
-}
-
-func sanitizeClientAuthQuery(values url.Values, providerType config.ProviderType) {
-	switch providerType {
-	case config.Gemini:
-		values.Del("key")
-	}
-}
-
-func setAuthHeader(req *http.Request, ptype config.ProviderType, key string) {
-	switch ptype {
-	case config.OpenAIChat, config.OpenAIResponses:
-		req.Header.Set("Authorization", "Bearer "+key)
-	case config.Claude:
-		req.Header.Set("x-api-key", key)
-	case config.Gemini:
-		req.Header.Set("x-goog-api-key", key)
-	}
-}
-
-func copyHeaders(dst, src http.Header) {
-	for k, vs := range src {
-		for _, v := range vs {
-			dst.Add(k, v)
-		}
-	}
-}
-
-func isStreamingRequestHint(r *http.Request) bool {
-	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
-		return true
-	}
-	if strings.EqualFold(r.URL.Query().Get("alt"), "sse") {
-		return true
-	}
-	return false
-}
-
-func analyzeRequestBody(providerType config.ProviderType, body []byte, streamHint bool) requestAnalysis {
-	analysis := requestAnalysis{
-		stream:       streamHint,
-		requestBody:  body,
-		requestBytes: len(body),
-	}
-
-	if len(body) == 0 {
-		analysis.cacheKey = cache.BuildNormalizedCacheKey("", nil)
-		analysis.cacheKeyReady = true
-		return analysis
-	}
-
-	analysis.model = gjson.GetBytes(body, "model").String()
-	if !analysis.stream {
-		streamValue := gjson.GetBytes(body, "stream")
-		if streamValue.Exists() {
-			analysis.stream = streamValue.Bool()
-		}
-	}
-
-	normalizedBody := normalizeRequestBodyForCache(providerType, body)
-
-	analysis.cacheKey = cache.BuildNormalizedCacheKey(analysis.model, normalizedBody)
-	analysis.cacheKeyReady = true
-	return analysis
-}
-
-func normalizeRequestBodyForCache(providerType config.ProviderType, fallbackBody []byte) []byte {
-	cacheField := cacheFieldForProviderType(providerType)
-	if cacheField != "" {
-		return normalizeCoreCacheField(cacheField, fallbackBody)
-	}
-	return normalizeTopLevelPayload(fallbackBody)
-}
-
-func normalizeCoreCacheField(cacheField string, fallbackBody []byte) []byte {
-	var normalizedValue any
-	rawValue := gjson.GetBytes(fallbackBody, cacheField)
-	rawJSON := "null"
-	if rawValue.Exists() {
-		rawJSON = rawValue.Raw
-	}
-	if err := json.Unmarshal([]byte(rawJSON), &normalizedValue); err != nil {
-		return fallbackBody
-	}
-
-	normalizedBody, err := json.Marshal(map[string]any{
-		cacheField: normalizedValue,
-	})
-	if err != nil {
-		return fallbackBody
-	}
-	return normalizedBody
-}
-
-func normalizeTopLevelPayload(fallbackBody []byte) []byte {
-	var payload map[string]any
-	if err := json.Unmarshal(fallbackBody, &payload); err != nil {
-		return fallbackBody
-	}
-	delete(payload, "stream")
-	delete(payload, "stream_options")
-	normalizedBody, err := json.Marshal(payload)
-	if err != nil {
-		return fallbackBody
-	}
-	return normalizedBody
-}
-
-func isStreamingResponse(headers http.Header) bool {
-	return strings.Contains(strings.ToLower(headers.Get("Content-Type")), "text/event-stream")
-}
-
-func cacheFieldForProviderType(providerType config.ProviderType) string {
-	switch providerType {
-	case config.OpenAIChat, config.Claude:
-		return "messages"
-	case config.OpenAIResponses:
-		return "input"
-	case config.Gemini:
-		return "contents"
-	default:
-		return ""
-	}
-}
-
-type recordedRequestBody struct {
-	mu           sync.Mutex
-	source       io.ReadCloser
-	copyBody     *bytes.Buffer
-	copyLimit    int
-	copyExceeded bool
-	bytesRead    int
-	finished     bool
-}
-
-func newRecordedRequestBody(source io.ReadCloser, copyLimit int) *recordedRequestBody {
-	var bodyBuffer *bytes.Buffer
-	if copyLimit > 0 {
-		bodyBuffer = &bytes.Buffer{}
-	}
-	return &recordedRequestBody{
-		source:    source,
-		copyBody:  bodyBuffer,
-		copyLimit: copyLimit,
-	}
-}
-
-func (r *recordedRequestBody) Read(p []byte) (int, error) {
-	n, err := r.source.Read(p)
-	if n > 0 {
-		r.mu.Lock()
-		r.bytesRead += n
-		if r.copyBody != nil {
-			remaining := r.copyLimit - r.copyBody.Len()
-			if remaining > 0 {
-				writeCount := n
-				if writeCount > remaining {
-					writeCount = remaining
-				}
-				_, _ = r.copyBody.Write(p[:writeCount])
-			}
-			if n > remaining {
-				r.copyExceeded = true
-				r.copyBody = nil
-			}
-		}
-		r.mu.Unlock()
-	}
-	if err == io.EOF {
-		r.mu.Lock()
-		r.finished = true
-		r.mu.Unlock()
-	}
-	return n, err
-}
-
-func (r *recordedRequestBody) Close() error {
-	return r.source.Close()
-}
-
-func (r *recordedRequestBody) BytesRead() int {
-	if r == nil {
-		return 0
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.bytesRead
-}
-
-func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
-	if r == nil {
-		return nil, false
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.finished || r.copyBody == nil || r.copyExceeded {
-		return nil, false
-	}
-	return append([]byte(nil), r.copyBody.Bytes()...), true
-}
-
-type prefixedReadCloser struct {
-	reader io.Reader
-	tail   io.Closer
-}
-
-func newPrefixedReadCloser(prefix []byte, tail io.ReadCloser) io.ReadCloser {
-	return &prefixedReadCloser{
-		reader: io.MultiReader(bytes.NewReader(prefix), tail),
-		tail:   tail,
-	}
-}
-
-func (r *prefixedReadCloser) Read(p []byte) (int, error) {
-	return r.reader.Read(p)
-}
-
-func (r *prefixedReadCloser) Close() error {
-	if r.tail == nil {
-		return nil
-	}
-	return r.tail.Close()
-}
-
-type limitedLogBuffer struct {
-	buf       bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func newLimitedLogBuffer(limit int) *limitedLogBuffer {
-	return &limitedLogBuffer{limit: limit}
-}
-
-func (b *limitedLogBuffer) Write(p []byte) (int, error) {
-	if b.limit <= 0 {
-		return len(p), nil
-	}
-	remaining := b.limit - b.buf.Len()
-	if remaining > 0 {
-		writeCount := len(p)
-		if writeCount > remaining {
-			writeCount = remaining
-		}
-		_, _ = b.buf.Write(p[:writeCount])
-	}
-	if len(p) > remaining {
-		b.truncated = true
-	}
-	return len(p), nil
-}
-
-func (b *limitedLogBuffer) String() string {
-	value := strings.TrimSpace(b.buf.String())
-	if b.truncated {
-		if value == "" {
-			return "上游错误响应过大，已截断日志"
-		}
-		return value + " ...(truncated)"
-	}
-	return value
-}
-
-func readRequestBodyForCache(body io.ReadCloser, limit int) ([]byte, bool, error) {
-	if limit <= 0 {
-		return nil, false, nil
-	}
-
-	var captured bytes.Buffer
-	chunk := make([]byte, 32*1024)
-	maxBytes := limit + 1
-
-	for captured.Len() <= limit {
-		readSize := len(chunk)
-		remaining := maxBytes - captured.Len()
-		if remaining < readSize {
-			readSize = remaining
-		}
-		n, err := body.Read(chunk[:readSize])
-		if n > 0 {
-			_, _ = captured.Write(chunk[:n])
-		}
-		if err == io.EOF {
-			return captured.Bytes(), true, nil
-		}
-		if err != nil {
-			return nil, false, err
-		}
-		if captured.Len() > limit {
-			break
-		}
-	}
-
-	return captured.Bytes(), false, nil
-}
-
-func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderType, recordedRequestBody *recordedRequestBody) requestAnalysis {
-	if analysis.cacheKeyReady {
-		return analysis
-	}
-	recordedBody, ok := recordedRequestBody.Snapshot()
-	if !ok {
-		return analysis
-	}
-	return analyzeRequestBody(providerType, recordedBody, analysis.stream)
-}
-
-func isModelDiscoveryRequest(method, suffix string) bool {
-	if method != http.MethodGet {
-		return false
-	}
-
-	switch strings.TrimSuffix(suffix, "/") {
-	case "/v1/models", "/v1beta/models":
-		return true
-	default:
-		return false
-	}
-}
-
-func cacheableHeaders(headers http.Header, isStream bool) map[string]string {
-	out := make(map[string]string)
-	for k := range headers {
-		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
-			continue
-		}
-		out[k] = headers.Get(k)
-	}
-	if _, ok := out["Content-Type"]; !ok && !isStream {
-		out["Content-Type"] = "application/json"
-	}
-	return out
 }
