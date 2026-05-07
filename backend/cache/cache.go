@@ -59,20 +59,30 @@ func (s *Store) file(provider string) string {
 	return filepath.Join(s.dir(provider), "cache.db")
 }
 
-func hash(model string, body []byte) string {
+func buildCacheKey(model string, body []byte) string {
 	h := sha256.New()
 	h.Write([]byte(model + "|"))
 	h.Write(body)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+func BuildRequestCacheKey(providerType config.ProviderType, model string, body []byte) string {
+	return buildCacheKey(model, normalizeBodyForCache(providerType, body))
+}
+
+func BuildNormalizedCacheKey(model string, normalizedBody []byte) string {
+	return buildCacheKey(model, normalizedBody)
+}
+
 func (s *Store) Get(providerName string, providerType config.ProviderType, model string, body []byte) (*Entry, bool) {
+	return s.GetByKey(providerName, BuildRequestCacheKey(providerType, model, body))
+}
+
+func (s *Store) GetByKey(providerName, cacheKey string) (*Entry, bool) {
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return nil, false
 	}
-
-	cacheKey := hash(model, normalizeBodyForCache(providerType, body))
 	row := db.QueryRow(`
 		SELECT response_body, status_code, headers_json, input_tokens, output_tokens
 		FROM cache_entries
@@ -108,53 +118,80 @@ func (s *Store) Get(providerName string, providerType config.ProviderType, model
 }
 
 func (s *Store) GetForRequest(providerName string, providerType config.ProviderType, model string, body []byte, isStream bool) (*Entry, bool) {
+	return s.GetForRequestByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), isStream)
+}
+
+func (s *Store) GetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, isStream bool) (*Entry, bool) {
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return nil, false
 	}
+	if isStream {
+		row := db.QueryRow(`
+			SELECT cached_stream_body, status_code, stream_headers_json, input_tokens, output_tokens
+			FROM cache_entries
+			WHERE cache_key = ?
+		`, cacheKey)
 
-	cacheKey := hash(model, normalizeBodyForCache(providerType, body))
+		var (
+			streamBody   []byte
+			statusCode   int
+			headersJSON  string
+			inputTokens  int64
+			outputTokens int64
+		)
+		if err := row.Scan(&streamBody, &statusCode, &headersJSON, &inputTokens, &outputTokens); err != nil {
+			return nil, false
+		}
+		if len(streamBody) == 0 {
+			return nil, false
+		}
+
+		headers := make(map[string]string)
+		if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
+			return nil, false
+		}
+
+		return &Entry{
+			ResponseBody: string(streamBody),
+			StatusCode:   statusCode,
+			Headers:      headers,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+		}, true
+	}
+
 	row := db.QueryRow(`
-		SELECT response_body, status_code, headers_json, stream_headers_json, cached_stream_body, input_tokens, output_tokens
+		SELECT cached_body, response_body, status_code, headers_json, input_tokens, output_tokens
 		FROM cache_entries
 		WHERE cache_key = ?
 	`, cacheKey)
 
 	var (
-		responseBody  string
-		statusCode    int
-		headersJSON   string
-		streamHeaders string
-		streamBody    []byte
-		inputTokens   int64
-		outputTokens  int64
+		cachedBody   []byte
+		responseBody string
+		statusCode   int
+		headersJSON  string
+		inputTokens  int64
+		outputTokens int64
 	)
-	if err := row.Scan(&responseBody, &statusCode, &headersJSON, &streamHeaders, &streamBody, &inputTokens, &outputTokens); err != nil {
+	if err := row.Scan(&cachedBody, &responseBody, &statusCode, &headersJSON, &inputTokens, &outputTokens); err != nil {
 		return nil, false
 	}
-
-	selectedHeadersJSON := headersJSON
-	selectedBody := []byte(responseBody)
-	if isStream {
-		if len(streamBody) == 0 {
-			return nil, false
-		}
-		selectedHeadersJSON = streamHeaders
-		selectedBody = append([]byte(nil), streamBody...)
-	} else {
+	if len(cachedBody) == 0 {
 		if responseBody == "" {
 			return nil, false
 		}
-		selectedBody = decorateCachedResponse(providerType, []byte(responseBody), inputTokens, outputTokens)
+		cachedBody = decorateCachedResponse(providerType, []byte(responseBody), inputTokens, outputTokens)
 	}
 
 	headers := make(map[string]string)
-	if err := json.Unmarshal([]byte(selectedHeadersJSON), &headers); err != nil {
+	if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
 		return nil, false
 	}
 
 	return &Entry{
-		ResponseBody: string(selectedBody),
+		ResponseBody: string(cachedBody),
 		StatusCode:   statusCode,
 		Headers:      headers,
 		InputTokens:  inputTokens,
@@ -163,16 +200,19 @@ func (s *Store) GetForRequest(providerName string, providerType config.ProviderT
 }
 
 func (s *Store) Set(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) {
-	s.SetForRequest(providerName, providerType, model, body, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
+	s.SetByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries)
+}
+
+func (s *Store) SetByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) {
+	s.SetForRequestByKey(providerName, providerType, cacheKey, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
 }
 
 func (s *Store) SetForRequest(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) {
-	db, err := s.dbFor(providerName)
-	if err != nil {
-		return
-	}
+	s.SetForRequestByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, isStream)
+}
 
-	headersJSON, err := formatHeadersJSON(cloneHeaders(headers), isStream)
+func (s *Store) SetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) {
+	db, err := s.dbFor(providerName)
 	if err != nil {
 		return
 	}
@@ -182,15 +222,17 @@ func (s *Store) SetForRequest(providerName string, providerType config.ProviderT
 		return
 	}
 	defer tx.Rollback()
-
-	cacheKey := hash(model, normalizeBodyForCache(providerType, body))
 	now := time.Now().UnixNano()
 
 	if isStream {
+		headersJSON, err := formatHeadersJSON(cloneHeaders(headers), true)
+		if err != nil {
+			return
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
-				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_stream_body, input_tokens, output_tokens, updated_at
-			) VALUES (?, '', ?, '{}', ?, ?, ?, ?, ?)
+				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_body, cached_stream_body, input_tokens, output_tokens, updated_at
+			) VALUES (?, '', ?, '{}', ?, X'', ?, ?, ?, ?)
 			ON CONFLICT(cache_key) DO UPDATE SET
 				status_code = excluded.status_code,
 				stream_headers_json = excluded.stream_headers_json,
@@ -202,18 +244,23 @@ func (s *Store) SetForRequest(providerName string, providerType config.ProviderT
 			return
 		}
 	} else {
+		headersJSON, decoratedBody, err := prepareCachedNonStreamRecord(headers, providerType, responseBody, inputTokens, outputTokens)
+		if err != nil {
+			return
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
-				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_stream_body, input_tokens, output_tokens, updated_at
-			) VALUES (?, ?, ?, ?, '{}', X'', ?, ?, ?)
+				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_body, cached_stream_body, input_tokens, output_tokens, updated_at
+			) VALUES (?, ?, ?, ?, '{}', ?, X'', ?, ?, ?)
 			ON CONFLICT(cache_key) DO UPDATE SET
 				response_body = excluded.response_body,
 				status_code = excluded.status_code,
 				headers_json = excluded.headers_json,
+				cached_body = excluded.cached_body,
 				input_tokens = excluded.input_tokens,
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
-		`, cacheKey, string(responseBody), statusCode, string(headersJSON), inputTokens, outputTokens, now); err != nil {
+		`, cacheKey, string(responseBody), statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
 			return
 		}
 	}

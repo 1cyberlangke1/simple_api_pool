@@ -126,9 +126,69 @@ func TestProxyRequestWritesStructuredLogs(t *testing.T) {
 		`"upstream_path":"/v1/chat/completions"`,
 		`"status":200`,
 		`"key_ref":"****-key"`,
+		`"upstream_header_ms":`,
 	} {
 		if !strings.Contains(out, fragment) {
 			t.Fatalf("期望日志包含 %s，实际日志是 %s", fragment, out)
+		}
+	}
+}
+
+func TestProxyStreamRequestWritesFirstByteLatencyLog(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(applog.NewTestLogger(&logs))
+	defer slog.SetDefault(oldLogger)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte("data: {\"id\":\"chunk-1\"}\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai",
+		Type:    config.OpenAIChat,
+		BaseURL: upstream.URL,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	out := logs.String()
+	for _, fragment := range []string{
+		`"msg":"proxy_request"`,
+		`"stream":true`,
+		`"upstream_header_ms":`,
+		`"first_byte_ms":`,
+	} {
+		if !strings.Contains(out, fragment) {
+			t.Fatalf("期望流式日志包含 %s，实际日志是 %s", fragment, out)
 		}
 	}
 }

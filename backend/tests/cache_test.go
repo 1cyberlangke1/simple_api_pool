@@ -76,6 +76,40 @@ func TestOpenAIChatCacheKeyUsesOnlyModelAndMessagesWithoutRouteKey(t *testing.T)
 	}
 }
 
+func TestOpenAIChatCacheKeyDistinguishesDifferentImagesUnderSameText(t *testing.T) {
+	baseDir := t.TempDir()
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	firstBody := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]}`)
+	secondBody := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"https://example.com/dog.png"}}]}]}`)
+
+	store.Set("openai", config.OpenAIChat, "gpt-4.1", firstBody, []byte(`{"id":"cat-cache"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
+
+	if _, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", secondBody); ok {
+		t.Fatal("期望相同文本但不同图片的请求不能命中同一缓存")
+	}
+}
+
+func TestOpenAIChatCacheKeyTreatsEquivalentImageObjectsAsSameRequest(t *testing.T) {
+	baseDir := t.TempDir()
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	firstBody := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png","detail":"high"}}]}]}`)
+	secondBody := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":[{"text":"hi","type":"text"},{"image_url":{"detail":"high","url":"https://example.com/cat.png"},"type":"image_url"}]}]}`)
+
+	store.Set("openai", config.OpenAIChat, "gpt-4.1", firstBody, []byte(`{"id":"same-image-cache"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
+
+	entry, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", secondBody)
+	if !ok {
+		t.Fatal("期望字段顺序不同但语义等价的多模态请求命中同一缓存")
+	}
+	if entry.ResponseBody != `{"id":"same-image-cache"}` {
+		t.Fatalf("期望命中已有缓存响应，实际是 %s", entry.ResponseBody)
+	}
+}
+
 func TestCacheKeyUsesProviderSpecificCoreMessageFields(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
@@ -94,6 +128,28 @@ func TestCacheKeyUsesProviderSpecificCoreMessageFields(t *testing.T) {
 	}
 	if entry, ok := store.Get("gemini", config.Gemini, "gemini-2.5-flash", geminiBodyWithDifferentNoise); !ok || entry.ResponseBody != `{"id":"gemini-cache"}` {
 		t.Fatalf("期望 Gemini 按 model + contents 命中缓存，实际 entry=%+v ok=%v", entry, ok)
+	}
+}
+
+func TestGetForRequestReturnsPreDecoratedCachedBody(t *testing.T) {
+	baseDir := t.TempDir()
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
+	responseBody := []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`)
+
+	store.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, responseBody, 200, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
+
+	entry, ok := store.GetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, false)
+	if !ok {
+		t.Fatal("期望命中非流式缓存")
+	}
+	if !strings.Contains(entry.ResponseBody, `"cache_tokens":10`) {
+		t.Fatalf("期望直接返回已注入 cache_tokens 的缓存体，实际是 %s", entry.ResponseBody)
+	}
+	if !strings.Contains(entry.ResponseBody, `"total_tokens":10`) {
+		t.Fatalf("期望直接返回已注入 total_tokens 的缓存体，实际是 %s", entry.ResponseBody)
 	}
 }
 

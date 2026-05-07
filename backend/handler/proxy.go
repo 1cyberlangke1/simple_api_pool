@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	"simple-api-pool/applog"
 	"simple-api-pool/auth"
@@ -20,11 +23,34 @@ import (
 	"simple-api-pool/token"
 )
 
+var streamCopyBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
+var streamCaptureBufferPool = sync.Pool{
+	New: func() any {
+		return &bytes.Buffer{}
+	},
+}
+
+type requestAnalysis struct {
+	model         string
+	stream        bool
+	cacheKey      string
+	cacheKeyReady bool
+	requestBody   []byte
+	requestBytes  int
+}
+
 type ProxyHandler struct {
 	cfg     *config.Config
 	stats   *stats.Manager
 	keyring *keyring.KeyRing
 	cache   *cache.Store
+	client  *http.Client
 	sema    chan struct{}
 	limiter *auth.FailureLimiter
 }
@@ -38,6 +64,16 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 		stats:   sm,
 		keyring: kr,
 		cache:   cs,
+		client: &http.Client{
+			Timeout: 5 * time.Minute,
+			Transport: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment,
+				ForceAttemptHTTP2:   true,
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 20,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 		sema:    make(chan struct{}, maxConcurrent),
 		limiter: auth.NewFailureLimiter(20, time.Minute, 5*time.Minute),
 	}
@@ -107,23 +143,35 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(targetURL)
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		logFields.Status = http.StatusBadRequest
-		logFields.Error = "读取请求体失败"
-		writeErrorResponse(w, http.StatusBadRequest, "读取请求体失败")
-		return
-	}
-	r.Body.Close()
-	logFields.RequestBytes = len(bodyBytes)
-
-	model := extractModel(bodyBytes)
-	logFields.Model = model
-	isStream := isStreamRequest(r, bodyBytes)
+	isStream := isStreamingRequestHint(r)
 	logFields.Stream = isStream
 
+	var (
+		analysis            requestAnalysis
+		upstreamBodyReader  io.Reader
+		recordedRequestBody *recordedRequestBody
+		err                 error
+	)
+
 	if useCache && cacheEligible {
-		if entry, ok := h.cache.GetForRequest(parts.provider, p.Type, model, bodyBytes, isStream); ok {
+		analysis.requestBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			logFields.Status = http.StatusBadRequest
+			logFields.Error = "读取请求体失败"
+			writeErrorResponse(w, http.StatusBadRequest, "读取请求体失败")
+			return
+		}
+		r.Body.Close()
+		analysis.requestBytes = len(analysis.requestBody)
+		logFields.RequestBytes = analysis.requestBytes
+		analysis = analyzeRequestBody(p.Type, analysis.requestBody, isStream)
+		if !logFields.Stream {
+			logFields.Stream = analysis.stream
+		}
+		logFields.Model = analysis.model
+		upstreamBodyReader = bytes.NewReader(analysis.requestBody)
+
+		if entry, ok := h.cache.GetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
 			h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
 			logFields.CacheHit = true
 			logFields.Status = entry.StatusCode
@@ -136,6 +184,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(entry.ResponseBody))
 			return
 		}
+	} else {
+		recordedRequestBody = newRecordedRequestBody(r.Body, cacheEligible)
+		upstreamBodyReader = recordedRequestBody
 	}
 
 	upstreamKey, err := h.keyring.GetKey(parts.provider)
@@ -148,7 +199,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logFields.KeyRef = applog.MaskSecret(upstreamKey)
 
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, bytes.NewReader(bodyBytes))
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, upstreamBodyReader)
 	if err != nil {
 		h.stats.RecordError(parts.provider, http.StatusInternalServerError)
 		logFields.Status = http.StatusInternalServerError
@@ -161,8 +212,8 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clearClientAuth(upstreamReq, p.Type)
 	setAuthHeader(upstreamReq, p.Type, upstreamKey)
 
-	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Do(upstreamReq)
+	upstreamStart := time.Now()
+	resp, err := h.client.Do(upstreamReq)
 	if err != nil {
 		h.stats.RecordError(parts.provider, http.StatusBadGateway)
 		h.keyring.RecordFailure(parts.provider, upstreamKey)
@@ -173,6 +224,11 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	logFields.UpstreamStatus = resp.StatusCode
+	logFields.UpstreamHeaderMs = time.Since(upstreamStart).Milliseconds()
+	if recordedRequestBody != nil {
+		analysis.requestBytes = recordedRequestBody.BytesRead()
+		logFields.RequestBytes = analysis.requestBytes
+	}
 
 	if resp.StatusCode >= 400 {
 		h.stats.RecordError(parts.provider, resp.StatusCode)
@@ -189,8 +245,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isStream {
-		h.handleStream(w, resp, parts.provider, upstreamKey, p.Type, model, bodyBytes, cacheEligible, int64(p.CacheMaxEntries), &logFields)
+	streamResponse := isStream || isStreamingResponse(resp.Header)
+	logFields.Stream = streamResponse
+	if streamResponse {
+		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, analysis, recordedRequestBody, cacheEligible, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
@@ -214,11 +272,14 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.keyring.RecordSuccess(parts.provider, upstreamKey)
 
 	if cacheEligible {
-		h.cache.Set(parts.provider, p.Type, model, bodyBytes, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+		analysis = ensureCacheAnalysis(analysis, p.Type, recordedRequestBody)
+		if analysis.cacheKeyReady {
+			h.cache.SetByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+		}
 	}
 }
 
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, provider, upstreamKey string, providerType config.ProviderType, model string, requestBody []byte, cacheEnabled bool, cacheMaxEntries int64, logFields *proxyLogFields) {
+func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
@@ -231,11 +292,22 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	w.WriteHeader(resp.StatusCode)
 	flusher.Flush()
 
-	var collected bytes.Buffer
-	buf := make([]byte, 4096)
+	collected := streamCaptureBufferPool.Get().(*bytes.Buffer)
+	collected.Reset()
+	defer streamCaptureBufferPool.Put(collected)
+
+	bufferPtr := streamCopyBufferPool.Get().(*[]byte)
+	buf := *bufferPtr
+	defer streamCopyBufferPool.Put(bufferPtr)
+	firstByteRecorded := false
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			if !firstByteRecorded {
+				logFields.FirstByteMs = time.Since(upstreamStart).Milliseconds()
+				logFields.FirstByteMeasured = true
+				firstByteRecorded = true
+			}
 			collected.Write(buf[:n])
 			w.Write(buf[:n])
 			flusher.Flush()
@@ -252,28 +324,34 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	h.keyring.RecordSuccess(provider, upstreamKey)
 
 	if cacheEnabled {
-		h.cache.SetForRequest(provider, providerType, model, requestBody, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
+		analysis = ensureCacheAnalysis(analysis, providerType, recordedRequestBody)
+		if analysis.cacheKeyReady {
+			h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
+		}
 	}
 }
 
 type proxyLogFields struct {
-	Method         string
-	Path           string
-	Query          string
-	Provider       string
-	ProviderType   string
-	Model          string
-	CacheRoute     bool
-	CacheHit       bool
-	Stream         bool
-	Status         int
-	UpstreamStatus int
-	RequestBytes   int
-	ResponseBytes  int
-	UpstreamHost   string
-	UpstreamPath   string
-	KeyRef         string
-	Error          string
+	Method            string
+	Path              string
+	Query             string
+	Provider          string
+	ProviderType      string
+	Model             string
+	CacheRoute        bool
+	CacheHit          bool
+	Stream            bool
+	Status            int
+	UpstreamStatus    int
+	RequestBytes      int
+	ResponseBytes     int
+	UpstreamHeaderMs  int64
+	FirstByteMs       int64
+	FirstByteMeasured bool
+	UpstreamHost      string
+	UpstreamPath      string
+	KeyRef            string
+	Error             string
 }
 
 func (h *ProxyHandler) logProxyResult(start time.Time, fields proxyLogFields) {
@@ -291,7 +369,11 @@ func (h *ProxyHandler) logProxyResult(start time.Time, fields proxyLogFields) {
 		"upstream_status", fields.UpstreamStatus,
 		"request_bytes", fields.RequestBytes,
 		"response_bytes", fields.ResponseBytes,
+		"upstream_header_ms", fields.UpstreamHeaderMs,
 		"duration_ms", time.Since(start).Milliseconds(),
+	}
+	if fields.FirstByteMeasured {
+		attrs = append(attrs, "first_byte_ms", fields.FirstByteMs)
 	}
 	if fields.UpstreamHost != "" {
 		attrs = append(attrs, "upstream_host", fields.UpstreamHost)
@@ -380,16 +462,6 @@ func sanitizeClientAuthQuery(values url.Values, providerType config.ProviderType
 	}
 }
 
-func extractModel(body []byte) string {
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		return ""
-	}
-	return req.Model
-}
-
 func setAuthHeader(req *http.Request, ptype config.ProviderType, key string) {
 	switch ptype {
 	case config.OpenAIChat, config.OpenAIResponses:
@@ -409,21 +481,162 @@ func copyHeaders(dst, src http.Header) {
 	}
 }
 
-func isStreamRequest(r *http.Request, body []byte) bool {
+func isStreamingRequestHint(r *http.Request) bool {
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
 		return true
 	}
 	if strings.EqualFold(r.URL.Query().Get("alt"), "sse") {
 		return true
 	}
-
-	var payload struct {
-		Stream bool `json:"stream"`
-	}
-	if err := json.Unmarshal(body, &payload); err == nil && payload.Stream {
-		return true
-	}
 	return false
+}
+
+func analyzeRequestBody(providerType config.ProviderType, body []byte, streamHint bool) requestAnalysis {
+	analysis := requestAnalysis{
+		stream:       streamHint,
+		requestBody:  body,
+		requestBytes: len(body),
+	}
+
+	if len(body) == 0 {
+		analysis.cacheKey = cache.BuildNormalizedCacheKey("", nil)
+		analysis.cacheKeyReady = true
+		return analysis
+	}
+
+	analysis.model = gjson.GetBytes(body, "model").String()
+	if !analysis.stream {
+		streamValue := gjson.GetBytes(body, "stream")
+		if streamValue.Exists() {
+			analysis.stream = streamValue.Bool()
+		}
+	}
+
+	normalizedBody := normalizeRequestBodyForCache(providerType, body)
+
+	analysis.cacheKey = cache.BuildNormalizedCacheKey(analysis.model, normalizedBody)
+	analysis.cacheKeyReady = true
+	return analysis
+}
+
+func normalizeRequestBodyForCache(providerType config.ProviderType, fallbackBody []byte) []byte {
+	cacheField := cacheFieldForProviderType(providerType)
+	if cacheField != "" {
+		return normalizeCoreCacheField(cacheField, fallbackBody)
+	}
+	return normalizeTopLevelPayload(fallbackBody)
+}
+
+func normalizeCoreCacheField(cacheField string, fallbackBody []byte) []byte {
+	var normalizedValue any
+	rawValue := gjson.GetBytes(fallbackBody, cacheField)
+	rawJSON := "null"
+	if rawValue.Exists() {
+		rawJSON = rawValue.Raw
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &normalizedValue); err != nil {
+		return fallbackBody
+	}
+
+	normalizedBody, err := json.Marshal(map[string]any{
+		cacheField: normalizedValue,
+	})
+	if err != nil {
+		return fallbackBody
+	}
+	return normalizedBody
+}
+
+func normalizeTopLevelPayload(fallbackBody []byte) []byte {
+	var payload map[string]any
+	if err := json.Unmarshal(fallbackBody, &payload); err != nil {
+		return fallbackBody
+	}
+	delete(payload, "stream")
+	delete(payload, "stream_options")
+	normalizedBody, err := json.Marshal(payload)
+	if err != nil {
+		return fallbackBody
+	}
+	return normalizedBody
+}
+
+func isStreamingResponse(headers http.Header) bool {
+	return strings.Contains(strings.ToLower(headers.Get("Content-Type")), "text/event-stream")
+}
+
+func cacheFieldForProviderType(providerType config.ProviderType) string {
+	switch providerType {
+	case config.OpenAIChat, config.Claude:
+		return "messages"
+	case config.OpenAIResponses:
+		return "input"
+	case config.Gemini:
+		return "contents"
+	default:
+		return ""
+	}
+}
+
+type recordedRequestBody struct {
+	source    io.ReadCloser
+	copyBody  *bytes.Buffer
+	bytesRead int
+	finished  bool
+}
+
+func newRecordedRequestBody(source io.ReadCloser, copyBody bool) *recordedRequestBody {
+	var bodyBuffer *bytes.Buffer
+	if copyBody {
+		bodyBuffer = &bytes.Buffer{}
+	}
+	return &recordedRequestBody{
+		source:   source,
+		copyBody: bodyBuffer,
+	}
+}
+
+func (r *recordedRequestBody) Read(p []byte) (int, error) {
+	n, err := r.source.Read(p)
+	if n > 0 {
+		r.bytesRead += n
+		if r.copyBody != nil {
+			_, _ = r.copyBody.Write(p[:n])
+		}
+	}
+	if err == io.EOF {
+		r.finished = true
+	}
+	return n, err
+}
+
+func (r *recordedRequestBody) Close() error {
+	return r.source.Close()
+}
+
+func (r *recordedRequestBody) BytesRead() int {
+	if r == nil {
+		return 0
+	}
+	return r.bytesRead
+}
+
+func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
+	if r == nil || !r.finished || r.copyBody == nil {
+		return nil, false
+	}
+	return append([]byte(nil), r.copyBody.Bytes()...), true
+}
+
+func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderType, recordedRequestBody *recordedRequestBody) requestAnalysis {
+	if analysis.cacheKeyReady {
+		return analysis
+	}
+	recordedBody, ok := recordedRequestBody.Snapshot()
+	if !ok {
+		return analysis
+	}
+	return analyzeRequestBody(providerType, recordedBody, analysis.stream)
 }
 
 func isModelDiscoveryRequest(method, suffix string) bool {

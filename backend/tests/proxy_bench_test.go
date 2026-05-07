@@ -15,6 +15,9 @@ import (
 )
 
 func BenchmarkProxyCacheHit(b *testing.B) {
+	restoreLogger := muteBenchmarkLogger()
+	defer restoreLogger()
+
 	cfg := config.New(store.New(b.TempDir()))
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
 	if err := cfg.SaveProvider(config.Provider{

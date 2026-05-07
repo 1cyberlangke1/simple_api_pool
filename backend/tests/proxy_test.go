@@ -17,6 +17,31 @@ import (
 	"simple-api-pool/store"
 )
 
+type stagedReadCloser struct {
+	chunks   [][]byte
+	release  <-chan struct{}
+	index    int
+	released bool
+}
+
+func (r *stagedReadCloser) Read(p []byte) (int, error) {
+	if r.index >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	if r.index > 0 && !r.released {
+		<-r.release
+		r.released = true
+	}
+	chunk := r.chunks[r.index]
+	r.index++
+	n := copy(p, chunk)
+	return n, nil
+}
+
+func (r *stagedReadCloser) Close() error {
+	return nil
+}
+
 func TestProxyPassesThroughMethodPathQueryBodyAndAuth(t *testing.T) {
 	received := struct {
 		Method string
@@ -85,6 +110,82 @@ func TestProxyPassesThroughMethodPathQueryBodyAndAuth(t *testing.T) {
 	}
 	if received.Auth != "Bearer upstream-key" {
 		t.Fatalf("期望注入上游鉴权头，实际是 %q", received.Auth)
+	}
+}
+
+func TestDirectProxyStreamDoesNotWaitForCompleteRequestBody(t *testing.T) {
+	upstreamEntered := make(chan struct{})
+	releaseBody := make(chan struct{})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(upstreamEntered)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"id\":\"fast-start\"}\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", http.NoBody)
+	req.Body = &stagedReadCloser{
+		chunks: [][]byte{
+			[]byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":`),
+			[]byte(`true}`),
+		},
+		release: releaseBody,
+	}
+	req.ContentLength = -1
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		proxy.ServeHTTP(rec, req)
+	}()
+
+	select {
+	case <-upstreamEntered:
+	case <-time.After(400 * time.Millisecond):
+		t.Fatal("期望普通透传路由在请求体完整读取前就开始访问上游")
+	}
+
+	close(releaseBody)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("期望代理请求在释放剩余请求体后完成")
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"fast-start"`) {
+		t.Fatalf("期望快速收到上游流式响应，实际是 %s", rec.Body.String())
 	}
 }
 
@@ -220,6 +321,9 @@ func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 	usage := payload["usage"].(map[string]any)
 	if usage["cache_tokens"] != float64(10) {
 		t.Fatalf("期望 cache_tokens 为 10，实际是 %#v", usage["cache_tokens"])
+	}
+	if usage["total_tokens"] != float64(10) {
+		t.Fatalf("期望 total_tokens 为 10，实际是 %#v", usage["total_tokens"])
 	}
 
 	snapshot := statsMgr.Snapshot()
@@ -677,6 +781,9 @@ func TestClaudeCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	if thirdUsage["cache_tokens"] != float64(14) {
 		t.Fatalf("期望 Claude 第三次缓存命中时 cache_tokens 为 14，实际是 %#v", thirdUsage["cache_tokens"])
 	}
+	if thirdUsage["total_tokens"] != float64(14) {
+		t.Fatalf("期望 Claude 第三次缓存命中时 total_tokens 为 14，实际是 %#v", thirdUsage["total_tokens"])
+	}
 }
 
 func TestOpenAIResponsesCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
@@ -785,6 +892,9 @@ func TestOpenAIResponsesCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	if thirdUsage["cache_tokens"] != float64(13) {
 		t.Fatalf("期望 Responses 第三次缓存命中时 cache_tokens 为 13，实际是 %#v", thirdUsage["cache_tokens"])
 	}
+	if thirdUsage["total_tokens"] != float64(13) {
+		t.Fatalf("期望 Responses 第三次缓存命中时 total_tokens 为 13，实际是 %#v", thirdUsage["total_tokens"])
+	}
 }
 
 func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
@@ -890,6 +1000,9 @@ func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	thirdUsage := thirdPayload["usageMetadata"].(map[string]any)
 	if thirdUsage["cacheTokens"] != float64(11) {
 		t.Fatalf("期望 Gemini 第三次缓存命中时 cacheTokens 为 11，实际是 %#v", thirdUsage["cacheTokens"])
+	}
+	if thirdUsage["totalTokenCount"] != float64(11) {
+		t.Fatalf("期望 Gemini 第三次缓存命中时 totalTokenCount 为 11，实际是 %#v", thirdUsage["totalTokenCount"])
 	}
 }
 
@@ -1011,6 +1124,9 @@ func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	usage := payload["usage"].(map[string]any)
 	if usage["cache_tokens"] != float64(10) {
 		t.Fatalf("期望 cache_tokens 为 10，实际是 %#v", usage["cache_tokens"])
+	}
+	if usage["total_tokens"] != float64(10) {
+		t.Fatalf("期望 total_tokens 为 10，实际是 %#v", usage["total_tokens"])
 	}
 }
 
@@ -1213,6 +1329,9 @@ func TestCacheHitWritesCacheTokensIntoGeminiUsageMetadata(t *testing.T) {
 	usage := payload["usageMetadata"].(map[string]any)
 	if usage["cacheTokens"] != float64(10) {
 		t.Fatalf("期望 cacheTokens 为 10，实际是 %#v", usage["cacheTokens"])
+	}
+	if usage["totalTokenCount"] != float64(10) {
+		t.Fatalf("期望 totalTokenCount 为 10，实际是 %#v", usage["totalTokenCount"])
 	}
 }
 

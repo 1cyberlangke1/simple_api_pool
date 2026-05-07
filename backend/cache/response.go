@@ -56,6 +56,7 @@ func decorateCachedResponse(providerType config.ProviderType, responseBody []byt
 	case config.Claude:
 		usage := ensureMap(payload, "usage")
 		usage["cache_tokens"] = totalTokens
+		usage["total_tokens"] = totalTokens
 	case config.Gemini:
 		usage := ensureMap(payload, "usageMetadata")
 		usage["totalTokenCount"] = totalTokens
@@ -382,13 +383,13 @@ func formatHeadersJSON(headers map[string]string, isStream bool) ([]byte, error)
 	return json.Marshal(normalizeHeadersForCache(headers, isStream))
 }
 
-func prepareCachedMetadata(headers map[string]string, providerType config.ProviderType, responseBody []byte, inputTokens, outputTokens int64) (nonStreamHeadersJSON []byte, nonStreamBody, streamBody []byte, err error) {
-	nonStreamHeadersJSON, err = formatHeadersJSON(cloneHeaders(headers), false)
+func prepareCachedNonStreamRecord(headers map[string]string, providerType config.ProviderType, responseBody []byte, inputTokens, outputTokens int64) (headersJSON []byte, decoratedBody []byte, err error) {
+	headersJSON, err = formatHeadersJSON(cloneHeaders(headers), false)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("marshal non-stream headers: %w", err)
+		return nil, nil, fmt.Errorf("marshal non-stream headers: %w", err)
 	}
-	nonStreamBody, streamBody = PrepareCachedBodies(providerType, responseBody, inputTokens, outputTokens)
-	return nonStreamHeadersJSON, nonStreamBody, streamBody, nil
+	decoratedBody = decorateCachedResponse(providerType, responseBody, inputTokens, outputTokens)
+	return headersJSON, decoratedBody, nil
 }
 
 func cloneHeaders(headers map[string]string) map[string]string {
