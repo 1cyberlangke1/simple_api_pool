@@ -199,27 +199,27 @@ func (s *Store) GetForRequestByKey(providerName string, providerType config.Prov
 	}, true
 }
 
-func (s *Store) Set(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) {
-	s.SetByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries)
+func (s *Store) Set(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) bool {
+	return s.SetByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries)
 }
 
-func (s *Store) SetByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) {
-	s.SetForRequestByKey(providerName, providerType, cacheKey, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
+func (s *Store) SetByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64) bool {
+	return s.SetForRequestByKey(providerName, providerType, cacheKey, responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, false)
 }
 
-func (s *Store) SetForRequest(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) {
-	s.SetForRequestByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, isStream)
+func (s *Store) SetForRequest(providerName string, providerType config.ProviderType, model string, body, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
+	return s.SetForRequestByKey(providerName, providerType, BuildRequestCacheKey(providerType, model, body), responseBody, statusCode, headers, inputTokens, outputTokens, maxEntries, isStream)
 }
 
-func (s *Store) SetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) {
+func (s *Store) SetForRequestByKey(providerName string, providerType config.ProviderType, cacheKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
 	db, err := s.dbFor(providerName)
 	if err != nil {
-		return
+		return false
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		return
+		return false
 	}
 	defer tx.Rollback()
 	now := time.Now().UnixNano()
@@ -227,7 +227,7 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 	if isStream {
 		headersJSON, err := formatHeadersJSON(cloneHeaders(headers), true)
 		if err != nil {
-			return
+			return false
 		}
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
@@ -241,12 +241,12 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
 		`, cacheKey, statusCode, string(headersJSON), responseBody, inputTokens, outputTokens, now); err != nil {
-			return
+			return false
 		}
 	} else {
 		headersJSON, decoratedBody, err := prepareCachedNonStreamRecord(headers, providerType, responseBody, inputTokens, outputTokens)
 		if err != nil {
-			return
+			return false
 		}
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
@@ -261,14 +261,14 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
 		`, cacheKey, string(responseBody), statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
-			return
+			return false
 		}
 	}
 
 	if maxEntries > 0 {
 		var count int64
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM cache_entries`).Scan(&count); err != nil {
-			return
+			return false
 		}
 		if count > maxEntries {
 			deleteCount := count - maxEntries
@@ -281,12 +281,15 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 					LIMIT ?
 				)
 			`, deleteCount); err != nil {
-				return
+				return false
 			}
 		}
 	}
 
-	_ = tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false
+	}
+	return true
 }
 
 func (s *Store) ClearProvider(provider string) error {

@@ -243,6 +243,131 @@ func TestProxyAndAccessLogsRedactSensitiveQueryValues(t *testing.T) {
 	}
 }
 
+func TestCacheHitWritesDedicatedCacheEventLog(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(applog.NewTestLogger(&logs))
+	defer slog.SetDefault(oldLogger)
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         "http://127.0.0.1:1",
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
+	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10)
+
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	out := logs.String()
+	for _, fragment := range []string{
+		`"msg":"cache_event"`,
+		`"event":"hit"`,
+		`"provider":"openai"`,
+		`"provider_type":"openai_chat"`,
+		`"model":"gpt-4.1"`,
+		`"cache_route":true`,
+		`"status":200`,
+		`"total_tokens":10`,
+		`"msg":"proxy_request"`,
+		`"cache_hit":true`,
+	} {
+		if !strings.Contains(out, fragment) {
+			t.Fatalf("期望缓存命中日志包含 %s，实际日志是 %s", fragment, out)
+		}
+	}
+}
+
+func TestCacheStoreWritesDedicatedCacheEventLog(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(applog.NewTestLogger(&logs))
+	defer slog.SetDefault(oldLogger)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","usage":{"prompt_tokens":3,"completion_tokens":2}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	out := logs.String()
+	for _, fragment := range []string{
+		`"msg":"cache_event"`,
+		`"event":"store"`,
+		`"provider":"openai"`,
+		`"provider_type":"openai_chat"`,
+		`"model":"gpt-4.1"`,
+		`"cache_route":true`,
+		`"status":200`,
+		`"input_tokens":3`,
+		`"output_tokens":2`,
+		`"total_tokens":5`,
+		`"msg":"proxy_request"`,
+		`"cache_hit":false`,
+	} {
+		if !strings.Contains(out, fragment) {
+			t.Fatalf("期望构造缓存日志包含 %s，实际日志是 %s", fragment, out)
+		}
+	}
+}
+
 func TestAccessLoggingMiddlewareWritesStatusAndResponseBytes(t *testing.T) {
 	var logs bytes.Buffer
 	oldLogger := slog.Default()

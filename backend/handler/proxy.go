@@ -55,6 +55,21 @@ type ProxyHandler struct {
 	limiter *auth.FailureLimiter
 }
 
+type cacheEventLogFields struct {
+	Event         string
+	Provider      string
+	ProviderType  string
+	Model         string
+	CacheKey      string
+	CacheRoute    bool
+	Stream        bool
+	Status        int
+	RequestBytes  int
+	ResponseBytes int
+	InputTokens   int64
+	OutputTokens  int64
+}
+
 func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing, cs *cache.Store, maxConcurrent int) *ProxyHandler {
 	if maxConcurrent <= 0 {
 		maxConcurrent = 50
@@ -177,6 +192,20 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			logFields.Status = entry.StatusCode
 			logFields.UpstreamStatus = entry.StatusCode
 			logFields.ResponseBytes = len(entry.ResponseBody)
+			h.logCacheEvent(cacheEventLogFields{
+				Event:         "hit",
+				Provider:      parts.provider,
+				ProviderType:  string(p.Type),
+				Model:         analysis.model,
+				CacheKey:      analysis.cacheKey,
+				CacheRoute:    parts.useCache,
+				Stream:        analysis.stream,
+				Status:        entry.StatusCode,
+				RequestBytes:  analysis.requestBytes,
+				ResponseBytes: len(entry.ResponseBody),
+				InputTokens:   entry.InputTokens,
+				OutputTokens:  entry.OutputTokens,
+			})
 			for k, v := range entry.Headers {
 				w.Header().Set(k, v)
 			}
@@ -248,7 +277,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	streamResponse := isStream || isStreamingResponse(resp.Header)
 	logFields.Stream = streamResponse
 	if streamResponse {
-		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, analysis, recordedRequestBody, cacheEligible, int64(p.CacheMaxEntries), &logFields)
+		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, analysis, recordedRequestBody, cacheEligible, parts.useCache, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
@@ -274,12 +303,28 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if cacheEligible {
 		analysis = ensureCacheAnalysis(analysis, p.Type, recordedRequestBody)
 		if analysis.cacheKeyReady {
-			h.cache.SetByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+			stored := h.cache.SetByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+			if stored {
+				h.logCacheEvent(cacheEventLogFields{
+					Event:         "store",
+					Provider:      parts.provider,
+					ProviderType:  string(p.Type),
+					Model:         analysis.model,
+					CacheKey:      analysis.cacheKey,
+					CacheRoute:    parts.useCache,
+					Stream:        false,
+					Status:        resp.StatusCode,
+					RequestBytes:  analysis.requestBytes,
+					ResponseBytes: len(respBody),
+					InputTokens:   usage.InputTokens,
+					OutputTokens:  usage.OutputTokens,
+				})
+			}
 		}
 	}
 }
 
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheMaxEntries int64, logFields *proxyLogFields) {
+func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
@@ -326,7 +371,23 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	if cacheEnabled {
 		analysis = ensureCacheAnalysis(analysis, providerType, recordedRequestBody)
 		if analysis.cacheKeyReady {
-			h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
+			stored := h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
+			if stored {
+				h.logCacheEvent(cacheEventLogFields{
+					Event:         "store",
+					Provider:      provider,
+					ProviderType:  string(providerType),
+					Model:         analysis.model,
+					CacheKey:      analysis.cacheKey,
+					CacheRoute:    cacheRoute,
+					Stream:        true,
+					Status:        resp.StatusCode,
+					RequestBytes:  analysis.requestBytes,
+					ResponseBytes: collected.Len(),
+					InputTokens:   usage.InputTokens,
+					OutputTokens:  usage.OutputTokens,
+				})
+			}
 		}
 	}
 }
@@ -392,6 +453,24 @@ func (h *ProxyHandler) logProxyResult(start time.Time, fields proxyLogFields) {
 		return
 	}
 	logger.Info("proxy_request", attrs...)
+}
+
+func (h *ProxyHandler) logCacheEvent(fields cacheEventLogFields) {
+	slog.Default().Info("cache_event",
+		"event", fields.Event,
+		"provider", fields.Provider,
+		"provider_type", fields.ProviderType,
+		"model", fields.Model,
+		"cache_key", fields.CacheKey,
+		"cache_route", fields.CacheRoute,
+		"stream", fields.Stream,
+		"status", fields.Status,
+		"request_bytes", fields.RequestBytes,
+		"response_bytes", fields.ResponseBytes,
+		"input_tokens", fields.InputTokens,
+		"output_tokens", fields.OutputTokens,
+		"total_tokens", fields.InputTokens+fields.OutputTokens,
+	)
 }
 
 type pathParts struct {
