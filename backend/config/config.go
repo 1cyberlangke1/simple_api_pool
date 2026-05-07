@@ -139,7 +139,7 @@ func (c *Config) SaveProvider(p Provider) error {
 		p.MinDisableSecs = 30
 	}
 	if p.MaxDisableSecs == 0 {
-		p.MaxDisableSecs = 3600
+		p.MaxDisableSecs = 43200
 	}
 	if p.CacheMaxEntries == 0 {
 		p.CacheMaxEntries = 1000

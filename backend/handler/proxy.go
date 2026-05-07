@@ -457,11 +457,10 @@ func canonicalResponseFromStream(providerType string, body []byte) ([]byte, bool
 
 func canonicalOpenAIChatResponse(body []byte) ([]byte, bool) {
 	lines := strings.Split(string(body), "\n")
-	var id string
-	var model string
-	var role string
+	topLevel := make(map[string]any)
+	messageFields := make(map[string]any)
+	choiceFields := make(map[string]any)
 	var finishReason any
-	var content strings.Builder
 	var usage map[string]any
 
 	for _, rawLine := range lines {
@@ -471,68 +470,48 @@ func canonicalOpenAIChatResponse(body []byte) ([]byte, bool) {
 		}
 
 		jsonStr := strings.TrimPrefix(line, "data: ")
-		var chunk struct {
-			ID      string `json:"id"`
-			Model   string `json:"model"`
-			Choices []struct {
-				Index        int `json:"index"`
-				FinishReason any `json:"finish_reason"`
-				Delta        struct {
-					Role    string `json:"role"`
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Usage map[string]any `json:"usage"`
-		}
+		var chunk map[string]any
 		if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
 			continue
 		}
 
-		if chunk.ID != "" {
-			id = chunk.ID
+		mergeMapKeepingLatest(topLevel, chunk, "choices", "usage", "object")
+		if rawUsage, ok := chunk["usage"].(map[string]any); ok && len(rawUsage) > 0 {
+			usage = rawUsage
 		}
-		if chunk.Model != "" {
-			model = chunk.Model
+		rawChoices, ok := chunk["choices"].([]any)
+		if !ok || len(rawChoices) == 0 {
+			continue
 		}
-		if len(chunk.Choices) > 0 {
-			choice := chunk.Choices[0]
-			if choice.Delta.Role != "" {
-				role = choice.Delta.Role
-			}
-			if choice.Delta.Content != "" {
-				content.WriteString(choice.Delta.Content)
-			}
-			if choice.FinishReason != nil {
-				finishReason = choice.FinishReason
-			}
+		rawChoice, ok := rawChoices[0].(map[string]any)
+		if !ok {
+			continue
 		}
-		if len(chunk.Usage) > 0 {
-			usage = chunk.Usage
+		mergeMapKeepingLatest(choiceFields, rawChoice, "delta", "message", "finish_reason")
+		if rawFinishReason, exists := rawChoice["finish_reason"]; exists && rawFinishReason != nil {
+			finishReason = rawFinishReason
+		}
+		if rawDelta, ok := rawChoice["delta"].(map[string]any); ok {
+			for key, value := range rawDelta {
+				mergeDeltaValue(messageFields, key, value)
+			}
 		}
 	}
 
-	if content.Len() == 0 && len(usage) == 0 {
+	if len(messageFields) == 0 && len(usage) == 0 {
 		return nil, false
 	}
-	if role == "" {
-		role = "assistant"
+	if role, _ := messageFields["role"].(string); role == "" {
+		messageFields["role"] = "assistant"
 	}
 
-	response := map[string]any{
-		"id":     id,
-		"object": "chat.completion",
-		"model":  model,
-		"choices": []map[string]any{
-			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    role,
-					"content": content.String(),
-				},
-				"finish_reason": finishReason,
-			},
-		},
-	}
+	response := cloneMap(topLevel)
+	response["object"] = "chat.completion"
+	choice := cloneMap(choiceFields)
+	choice["index"] = 0
+	choice["message"] = messageFields
+	choice["finish_reason"] = finishReason
+	response["choices"] = []map[string]any{choice}
 	if len(usage) > 0 {
 		response["usage"] = usage
 	}
@@ -548,7 +527,7 @@ func canonicalClaudeResponse(body []byte) ([]byte, bool) {
 	lines := strings.Split(string(body), "\n")
 	var message map[string]any
 	var usage map[string]any
-	var content strings.Builder
+	contentBlock := map[string]any{"type": "text", "text": ""}
 	var stopReason any
 	var stopSequence any
 
@@ -576,9 +555,12 @@ func canonicalClaudeResponse(body []byte) ([]byte, bool) {
 				message = event.Message
 			}
 		case "content_block_delta":
-			if deltaType, _ := event.Delta["type"].(string); deltaType == "text_delta" {
-				if text, _ := event.Delta["text"].(string); text != "" {
-					content.WriteString(text)
+			for key, value := range event.Delta {
+				switch key {
+				case "type":
+					continue
+				default:
+					mergeDeltaValue(contentBlock, key, value)
 				}
 			}
 		case "message_delta":
@@ -596,27 +578,19 @@ func canonicalClaudeResponse(body []byte) ([]byte, bool) {
 		}
 	}
 
-	if message == nil && content.Len() == 0 {
+	if message == nil && len(contentBlock) == 0 {
 		return nil, false
 	}
 	if message == nil {
 		message = make(map[string]any)
 	}
 
-	response := map[string]any{
-		"id":            message["id"],
-		"type":          "message",
-		"role":          "assistant",
-		"model":         message["model"],
-		"stop_reason":   stopReason,
-		"stop_sequence": stopSequence,
-		"content": []map[string]any{
-			{
-				"type": "text",
-				"text": content.String(),
-			},
-		},
-	}
+	response := cloneMap(message)
+	response["type"] = "message"
+	response["role"] = "assistant"
+	response["stop_reason"] = stopReason
+	response["stop_sequence"] = stopSequence
+	response["content"] = []map[string]any{contentBlock}
 	if len(usage) > 0 {
 		response["usage"] = usage
 	}
@@ -656,10 +630,11 @@ func canonicalOpenAIResponsesResponse(body []byte) ([]byte, bool) {
 
 func canonicalGeminiResponse(body []byte) ([]byte, bool) {
 	lines := strings.Split(string(body), "\n")
-	var role string
-	var finishReason any
+	topLevel := make(map[string]any)
+	candidateFields := make(map[string]any)
+	contentFields := make(map[string]any)
+	partFields := make(map[string]any)
 	var usageMetadata map[string]any
-	var text strings.Builder
 
 	for _, rawLine := range lines {
 		line := strings.TrimSpace(rawLine)
@@ -669,33 +644,32 @@ func canonicalGeminiResponse(body []byte) ([]byte, bool) {
 
 		jsonStr := strings.TrimPrefix(line, "data: ")
 		var chunk struct {
-			Candidates []struct {
-				FinishReason any `json:"finishReason"`
-				Content      struct {
-					Role  string `json:"role"`
-					Parts []struct {
-						Text string `json:"text"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-			UsageMetadata map[string]any `json:"usageMetadata"`
+			Candidates    []map[string]any `json:"candidates"`
+			UsageMetadata map[string]any   `json:"usageMetadata"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
 			continue
 		}
 
+		var rawChunk map[string]any
+		if err := json.Unmarshal([]byte(jsonStr), &rawChunk); err == nil {
+			mergeMapKeepingLatest(topLevel, rawChunk, "candidates", "usageMetadata")
+		}
 		if len(chunk.Candidates) > 0 {
 			candidate := chunk.Candidates[0]
-			if candidate.Content.Role != "" {
-				role = candidate.Content.Role
+			mergeMapKeepingLatest(candidateFields, candidate, "content", "finishReason")
+			if rawFinishReason, exists := candidate["finishReason"]; exists {
+				candidateFields["finishReason"] = rawFinishReason
 			}
-			for _, part := range candidate.Content.Parts {
-				if part.Text != "" {
-					text.WriteString(part.Text)
+			if rawContent, ok := candidate["content"].(map[string]any); ok {
+				mergeMapKeepingLatest(contentFields, rawContent, "parts")
+				if rawParts, ok := rawContent["parts"].([]any); ok && len(rawParts) > 0 {
+					if rawPart, ok := rawParts[0].(map[string]any); ok {
+						for key, value := range rawPart {
+							mergeDeltaValue(partFields, key, value)
+						}
+					}
 				}
-			}
-			if candidate.FinishReason != nil {
-				finishReason = candidate.FinishReason
 			}
 		}
 		if len(chunk.UsageMetadata) > 0 {
@@ -703,26 +677,18 @@ func canonicalGeminiResponse(body []byte) ([]byte, bool) {
 		}
 	}
 
-	if text.Len() == 0 && len(usageMetadata) == 0 {
+	if len(partFields) == 0 && len(usageMetadata) == 0 {
 		return nil, false
 	}
-	if role == "" {
-		role = "model"
+	if role, _ := contentFields["role"].(string); role == "" {
+		contentFields["role"] = "model"
 	}
 
-	response := map[string]any{
-		"candidates": []map[string]any{
-			{
-				"content": map[string]any{
-					"role": role,
-					"parts": []map[string]any{
-						{"text": text.String()},
-					},
-				},
-				"finishReason": finishReason,
-			},
-		},
-	}
+	response := cloneMap(topLevel)
+	contentFields["parts"] = []map[string]any{partFields}
+	candidate := cloneMap(candidateFields)
+	candidate["content"] = contentFields
+	response["candidates"] = []map[string]any{candidate}
 	if len(usageMetadata) > 0 {
 		response["usageMetadata"] = usageMetadata
 	}
@@ -732,6 +698,78 @@ func canonicalGeminiResponse(body []byte) ([]byte, bool) {
 		return nil, false
 	}
 	return payload, true
+}
+
+func cloneMap(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func mergeMapKeepingLatest(target map[string]any, source map[string]any, excludedKeys ...string) {
+	excluded := make(map[string]struct{}, len(excludedKeys))
+	for _, key := range excludedKeys {
+		excluded[key] = struct{}{}
+	}
+	for key, value := range source {
+		if _, skip := excluded[key]; skip {
+			continue
+		}
+		mergeLatestValue(target, key, value)
+	}
+}
+
+func mergeLatestValue(target map[string]any, key string, value any) {
+	existingValue, exists := target[key]
+	if !exists {
+		target[key] = value
+		return
+	}
+
+	if existingMap, ok := existingValue.(map[string]any); ok {
+		if newMap, ok := value.(map[string]any); ok {
+			for childKey, childValue := range newMap {
+				mergeLatestValue(existingMap, childKey, childValue)
+			}
+			target[key] = existingMap
+			return
+		}
+	}
+
+	target[key] = value
+}
+
+func mergeDeltaValue(target map[string]any, key string, value any) {
+	existingValue, exists := target[key]
+	if !exists {
+		target[key] = value
+		return
+	}
+
+	switch newValue := value.(type) {
+	case string:
+		if existingString, ok := existingValue.(string); ok {
+			target[key] = existingString + newValue
+			return
+		}
+	case map[string]any:
+		if existingMap, ok := existingValue.(map[string]any); ok {
+			for childKey, childValue := range newValue {
+				mergeDeltaValue(existingMap, childKey, childValue)
+			}
+			target[key] = existingMap
+			return
+		}
+	case []any:
+		if existingArray, ok := existingValue.([]any); ok {
+			target[key] = append(existingArray, newValue...)
+			return
+		}
+	}
+
+	target[key] = value
 }
 
 func cacheableHeaders(headers http.Header) map[string]string {

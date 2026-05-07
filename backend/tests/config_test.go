@@ -30,7 +30,7 @@ func TestSaveProviderAppliesDefaultValues(t *testing.T) {
 	if provider.KeyStrategy != "round_robin" {
 		t.Fatalf("期望默认轮询策略，实际是 %q", provider.KeyStrategy)
 	}
-	if provider.FailThreshold != 3 || provider.MinDisableSecs != 30 || provider.MaxDisableSecs != 3600 {
+	if provider.FailThreshold != 3 || provider.MinDisableSecs != 30 || provider.MaxDisableSecs != 43200 {
 		t.Fatalf("期望默认失败配置生效，实际是 %+v", provider)
 	}
 }

@@ -78,6 +78,7 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `data-action="enable-selected-keys"`)
 		mustContain(t, body, `data-action="disable-selected-keys"`)
 		mustContain(t, body, `data-action="delete-selected-keys"`)
+		mustContain(t, body, `value="43200"`)
 		mustContain(t, body, `id="build-version"`)
 		mustContain(t, body, `id="build-version-value"`)
 		mustContain(t, body, `rel="icon" type="image/svg+xml" href="/favicon.svg"`)
@@ -159,6 +160,15 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(string(indexHTML), `function updateProviderKeysInState(`) {
 		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
+	}
+	if !strings.Contains(string(indexHTML), `function syncGlobalConfigDraft(`) {
+		t.Fatal("期望前端具备全局配置草稿同步逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function syncProviderDraft(`) {
+		t.Fatal("期望前端具备提供商表单草稿同步逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `draftProvider.max_disable_secs ?? Number(provider.max_disable_secs || 43200)`) {
+		t.Fatal("期望前端使用 43200 作为最大禁用时长默认值")
 	}
 	if !strings.Contains(string(indexHTML), `function applyBulkKeyAction(`) {
 		t.Fatal("期望前端具备批量 Key 操作逻辑")

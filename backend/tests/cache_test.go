@@ -3,6 +3,7 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"simple-api-pool/cache"
@@ -93,5 +94,72 @@ func TestCacheKeyUsesProviderSpecificCoreMessageFields(t *testing.T) {
 	}
 	if entry, ok := store.Get("gemini", config.Gemini, "gemini-2.5-flash", geminiBodyWithDifferentNoise); !ok || entry.ResponseBody != `{"id":"gemini-cache"}` {
 		t.Fatalf("期望 Gemini 按 model + contents 命中缓存，实际 entry=%+v ok=%v", entry, ok)
+	}
+}
+
+func TestPrepareCachedBodiesBuildsLegalOpenAIChatStream(t *testing.T) {
+	nonStreamBody, streamBody := cache.PrepareCachedBodies(
+		config.OpenAIChat,
+		[]byte(`{"id":"chat-1","object":"chat.completion","model":"glm-4.6v-flash","choices":[{"index":0,"message":{"role":"assistant","content":"hello zhipu"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}}`),
+		5,
+		7,
+	)
+
+	if !strings.Contains(string(nonStreamBody), `"cache_tokens":12`) {
+		t.Fatalf("期望 OpenAI Chat 缓存响应注入 cache_tokens，实际是 %s", nonStreamBody)
+	}
+	if !strings.Contains(string(streamBody), `"object":"chat.completion.chunk"`) {
+		t.Fatalf("期望 OpenAI Chat 流式缓存回放使用 chunk 对象，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"delta":{"content":"hello zhipu","role":"assistant"}`) &&
+		!strings.Contains(string(streamBody), `"delta":{"role":"assistant","content":"hello zhipu"}`) {
+		t.Fatalf("期望 OpenAI Chat 流式缓存回放在 delta.content 中返回正文，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `data: [DONE]`) {
+		t.Fatalf("期望 OpenAI Chat 流式缓存回放带结束标记，实际是 %s", streamBody)
+	}
+}
+
+func TestPrepareCachedBodiesBuildsLegalResponsesStream(t *testing.T) {
+	_, streamBody := cache.PrepareCachedBodies(
+		config.OpenAIResponses,
+		[]byte(`{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello responses","annotations":[]}]}],"usage":{"input_tokens":9,"output_tokens":4,"total_tokens":13}}`),
+		9,
+		4,
+	)
+
+	if !strings.Contains(string(streamBody), `"type":"response.output_text.delta"`) {
+		t.Fatalf("期望 Responses 流式缓存回放输出 output_text.delta，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"delta":"hello responses"`) {
+		t.Fatalf("期望 Responses 流式缓存回放输出正文 delta，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"type":"response.completed"`) {
+		t.Fatalf("期望 Responses 流式缓存回放输出 response.completed，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `data: [DONE]`) {
+		t.Fatalf("期望 Responses 流式缓存回放带结束标记，实际是 %s", streamBody)
+	}
+}
+
+func TestPrepareCachedBodiesBuildsLegalClaudeStream(t *testing.T) {
+	_, streamBody := cache.PrepareCachedBodies(
+		config.Claude,
+		[]byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","stop_sequence":null,"content":[{"type":"text","text":"hello claude"}],"usage":{"input_tokens":8,"output_tokens":6}}`),
+		8,
+		6,
+	)
+
+	if !strings.Contains(string(streamBody), `"type":"message_start"`) {
+		t.Fatalf("期望 Claude 流式缓存回放输出 message_start，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"type":"content_block_delta"`) {
+		t.Fatalf("期望 Claude 流式缓存回放输出 content_block_delta，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"text":"hello claude"`) {
+		t.Fatalf("期望 Claude 流式缓存回放输出正文文本，实际是 %s", streamBody)
+	}
+	if !strings.Contains(string(streamBody), `"type":"message_stop"`) {
+		t.Fatalf("期望 Claude 流式缓存回放输出 message_stop，实际是 %s", streamBody)
 	}
 }

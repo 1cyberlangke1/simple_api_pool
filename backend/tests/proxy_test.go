@@ -337,6 +337,13 @@ func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
 	if !strings.Contains(secondRec.Body.String(), "\"id\":\"resp-1\"") {
 		t.Fatalf("期望缓存命中后返回 SSE 数据块，实际是 %s", secondRec.Body.String())
 	}
+	if !strings.Contains(secondRec.Body.String(), "\"object\":\"chat.completion.chunk\"") {
+		t.Fatalf("期望缓存命中后返回 OpenAI Chat 的 chunk 流式格式，实际是 %s", secondRec.Body.String())
+	}
+	if !strings.Contains(secondRec.Body.String(), "\"delta\":{\"content\":\"cached hello\",\"role\":\"assistant\"}") &&
+		!strings.Contains(secondRec.Body.String(), "\"delta\":{\"role\":\"assistant\",\"content\":\"cached hello\"}") {
+		t.Fatalf("期望缓存命中后在 delta.content 中返回正文，实际是 %s", secondRec.Body.String())
+	}
 	if !strings.Contains(secondRec.Body.String(), "data: [DONE]") {
 		t.Fatalf("期望缓存命中后返回 SSE 结束标记，实际是 %s", secondRec.Body.String())
 	}
@@ -426,6 +433,95 @@ func TestFirstStreamResponseBuildsNonStreamCacheForLaterNonStreamHits(t *testing
 	usage := payload["usage"].(map[string]any)
 	if usage["cache_tokens"] != float64(12) {
 		t.Fatalf("期望 cache_tokens 为 12，实际是 %#v", usage["cache_tokens"])
+	}
+}
+
+func TestOpenAIChatStreamCachePreservesAdditionalFieldsInCanonicalResponse(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		chunks := []string{
+			"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"答\",\"reasoning_content\":\"想\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+			"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"案\",\"reasoning_content\":\"法\"},\"finish_reason\":\"stop\",\"extra_field\":\"keep-me\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12}}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, chunk := range chunks {
+			if _, err := w.Write([]byte(chunk)); err != nil {
+				t.Fatalf("写入流式块失败: %v", err)
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "zhipu",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	streamBody := `{"model":"glm-4.6v-flash","messages":[{"role":"user","content":"hello"}],"stream":true}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/cache/zhipu/chat/completions", strings.NewReader(streamBody))
+	firstReq.Header.Set("Authorization", "Bearer client-key")
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstReq.Header.Set("Accept", "text/event-stream")
+	firstRec := httptest.NewRecorder()
+	proxy.ServeHTTP(firstRec, firstReq)
+
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("第一次流式请求期望状态码 %d，实际是 %d", http.StatusOK, firstRec.Code)
+	}
+
+	nonStreamBody := `{"model":"glm-4.6v-flash","messages":[{"role":"user","content":"hello"}],"stream":false}`
+	secondReq := httptest.NewRequest(http.MethodPost, "/cache/zhipu/chat/completions", strings.NewReader(nonStreamBody))
+	secondReq.Header.Set("Authorization", "Bearer client-key")
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondRec := httptest.NewRecorder()
+	proxy.ServeHTTP(secondRec, secondReq)
+
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("第二次非流式请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, secondRec.Code, secondRec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望第二次请求命中缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析缓存响应失败: %v", err)
+	}
+	if payload["system_fingerprint"] != "fp-zhipu" {
+		t.Fatalf("期望保留顶层额外字段 system_fingerprint，实际是 %#v", payload["system_fingerprint"])
+	}
+	choices := payload["choices"].([]any)
+	choice := choices[0].(map[string]any)
+	if choice["extra_field"] != "keep-me" {
+		t.Fatalf("期望保留 choice 上的额外字段，实际是 %#v", choice["extra_field"])
+	}
+	message := choice["message"].(map[string]any)
+	if message["content"] != "答案" {
+		t.Fatalf("期望拼接正文为 答案，实际是 %#v", message["content"])
+	}
+	if message["reasoning_content"] != "想法" {
+		t.Fatalf("期望拼接 reasoning_content 为 想法，实际是 %#v", message["reasoning_content"])
 	}
 }
 
