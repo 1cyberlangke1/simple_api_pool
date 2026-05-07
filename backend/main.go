@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"syscall"
+	"time"
 
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
@@ -34,6 +38,10 @@ func main() {
 	adminHandler := handler.NewAdminHandler(cfg, statsMgr, cacheStore)
 	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
 	frontendRoot := resolveFrontendRoot()
+	contentSecurityPolicy, err := buildFrontendContentSecurityPolicy(frontendRoot)
+	if err != nil {
+		log.Fatalf("build content security policy failed: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -63,9 +71,26 @@ func main() {
 	}))
 
 	addr := config.ListenAddr()
-	muxWithLogs := securityHeadersMiddleware(applog.LoggingMiddleware(mux))
+	muxWithLogs := securityHeadersMiddleware(applog.LoggingMiddleware(mux), contentSecurityPolicy)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: muxWithLogs,
+	}
+	shutdownCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
+	go func() {
+		<-shutdownCtx.Done()
+		stopSignals()
+		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(drainCtx); err != nil {
+			log.Printf("server shutdown error: %v", err)
+		}
+	}()
+
 	log.Printf("simple-api-pool listening on %s", addr)
-	if err := http.ListenAndServe(addr, muxWithLogs); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)
 	}
 }

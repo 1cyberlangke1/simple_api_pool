@@ -2,36 +2,29 @@ package keyring
 
 import (
 	"math"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"simple-api-pool/config"
 )
 
+type roundRobinState struct {
+	counter   uint64
+	signature string
+}
+
 type KeyRing struct {
-	cfg      *config.Config
-	mu       sync.Mutex
-	counters map[string]*atomic.Uint64
+	cfg    *config.Config
+	mu     sync.Mutex
+	states map[string]*roundRobinState
 }
 
 func New(cfg *config.Config) *KeyRing {
 	return &KeyRing{
-		cfg:      cfg,
-		counters: make(map[string]*atomic.Uint64),
+		cfg:    cfg,
+		states: make(map[string]*roundRobinState),
 	}
-}
-
-func (k *KeyRing) getCounter(name string) *atomic.Uint64 {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-
-	if c, ok := k.counters[name]; ok {
-		return c
-	}
-	c := &atomic.Uint64{}
-	k.counters[name] = c
-	return c
 }
 
 func (k *KeyRing) GetKey(providerName string) (string, error) {
@@ -58,8 +51,7 @@ func (k *KeyRing) GetKey(providerName string) (string, error) {
 	case "fill":
 		return p.Keys[available[0]].Value, nil
 	default:
-		ctr := k.getCounter(providerName)
-		idx := ctr.Add(1) % uint64(len(available))
+		idx := k.nextRoundRobinIndex(providerName, p.Keys, available)
 		return p.Keys[available[idx]].Value, nil
 	}
 }
@@ -89,4 +81,34 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 			return
 		}
 	}
+}
+
+func (k *KeyRing) nextRoundRobinIndex(providerName string, keys []config.Key, available []int) int {
+	signature := buildAvailabilitySignature(keys, available)
+
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	state, ok := k.states[providerName]
+	if !ok {
+		state = &roundRobinState{}
+		k.states[providerName] = state
+	}
+	if state.signature != signature {
+		state.signature = signature
+		state.counter = 0
+	}
+
+	idx := int(state.counter % uint64(len(available)))
+	state.counter++
+	return idx
+}
+
+func buildAvailabilitySignature(keys []config.Key, available []int) string {
+	var builder strings.Builder
+	for _, index := range available {
+		builder.WriteString(keys[index].Value)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
 }

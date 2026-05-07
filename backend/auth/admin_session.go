@@ -51,7 +51,7 @@ func SetAdminSessionCookie(w http.ResponseWriter, r *http.Request, cfg *config.C
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   shouldSetAdminSessionSecureCookie(),
+		Secure:   shouldSetAdminSessionSecureCookie(r),
 		MaxAge:   int(adminSessionTTL.Seconds()),
 		Expires:  time.Now().Add(adminSessionTTL),
 	})
@@ -65,7 +65,7 @@ func ClearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   shouldSetAdminSessionSecureCookie(),
+		Secure:   shouldSetAdminSessionSecureCookie(r),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
@@ -112,15 +112,15 @@ func signAdminSessionPayload(adminKey, payload string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func shouldSetAdminSessionSecureCookie() bool {
+func shouldSetAdminSessionSecureCookie(r *http.Request) bool {
 	value := strings.TrimSpace(os.Getenv("ADMIN_COOKIE_SECURE"))
 	if value == "" {
-		return true
+		return r != nil && r.TLS != nil
 	}
 
 	secure, err := strconv.ParseBool(value)
 	if err != nil {
-		return true
+		return r != nil && r.TLS != nil
 	}
 	return secure
 }

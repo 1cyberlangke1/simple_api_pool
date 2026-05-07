@@ -28,8 +28,8 @@ func TestRoundRobinSwitchesBetweenAvailableKeys(t *testing.T) {
 	second, _ := kr.GetKey("openai")
 	third, _ := kr.GetKey("openai")
 
-	if first != "k2" || second != "k1" || third != "k2" {
-		t.Fatalf("期望轮询顺序为 k2 -> k1 -> k2，实际是 %q -> %q -> %q", first, second, third)
+	if first != "k1" || second != "k2" || third != "k1" {
+		t.Fatalf("期望轮询顺序为 k1 -> k2 -> k1，实际是 %q -> %q -> %q", first, second, third)
 	}
 }
 

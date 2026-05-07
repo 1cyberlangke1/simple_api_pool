@@ -223,6 +223,10 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 	}
 	defer tx.Rollback()
 	now := time.Now().UnixNano()
+	existingEntry, err := cacheEntryExists(tx, cacheKey)
+	if err != nil {
+		return false
+	}
 
 	if isStream {
 		headersJSON, err := formatHeadersJSON(cloneHeaders(headers), true)
@@ -265,14 +269,18 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 		}
 	}
 
+	entryCount, err := readCacheEntryCount(tx)
+	if err != nil {
+		return false
+	}
+	if !existingEntry {
+		entryCount++
+	}
+
 	if maxEntries > 0 {
-		var count int64
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM cache_entries`).Scan(&count); err != nil {
-			return false
-		}
-		if count > maxEntries {
-			deleteCount := count - maxEntries
-			if _, err := tx.Exec(`
+		if entryCount > maxEntries {
+			deleteCount := entryCount - maxEntries
+			result, err := tx.Exec(`
 				DELETE FROM cache_entries
 				WHERE cache_key IN (
 					SELECT cache_key
@@ -280,10 +288,19 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 					ORDER BY updated_at ASC
 					LIMIT ?
 				)
-			`, deleteCount); err != nil {
+			`, deleteCount)
+			if err != nil {
 				return false
 			}
+			deletedRows, err := result.RowsAffected()
+			if err != nil {
+				return false
+			}
+			entryCount -= deletedRows
 		}
+	}
+	if err := writeCacheEntryCount(tx, entryCount); err != nil {
+		return false
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -312,7 +329,10 @@ func (s *Store) ClearProvider(provider string) error {
 		}
 	}
 
-	_, err := db.Exec(`DELETE FROM cache_entries`)
+	_, err := db.Exec(`
+		DELETE FROM cache_entries;
+		UPDATE cache_meta SET entry_count = 0 WHERE id = 1;
+	`)
 	return err
 }
 
@@ -366,6 +386,15 @@ func initializeDB(db *sql.DB) error {
 			updated_at INTEGER NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_cache_entries_updated_at ON cache_entries(updated_at);`,
+		`CREATE TABLE IF NOT EXISTS cache_meta (
+			id INTEGER PRIMARY KEY CHECK(id = 1),
+			entry_count INTEGER NOT NULL
+		);`,
+		`INSERT INTO cache_meta (id, entry_count) VALUES (1, 0)
+			ON CONFLICT(id) DO NOTHING;`,
+		`UPDATE cache_meta
+			SET entry_count = (SELECT COUNT(*) FROM cache_entries)
+			WHERE id = 1;`,
 	}
 
 	for _, statement := range statements {
@@ -417,6 +446,33 @@ func ensureColumn(db *sql.DB, columnName, migrationSQL string) error {
 	}
 
 	_, err = db.Exec(migrationSQL)
+	return err
+}
+
+func cacheEntryExists(tx *sql.Tx, cacheKey string) (bool, error) {
+	var exists int
+	if err := tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1
+			FROM cache_entries
+			WHERE cache_key = ?
+		)
+	`, cacheKey).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists == 1, nil
+}
+
+func readCacheEntryCount(tx *sql.Tx) (int64, error) {
+	var count int64
+	if err := tx.QueryRow(`SELECT entry_count FROM cache_meta WHERE id = 1`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func writeCacheEntryCount(tx *sql.Tx, count int64) error {
+	_, err := tx.Exec(`UPDATE cache_meta SET entry_count = ? WHERE id = 1`, count)
 	return err
 }
 

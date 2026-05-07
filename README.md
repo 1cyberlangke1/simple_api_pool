@@ -62,7 +62,7 @@ data/           运行时数据目录
 - 容器内服务端口也是 `18080`
 - 如果没有显式设置 `GOMEMLIMIT`，程序默认按 `32MiB` 运行内存上限启动
 - 首次启动前必须先配置 `ADMIN_KEY`
-- 如果配置了 `CLIENT_KEYS`，代理请求需要带 `Authorization: Bearer <CLIENT_KEY>`
+- 代理接口默认要求客户端密钥；如果 `CLIENT_KEYS` 为空，所有代理请求都会返回 `401`
 - 所有运行时数据都会写入 `/app/data`
 - 如果你不挂载卷，容器删除后配置、统计和缓存也会一起丢失
 
@@ -94,10 +94,10 @@ docker compose version
 | 变量名 | 是否必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `ADMIN_KEY` | 是 | 无 | 管理员密钥，管理页和管理接口都依赖它 |
-| `CLIENT_KEYS` | 否 | 空 | 客户端访问密钥，多个值用半角逗号分隔 |
+| `CLIENT_KEYS` | 否 | 空 | 客户端访问密钥，多个值用半角逗号分隔；为空时代理接口会拒绝所有业务请求 |
 | `PORT` | 否 | `18080` | 服务监听端口 |
 | `GOMEMLIMIT` | 否 | `32MiB` | Go 运行时内存限制 |
-| `ADMIN_COOKIE_SECURE` | 否 | `true` | 管理员会话 Cookie 是否仅通过 HTTPS 发送；本地纯 HTTP 调试可临时设为 `false` |
+| `ADMIN_COOKIE_SECURE` | 否 | 自动判断 | 管理员会话 Cookie 是否仅通过 HTTPS 发送；未设置时，HTTPS 请求自动启用，HTTP 请求自动关闭 |
 
 最小可用配置通常只需要：
 
@@ -105,7 +105,7 @@ docker compose version
 ADMIN_KEY=请改成你自己的管理员密钥
 ```
 
-如果你希望代理入口也带鉴权，再补一行：
+如果你要实际转发业务请求，还需要补上客户端密钥：
 
 ```text
 CLIENT_KEYS=client-key-1,client-key-2
@@ -136,7 +136,7 @@ cp .env.example .env
 ADMIN_KEY=改成你自己的管理员密钥
 ```
 
-如果你希望调用代理接口时必须带客户端密钥，可以同时设置：
+如果你要调用代理接口，必须同时设置：
 
 ```text
 CLIENT_KEYS=client-key-1,client-key-2
@@ -149,6 +149,8 @@ PORT=18080
 GOMEMLIMIT=32MiB
 ADMIN_COOKIE_SECURE=false
 ```
+
+`docker-compose.yml` 不再内置演示密钥。首次启动前至少要在 `.env` 中写入 `ADMIN_KEY`；如果你需要使用代理入口，也要同时写入 `CLIENT_KEYS`。
 
 #### 3. 启动服务
 

@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"simple-api-pool/store"
 )
@@ -123,6 +122,7 @@ func (c *Config) Provider(name string) (*Provider, int) {
 }
 
 func (c *Config) SaveProvider(p Provider) error {
+	preserveExistingKeys := p.Keys == nil
 	if ReservedNames[p.Name] {
 		return os.ErrInvalid
 	}
@@ -152,7 +152,9 @@ func (c *Config) SaveProvider(p Provider) error {
 	defer c.mu.Unlock()
 	for i, existing := range c.state.Providers {
 		if existing.Name == p.Name {
-			p.Keys = existing.Keys
+			if preserveExistingKeys {
+				p.Keys = existing.Keys
+			}
 			c.state.Providers[i] = p
 			c.save()
 			return nil
@@ -261,7 +263,8 @@ func (c *Config) ApplyKeyAction(providerName, action string, keys []string) erro
 			}
 			c.state.Providers[providerIndex].Keys = filteredKeys
 		case "disable":
-			disabledUntil := time.Now().AddDate(20, 0, 0).Unix()
+			const permanentlyDisabledUntil = int64(1<<63 - 1)
+			disabledUntil := permanentlyDisabledUntil
 			for keyIndex, existingKey := range provider.Keys {
 				if _, shouldDisable := targetKeys[existingKey.Value]; !shouldDisable {
 					continue

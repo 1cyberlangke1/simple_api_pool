@@ -5,11 +5,11 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      ADMIN_KEY: ${ADMIN_KEY:-admin-demo}
-      CLIENT_KEYS: ${CLIENT_KEYS:-client-demo-1,client-demo-2}
+      ADMIN_KEY: ${ADMIN_KEY:?请先在 .env 中设置 ADMIN_KEY}
+      CLIENT_KEYS: ${CLIENT_KEYS:-}
       PORT: ${PORT:-18080}
       GOMEMLIMIT: ${GOMEMLIMIT:-32MiB}
-      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-false}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-}
     ports:
       - "${PORT:-18080}:${PORT:-18080}"
     volumes:

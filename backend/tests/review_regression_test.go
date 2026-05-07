@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,22 +18,37 @@ import (
 	"simple-api-pool/token"
 )
 
-func TestAdminSessionCookieIsSecureByDefault(t *testing.T) {
+func TestAdminSessionCookieDefaultsToRequestSecurity(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", nil)
-	rec := httptest.NewRecorder()
-	if err := auth.SetAdminSessionCookie(rec, req, cfg); err != nil {
+	httpReq := httptest.NewRequest(http.MethodPost, "http://example.com/api/admin/login", nil)
+	httpRec := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(httpRec, httpReq, cfg); err != nil {
 		t.Fatalf("签发管理员会话 Cookie 失败: %v", err)
 	}
 
-	cookies := rec.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(cookies))
+	httpCookies := httpRec.Result().Cookies()
+	if len(httpCookies) != 1 {
+		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(httpCookies))
 	}
-	if !cookies[0].Secure {
-		t.Fatal("期望管理员会话 Cookie 默认启用 Secure")
+	if httpCookies[0].Secure {
+		t.Fatal("HTTP 请求下不应默认写入 Secure Cookie")
+	}
+
+	httpsReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
+	httpsReq.TLS = &tls.ConnectionState{}
+	httpsRec := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(httpsRec, httpsReq, cfg); err != nil {
+		t.Fatalf("签发 HTTPS 管理员会话 Cookie 失败: %v", err)
+	}
+
+	httpsCookies := httpsRec.Result().Cookies()
+	if len(httpsCookies) != 1 {
+		t.Fatalf("期望签发 1 个 HTTPS 管理员会话 Cookie，实际是 %d", len(httpsCookies))
+	}
+	if !httpsCookies[0].Secure {
+		t.Fatal("HTTPS 请求下应默认写入 Secure Cookie")
 	}
 }
 

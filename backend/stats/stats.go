@@ -50,19 +50,21 @@ type Snapshot struct {
 }
 
 type Manager struct {
-	st     *store.Store
-	mu     sync.RWMutex
-	stats  map[string]*ProviderStats
-	stopCh chan struct{}
-	stopMu sync.Once
-	wg     sync.WaitGroup
+	st          *store.Store
+	mu          sync.RWMutex
+	stats       map[string]*ProviderStats
+	stopCh      chan struct{}
+	flushSignal chan struct{}
+	stopMu      sync.Once
+	wg          sync.WaitGroup
 }
 
 func NewManager(st *store.Store) *Manager {
 	m := &Manager{
-		st:     st,
-		stats:  make(map[string]*ProviderStats),
-		stopCh: make(chan struct{}),
+		st:          st,
+		stats:       make(map[string]*ProviderStats),
+		stopCh:      make(chan struct{}),
+		flushSignal: make(chan struct{}, 1),
 	}
 	m.load()
 	m.wg.Add(1)
@@ -94,13 +96,40 @@ func (m *Manager) load() {
 
 func (m *Manager) flusher() {
 	defer m.wg.Done()
-	t := time.NewTicker(30 * time.Second)
-	defer t.Stop()
+	periodicTicker := time.NewTicker(30 * time.Second)
+	defer periodicTicker.Stop()
+
+	var (
+		debounceTimer *time.Timer
+		debounceC     <-chan time.Time
+	)
 	for {
 		select {
-		case <-t.C:
+		case <-periodicTicker.C:
 			m.flush()
+		case <-m.flushSignal:
+			if debounceTimer == nil {
+				debounceTimer = time.NewTimer(time.Second)
+			} else {
+				if !debounceTimer.Stop() {
+					select {
+					case <-debounceTimer.C:
+					default:
+					}
+				}
+				debounceTimer.Reset(time.Second)
+			}
+			debounceC = debounceTimer.C
+		case <-debounceC:
+			m.flush()
+			debounceC = nil
 		case <-m.stopCh:
+			if debounceTimer != nil && !debounceTimer.Stop() {
+				select {
+				case <-debounceTimer.C:
+				default:
+				}
+			}
 			m.flush()
 			return
 		}
@@ -144,24 +173,28 @@ func (m *Manager) RecordSuccess(provider string, input, output int64) {
 	s.SuccessCount.Add(1)
 	s.InputTokens.Add(input)
 	s.OutputTokens.Add(output)
+	m.markDirty()
 }
 
 func (m *Manager) RecordError(provider string, statusCode int) {
 	s := m.getOrCreate(provider)
 	s.ErrorCount.Add(1)
 	if statusCode <= 0 {
+		m.markDirty()
 		return
 	}
 	code := strconv.Itoa(statusCode)
 	s.errorTypesMu.Lock()
 	s.ErrorTypes[code]++
 	s.errorTypesMu.Unlock()
+	m.markDirty()
 }
 
 func (m *Manager) RecordCacheHit(provider string, tokens int64) {
 	s := m.getOrCreate(provider)
 	s.CacheHits.Add(1)
 	s.CacheTokens.Add(tokens)
+	m.markDirty()
 }
 
 func (m *Manager) Snapshot() map[string]Snapshot {
@@ -177,4 +210,11 @@ func (m *Manager) Snapshot() map[string]Snapshot {
 		out[name] = ps.Snapshot()
 	}
 	return out
+}
+
+func (m *Manager) markDirty() {
+	select {
+	case m.flushSignal <- struct{}{}:
+	default:
+	}
 }

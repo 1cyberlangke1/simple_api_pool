@@ -36,6 +36,11 @@ var streamCaptureBufferPool = sync.Pool{
 	},
 }
 
+const (
+	maxCacheableRequestBodyBytes = 1 << 20
+	maxUpstreamErrorLogBytes     = 4 << 10
+)
+
 type requestAnalysis struct {
 	model         string
 	stream        bool
@@ -86,6 +91,7 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 				ForceAttemptHTTP2:   true,
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 20,
+				MaxConnsPerHost:     20,
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
@@ -124,8 +130,6 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.limiter != nil {
 		h.limiter.RecordSuccess(r.RemoteAddr)
 	}
-	h.sema <- struct{}{}
-	defer func() { <-h.sema }()
 
 	parts := parsePath(r.URL.Path)
 	logFields.Provider = parts.provider
@@ -158,6 +162,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(targetURL)
 
+	h.sema <- struct{}{}
+	defer func() { <-h.sema }()
+
 	isStream := isStreamingRequestHint(r)
 	logFields.Stream = isStream
 
@@ -169,52 +176,68 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if useCache && cacheEligible {
-		analysis.requestBody, err = io.ReadAll(r.Body)
-		if err != nil {
-			logFields.Status = http.StatusBadRequest
-			logFields.Error = "读取请求体失败"
-			writeErrorResponse(w, http.StatusBadRequest, "读取请求体失败")
-			return
-		}
-		r.Body.Close()
-		analysis.requestBytes = len(analysis.requestBody)
-		logFields.RequestBytes = analysis.requestBytes
-		analysis = analyzeRequestBody(p.Type, analysis.requestBody, isStream)
-		if !logFields.Stream {
-			logFields.Stream = analysis.stream
-		}
-		logFields.Model = analysis.model
-		upstreamBodyReader = bytes.NewReader(analysis.requestBody)
-
-		if entry, ok := h.cache.GetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
-			h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
-			logFields.CacheHit = true
-			logFields.Status = entry.StatusCode
-			logFields.UpstreamStatus = entry.StatusCode
-			logFields.ResponseBytes = len(entry.ResponseBody)
-			h.logCacheEvent(cacheEventLogFields{
-				Event:         "hit",
-				Provider:      parts.provider,
-				ProviderType:  string(p.Type),
-				Model:         analysis.model,
-				CacheKey:      analysis.cacheKey,
-				CacheRoute:    parts.useCache,
-				Stream:        analysis.stream,
-				Status:        entry.StatusCode,
-				RequestBytes:  analysis.requestBytes,
-				ResponseBytes: len(entry.ResponseBody),
-				InputTokens:   entry.InputTokens,
-				OutputTokens:  entry.OutputTokens,
-			})
-			for k, v := range entry.Headers {
-				w.Header().Set(k, v)
+		if r.ContentLength > maxCacheableRequestBodyBytes {
+			cacheEligible = false
+			recordedRequestBody = newRecordedRequestBody(r.Body, 0)
+			upstreamBodyReader = recordedRequestBody
+		} else {
+			var requestBodyComplete bool
+			analysis.requestBody, requestBodyComplete, err = readRequestBodyForCache(r.Body, maxCacheableRequestBodyBytes)
+			if err != nil {
+				logFields.Status = http.StatusBadRequest
+				logFields.Error = "读取请求体失败"
+				writeErrorResponse(w, http.StatusBadRequest, "读取请求体失败")
+				return
 			}
-			w.WriteHeader(entry.StatusCode)
-			_, _ = w.Write([]byte(entry.ResponseBody))
-			return
+			if requestBodyComplete {
+				analysis.requestBytes = len(analysis.requestBody)
+				logFields.RequestBytes = analysis.requestBytes
+				analysis = analyzeRequestBody(p.Type, analysis.requestBody, isStream)
+				if !logFields.Stream {
+					logFields.Stream = analysis.stream
+				}
+				logFields.Model = analysis.model
+				upstreamBodyReader = bytes.NewReader(analysis.requestBody)
+
+				if entry, ok := h.cache.GetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
+					h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
+					logFields.CacheHit = true
+					logFields.Status = entry.StatusCode
+					logFields.UpstreamStatus = entry.StatusCode
+					logFields.ResponseBytes = len(entry.ResponseBody)
+					h.logCacheEvent(cacheEventLogFields{
+						Event:         "hit",
+						Provider:      parts.provider,
+						ProviderType:  string(p.Type),
+						Model:         analysis.model,
+						CacheKey:      analysis.cacheKey,
+						CacheRoute:    parts.useCache,
+						Stream:        analysis.stream,
+						Status:        entry.StatusCode,
+						RequestBytes:  analysis.requestBytes,
+						ResponseBytes: len(entry.ResponseBody),
+						InputTokens:   entry.InputTokens,
+						OutputTokens:  entry.OutputTokens,
+					})
+					for k, v := range entry.Headers {
+						w.Header().Set(k, v)
+					}
+					w.WriteHeader(entry.StatusCode)
+					_, _ = w.Write([]byte(entry.ResponseBody))
+					return
+				}
+			} else {
+				cacheEligible = false
+				recordedRequestBody = newRecordedRequestBody(newPrefixedReadCloser(analysis.requestBody, r.Body), 0)
+				upstreamBodyReader = recordedRequestBody
+			}
 		}
 	} else {
-		recordedRequestBody = newRecordedRequestBody(r.Body, cacheEligible)
+		copyLimit := 0
+		if cacheEligible {
+			copyLimit = maxCacheableRequestBodyBytes
+		}
+		recordedRequestBody = newRecordedRequestBody(r.Body, copyLimit)
 		upstreamBodyReader = recordedRequestBody
 	}
 
@@ -261,13 +284,16 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if resp.StatusCode >= 400 {
 		h.stats.RecordError(parts.provider, resp.StatusCode)
-		errBody, _ := io.ReadAll(resp.Body)
 		logFields.Status = resp.StatusCode
-		logFields.ResponseBytes = len(errBody)
-		logFields.Error = strings.TrimSpace(string(errBody))
 		copyHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
-		w.Write(errBody)
+		errorCapture := newLimitedLogBuffer(maxUpstreamErrorLogBytes)
+		responseBytes, copyErr := io.Copy(w, io.TeeReader(resp.Body, errorCapture))
+		logFields.ResponseBytes = int(responseBytes)
+		logFields.Error = errorCapture.String()
+		if copyErr != nil && logFields.Error == "" {
+			logFields.Error = fmt.Sprintf("读取上游错误响应失败: %v", copyErr)
+		}
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
 			h.keyring.RecordFailure(parts.provider, upstreamKey)
 		}
@@ -658,20 +684,23 @@ func cacheFieldForProviderType(providerType config.ProviderType) string {
 }
 
 type recordedRequestBody struct {
-	source    io.ReadCloser
-	copyBody  *bytes.Buffer
-	bytesRead int
-	finished  bool
+	source       io.ReadCloser
+	copyBody     *bytes.Buffer
+	copyLimit    int
+	copyExceeded bool
+	bytesRead    int
+	finished     bool
 }
 
-func newRecordedRequestBody(source io.ReadCloser, copyBody bool) *recordedRequestBody {
+func newRecordedRequestBody(source io.ReadCloser, copyLimit int) *recordedRequestBody {
 	var bodyBuffer *bytes.Buffer
-	if copyBody {
+	if copyLimit > 0 {
 		bodyBuffer = &bytes.Buffer{}
 	}
 	return &recordedRequestBody{
-		source:   source,
-		copyBody: bodyBuffer,
+		source:    source,
+		copyBody:  bodyBuffer,
+		copyLimit: copyLimit,
 	}
 }
 
@@ -680,7 +709,18 @@ func (r *recordedRequestBody) Read(p []byte) (int, error) {
 	if n > 0 {
 		r.bytesRead += n
 		if r.copyBody != nil {
-			_, _ = r.copyBody.Write(p[:n])
+			remaining := r.copyLimit - r.copyBody.Len()
+			if remaining > 0 {
+				writeCount := n
+				if writeCount > remaining {
+					writeCount = remaining
+				}
+				_, _ = r.copyBody.Write(p[:writeCount])
+			}
+			if n > remaining {
+				r.copyExceeded = true
+				r.copyBody = nil
+			}
 		}
 	}
 	if err == io.EOF {
@@ -701,10 +741,105 @@ func (r *recordedRequestBody) BytesRead() int {
 }
 
 func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
-	if r == nil || !r.finished || r.copyBody == nil {
+	if r == nil || !r.finished || r.copyBody == nil || r.copyExceeded {
 		return nil, false
 	}
 	return append([]byte(nil), r.copyBody.Bytes()...), true
+}
+
+type prefixedReadCloser struct {
+	reader io.Reader
+	tail   io.Closer
+}
+
+func newPrefixedReadCloser(prefix []byte, tail io.ReadCloser) io.ReadCloser {
+	return &prefixedReadCloser{
+		reader: io.MultiReader(bytes.NewReader(prefix), tail),
+		tail:   tail,
+	}
+}
+
+func (r *prefixedReadCloser) Read(p []byte) (int, error) {
+	return r.reader.Read(p)
+}
+
+func (r *prefixedReadCloser) Close() error {
+	if r.tail == nil {
+		return nil
+	}
+	return r.tail.Close()
+}
+
+type limitedLogBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func newLimitedLogBuffer(limit int) *limitedLogBuffer {
+	return &limitedLogBuffer{limit: limit}
+}
+
+func (b *limitedLogBuffer) Write(p []byte) (int, error) {
+	if b.limit <= 0 {
+		return len(p), nil
+	}
+	remaining := b.limit - b.buf.Len()
+	if remaining > 0 {
+		writeCount := len(p)
+		if writeCount > remaining {
+			writeCount = remaining
+		}
+		_, _ = b.buf.Write(p[:writeCount])
+	}
+	if len(p) > remaining {
+		b.truncated = true
+	}
+	return len(p), nil
+}
+
+func (b *limitedLogBuffer) String() string {
+	value := strings.TrimSpace(b.buf.String())
+	if b.truncated {
+		if value == "" {
+			return "上游错误响应过大，已截断日志"
+		}
+		return value + " ...(truncated)"
+	}
+	return value
+}
+
+func readRequestBodyForCache(body io.ReadCloser, limit int) ([]byte, bool, error) {
+	if limit <= 0 {
+		return nil, false, nil
+	}
+
+	var captured bytes.Buffer
+	chunk := make([]byte, 32*1024)
+	maxBytes := limit + 1
+
+	for captured.Len() <= limit {
+		readSize := len(chunk)
+		remaining := maxBytes - captured.Len()
+		if remaining < readSize {
+			readSize = remaining
+		}
+		n, err := body.Read(chunk[:readSize])
+		if n > 0 {
+			_, _ = captured.Write(chunk[:n])
+		}
+		if err == io.EOF {
+			return captured.Bytes(), true, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if captured.Len() > limit {
+			break
+		}
+	}
+
+	return captured.Bytes(), false, nil
 }
 
 func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderType, recordedRequestBody *recordedRequestBody) requestAnalysis {
