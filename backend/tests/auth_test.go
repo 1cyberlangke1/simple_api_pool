@@ -10,12 +10,12 @@ import (
 	"simple-api-pool/store"
 )
 
-func TestClientKeyAllowsAccessWhenUnconfigured(t *testing.T) {
+func TestClientKeyRejectsAccessWhenUnconfigured(t *testing.T) {
 	cfg := newTestConfig(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	if !auth.CheckClientKey(req, cfg) {
-		t.Fatal("未配置客户端密钥时应当允许访问")
+	if auth.CheckClientKey(req, cfg) {
+		t.Fatal("未配置客户端密钥时不应允许访问")
 	}
 }
 
@@ -115,6 +115,29 @@ func TestAdminKeyRejectsWhenUnconfigured(t *testing.T) {
 
 	if auth.CheckAdminKey(req, cfg) {
 		t.Fatal("未配置管理员密钥时不应通过")
+	}
+}
+
+func TestAdminSessionCookiePassesAdminAuth(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/login", nil)
+	loginRecorder := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(loginRecorder, loginRequest, cfg); err != nil {
+		t.Fatalf("签发管理员会话 Cookie 失败: %v", err)
+	}
+
+	response := loginRecorder.Result()
+	cookies := response.Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("期望签发管理员会话 Cookie")
+	}
+
+	adminRequest := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	adminRequest.AddCookie(cookies[0])
+	if !auth.CheckAdminKey(adminRequest, cfg) {
+		t.Fatal("管理员会话 Cookie 应当通过鉴权")
 	}
 }
 

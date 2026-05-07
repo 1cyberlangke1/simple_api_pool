@@ -51,7 +51,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		slog.Default().Info("http_request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"query", r.URL.RawQuery,
+			"query", SanitizeQuery(r.URL.RawQuery),
 			"status", recorder.status,
 			"response_bytes", recorder.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),

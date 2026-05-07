@@ -26,6 +26,7 @@ type ProxyHandler struct {
 	keyring *keyring.KeyRing
 	cache   *cache.Store
 	sema    chan struct{}
+	limiter *auth.FailureLimiter
 }
 
 func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing, cs *cache.Store, maxConcurrent int) *ProxyHandler {
@@ -38,6 +39,7 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 		keyring: kr,
 		cache:   cs,
 		sema:    make(chan struct{}, maxConcurrent),
+		limiter: auth.NewFailureLimiter(20, time.Minute, 5*time.Minute),
 	}
 }
 
@@ -46,17 +48,30 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logFields := proxyLogFields{
 		Method: r.Method,
 		Path:   r.URL.Path,
-		Query:  r.URL.RawQuery,
+		Query:  applog.SanitizeQuery(r.URL.RawQuery),
 	}
 	defer func() {
 		h.logProxyResult(start, logFields)
 	}()
 
+	if h.limiter != nil && !h.limiter.Allow(r.RemoteAddr) {
+		logFields.Status = http.StatusTooManyRequests
+		logFields.Error = "鉴权失败次数过多，请稍后再试"
+		writeErrorResponse(w, http.StatusTooManyRequests, "鉴权失败次数过多，请稍后再试")
+		return
+	}
+
 	if !auth.CheckClientKey(r, h.cfg) {
+		if h.limiter != nil {
+			h.limiter.RecordFailure(r.RemoteAddr)
+		}
 		logFields.Status = http.StatusUnauthorized
 		logFields.Error = "未授权"
 		writeErrorResponse(w, http.StatusUnauthorized, "未授权")
 		return
+	}
+	if h.limiter != nil {
+		h.limiter.RecordSuccess(r.RemoteAddr)
 	}
 	h.sema <- struct{}{}
 	defer func() { <-h.sema }()
@@ -108,27 +123,17 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logFields.Stream = isStream
 
 	if useCache && cacheEligible {
-		if entry, ok := h.cache.Get(parts.provider, p.Type, model, bodyBytes); ok {
+		if entry, ok := h.cache.GetForRequest(parts.provider, p.Type, model, bodyBytes, isStream); ok {
 			h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
 			logFields.CacheHit = true
 			logFields.Status = entry.StatusCode
 			logFields.UpstreamStatus = entry.StatusCode
-			logFields.ResponseBytes = len(entry.CachedBody)
-			headers := entry.Headers
-			if isStream {
-				headers["Content-Type"] = "text/event-stream"
-				delete(headers, "Content-Length")
-				logFields.ResponseBytes = len(entry.CachedStreamBody)
-			}
-			for k, v := range headers {
+			logFields.ResponseBytes = len(entry.ResponseBody)
+			for k, v := range entry.Headers {
 				w.Header().Set(k, v)
 			}
 			w.WriteHeader(entry.StatusCode)
-			body := entry.CachedBody
-			if isStream {
-				body = entry.CachedStreamBody
-			}
-			w.Write(body)
+			_, _ = w.Write([]byte(entry.ResponseBody))
 			return
 		}
 	}
@@ -209,11 +214,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.keyring.RecordSuccess(parts.provider, upstreamKey)
 
 	if cacheEligible {
-		headers := make(map[string]string)
-		for k := range resp.Header {
-			headers[k] = resp.Header.Get(k)
-		}
-		h.cache.Set(parts.provider, p.Type, model, bodyBytes, respBody, resp.StatusCode, headers, usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
+		h.cache.Set(parts.provider, p.Type, model, bodyBytes, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries))
 	}
 }
 
@@ -251,9 +252,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	h.keyring.RecordSuccess(provider, upstreamKey)
 
 	if cacheEnabled {
-		if canonicalBody, ok := canonicalResponseFromStream(string(providerType), collected.Bytes()); ok {
-			h.cache.Set(provider, providerType, model, requestBody, canonicalBody, resp.StatusCode, cacheableHeaders(resp.Header), usage.InputTokens, usage.OutputTokens, cacheMaxEntries)
-		}
+		h.cache.SetForRequest(provider, providerType, model, requestBody, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
 	}
 }
 
@@ -751,7 +750,11 @@ func mergeDeltaValue(target map[string]any, key string, value any) {
 	switch newValue := value.(type) {
 	case string:
 		if existingString, ok := existingValue.(string); ok {
-			target[key] = existingString + newValue
+			if shouldAppendDeltaString(key) {
+				target[key] = existingString + newValue
+				return
+			}
+			target[key] = newValue
 			return
 		}
 	case map[string]any:
@@ -772,19 +775,24 @@ func mergeDeltaValue(target map[string]any, key string, value any) {
 	target[key] = value
 }
 
-func cacheableHeaders(headers http.Header) map[string]string {
+func shouldAppendDeltaString(key string) bool {
+	switch strings.ToLower(key) {
+	case "content", "text", "reasoning", "reasoning_content", "arguments":
+		return true
+	default:
+		return false
+	}
+}
+
+func cacheableHeaders(headers http.Header, isStream bool) map[string]string {
 	out := make(map[string]string)
 	for k := range headers {
-		if strings.EqualFold(k, "Content-Type") {
-			out[k] = "application/json"
-			continue
-		}
 		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
 			continue
 		}
 		out[k] = headers.Get(k)
 	}
-	if _, ok := out["Content-Type"]; !ok {
+	if _, ok := out["Content-Type"]; !ok && !isStream {
 		out["Content-Type"] = "application/json"
 	}
 	return out

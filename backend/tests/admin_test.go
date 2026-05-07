@@ -34,6 +34,9 @@ func TestAdminLoginAllowsRequestBodyKey(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
 	}
+	if len(rec.Result().Cookies()) == 0 {
+		t.Fatal("期望登录成功后下发管理员会话 Cookie")
+	}
 }
 
 func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
@@ -329,9 +332,9 @@ func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
 			Status string `json:"status"`
 		} `json:"health"`
 		GlobalConfig struct {
-			AdminKey               string   `json:"admin_key"`
-			TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
-			ClientKeys             []string `json:"client_keys"`
+			AdminKeyConfigured     bool `json:"admin_key_configured"`
+			TokenEstimationEnabled bool `json:"token_estimation_enabled"`
+			ClientKeyCount         int  `json:"client_key_count"`
 		} `json:"global_config"`
 		Providers     []config.Provider                 `json:"providers"`
 		ProviderStats map[string]handler.StatusSnapshot `json:"provider_stats"`
@@ -343,8 +346,11 @@ func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
 	if payload.Health.Status != "ok" {
 		t.Fatalf("期望 health.status 为 ok，实际是 %q", payload.Health.Status)
 	}
-	if payload.GlobalConfig.AdminKey != "secret-admin" || !payload.GlobalConfig.TokenEstimationEnabled {
+	if !payload.GlobalConfig.AdminKeyConfigured || !payload.GlobalConfig.TokenEstimationEnabled {
 		t.Fatalf("期望返回全局配置，实际是 %+v", payload.GlobalConfig)
+	}
+	if payload.GlobalConfig.ClientKeyCount != 1 {
+		t.Fatalf("期望返回客户端密钥数量 1，实际是 %+v", payload.GlobalConfig)
 	}
 	if len(payload.Providers) != 1 || payload.Providers[0].Name != "openai" {
 		t.Fatalf("期望返回提供商列表，实际是 %+v", payload.Providers)

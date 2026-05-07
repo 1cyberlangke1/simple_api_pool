@@ -1361,7 +1361,6 @@
     const API_BASE = "/api";
     const STATUS_POLL_INTERVAL_MS = 5000;
     const KEY_PAGE_SIZE = 8;
-    const STORAGE_KEY = "simple-api-pool-admin-key";
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
     const RAW_APP_VERSION = "__APP_VERSION__";
@@ -1675,7 +1674,7 @@
     }
 
     const state = {
-      adminKey: localStorage.getItem(STORAGE_KEY) || "",
+      adminAuthenticated: false,
       providers: [],
       stats: {},
       recentLogs: [],
@@ -1686,6 +1685,8 @@
       selectedKeysByProvider: {},
       globalConfigDraft: null,
       globalConfigDirty: false,
+      globalAdminKeyDirty: false,
+      globalClientKeysDirty: false,
       createProviderDraft: null,
       createProviderDirty: false,
       providerDraftsByName: {},
@@ -1865,13 +1866,8 @@
       }
     }
 
-    function setStoredAdminKey(key) {
-      state.adminKey = key;
-      if (key) {
-        localStorage.setItem(STORAGE_KEY, key);
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+    function setAdminAuthenticated(authenticated) {
+      state.adminAuthenticated = Boolean(authenticated);
     }
 
     function formatTimestamp(value) {
@@ -1934,11 +1930,15 @@
         return;
       }
       state.globalConfigDraft = {
-        admin_key: globalConfig?.admin_key || "",
+        admin_key: "",
         token_estimation_enabled: Boolean(globalConfig?.token_estimation_enabled),
-        client_keys: (globalConfig?.client_keys || []).join("\n")
+        client_keys: "",
+        admin_key_configured: Boolean(globalConfig?.admin_key_configured),
+        client_key_count: Number(globalConfig?.client_key_count || 0)
       };
       state.globalConfigDirty = false;
+      state.globalAdminKeyDirty = false;
+      state.globalClientKeysDirty = false;
     }
 
     function syncCreateProviderDraft(forceUpdate = false) {
@@ -1969,9 +1969,9 @@
       if (!state.globalConfigDraft) {
         return;
       }
-      refs.globalAdminKey.value = state.globalConfigDraft.admin_key || "";
+      refs.globalAdminKey.value = "";
       refs.globalTokenEstimation.checked = Boolean(state.globalConfigDraft.token_estimation_enabled);
-      refs.globalClientKeys.value = state.globalConfigDraft.client_keys || "";
+      refs.globalClientKeys.value = "";
     }
 
     function applyCreateProviderDraftToForm() {
@@ -2180,7 +2180,7 @@
       });
 
       const currentSelected = new Set(getSelectedKeys(providerName));
-      const nextKeyValues = new Set((nextKeys || []).map((key) => key.value));
+      const nextKeyValues = new Set((nextKeys || []).map((key) => String(key.ref || key.value)));
       setSelectedKeys(providerName, Array.from(currentSelected).filter((keyValue) => nextKeyValues.has(keyValue)));
       syncProviderKeyStats(providerName);
       normalizeProviderWorkspaceState();
@@ -2221,10 +2221,7 @@
       if (!headers.has("Content-Type") && options.body && typeof options.body === "string") {
         headers.set("Content-Type", "application/json");
       }
-      if (requireAdmin && state.adminKey) {
-        headers.set("Authorization", `Bearer ${state.adminKey}`);
-      }
-      return fetch(`${API_BASE}${path}`, { ...options, headers });
+      return fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "same-origin" });
     }
 
     async function requestOverview(path, overviewScope, requireAdmin = false) {
@@ -2433,7 +2430,7 @@
         if (document.visibilityState === "hidden") {
           return;
         }
-        if (route === "admin" && state.adminKey) {
+        if (route === "admin") {
           void loadAdminOverview();
           return;
         }
@@ -2449,15 +2446,18 @@
       if (!response.ok) {
         throw new Error(await parseErrorMessage(response, t("error.login")));
       }
-      setStoredAdminKey(adminKey);
+      setAdminAuthenticated(true);
       state.overviewEtags.admin = "";
-      refs.loginKey.value = adminKey;
+      refs.loginKey.value = "";
       refs.logoutButton.classList.remove("hidden");
       setMessage(refs.loginStatus, t("admin.loginSuccess"), "ok");
     }
 
     async function loadAdminOverview() {
-      if (!state.adminKey) {
+      const response = await requestOverview("/admin/overview", "admin", true);
+
+      if (response.status === 401) {
+        setAdminAuthenticated(false);
         state.overviewEtags.admin = "";
         setLogModalOpen(false);
         refs.adminWorkspace.classList.add("hidden");
@@ -2468,27 +2468,9 @@
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
         renderProviderPager([]);
         renderRecentLogs([]);
-        return;
-      }
-
-      refs.loginKey.value = state.adminKey;
-      refs.logoutButton.classList.remove("hidden");
-
-      const response = await requestOverview("/admin/overview", "admin", true);
-
-      if (response.status === 401) {
-        setStoredAdminKey("");
-        state.overviewEtags.admin = "";
-        setLogModalOpen(false);
-        refs.adminWorkspace.classList.add("hidden");
-        refs.logoutButton.classList.add("hidden");
-        state.providers = [];
-        state.stats = {};
-        normalizeProviderWorkspaceState();
-        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
-        renderProviderPager([]);
-        renderRecentLogs([]);
-        setMessage(refs.loginStatus, t("admin.invalidKey"), "error");
+        if (route === "admin") {
+          setMessage(refs.loginStatus, t("admin.pleaseLogin"), "");
+        }
         return;
       }
 
@@ -2502,6 +2484,8 @@
       }
 
       const overview = await response.json();
+      setAdminAuthenticated(true);
+      refs.logoutButton.classList.remove("hidden");
       state.providers = overview.providers || [];
       state.stats = overview.provider_stats || {};
       normalizeProviderWorkspaceState();
@@ -2556,17 +2540,18 @@
             const stateText = isDisabled
               ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
               : t("provider.usable");
-            const checked = selectedKeys.has(key.value) ? "checked" : "";
+            const keyRef = String(key.ref || key.value || "");
+            const checked = selectedKeys.has(keyRef) ? "checked" : "";
             return `
               <div class="key-item">
                 <label class="checkbox">
-                  <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}" ${checked}>
+                  <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
                 </label>
                 <div>
                   <code>${escapeHTML(key.value)}</code>
                   <div class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))} · ${escapeHTML(stateText)}</div>
                 </div>
-                <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}">${escapeHTML(t("provider.delete"))}</button>
+                <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}">${escapeHTML(t("provider.delete"))}</button>
               </div>
             `;
           }).join("")}</div>`
@@ -2770,13 +2755,18 @@
 
     async function saveGlobalConfig() {
       const payload = {
-        admin_key: refs.globalAdminKey.value.trim(),
-        token_estimation_enabled: refs.globalTokenEstimation.checked,
-        client_keys: refs.globalClientKeys.value
+        token_estimation_enabled: refs.globalTokenEstimation.checked
+      };
+      const nextAdminKey = refs.globalAdminKey.value.trim();
+      if (nextAdminKey) {
+        payload.admin_key = nextAdminKey;
+      }
+      if (state.globalClientKeysDirty) {
+        payload.client_keys = refs.globalClientKeys.value
           .split(/\r?\n|,/)
           .map((item) => item.trim())
-          .filter(Boolean)
-      };
+          .filter(Boolean);
+      }
 
       const response = await request("/admin/config", {
         method: "PUT",
@@ -2787,16 +2777,18 @@
         throw new Error(await parseErrorMessage(response, t("error.save")));
       }
 
-      if (payload.admin_key && payload.admin_key !== state.adminKey) {
-        setStoredAdminKey(payload.admin_key);
-        refs.loginKey.value = payload.admin_key;
-      }
       state.globalConfigDraft = {
-        admin_key: payload.admin_key,
+        admin_key: "",
         token_estimation_enabled: payload.token_estimation_enabled,
-        client_keys: payload.client_keys.join("\n")
+        client_keys: "",
+        admin_key_configured: true,
+        client_key_count: Array.isArray(payload.client_keys) ? payload.client_keys.length : state.globalConfigDraft?.client_key_count || 0
       };
       state.globalConfigDirty = false;
+      state.globalAdminKeyDirty = false;
+      state.globalClientKeysDirty = false;
+      refs.globalAdminKey.value = "";
+      refs.globalClientKeys.value = "";
       setMessage(refs.globalStatus, t("admin.savedTip"), "ok");
       setMessage(refs.adminActionStatus, t("admin.savedGlobal"), "ok");
       await loadAdminOverview();
@@ -2847,7 +2839,7 @@
         throw new Error(await parseErrorMessage(response, t("error.delete")));
       }
       const currentProvider = (state.providers || []).find((item) => item.name === provider);
-      const nextKeys = (currentProvider?.keys || []).filter((item) => item.value !== key);
+      const nextKeys = (currentProvider?.keys || []).filter((item) => String(item.ref || item.value) !== key);
       updateProviderKeysInState(provider, nextKeys);
       setMessage(refs.adminActionStatus, t("admin.deletedKey", { provider }), "ok");
       renderAdminWorkspaceProviders();
@@ -2948,7 +2940,7 @@
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        if (route === "admin" && state.adminKey) {
+        if (route === "admin") {
           void loadAdminOverview();
           return;
         }
@@ -2982,8 +2974,11 @@
       }
     });
 
-    refs.logoutButton.addEventListener("click", () => {
-      setStoredAdminKey("");
+    refs.logoutButton.addEventListener("click", async () => {
+      try {
+        await request("/admin/logout", { method: "POST" }, true);
+      } catch {}
+      setAdminAuthenticated(false);
       state.overviewEtags.admin = "";
       setLogModalOpen(false);
       refs.loginKey.value = "";
@@ -3042,22 +3037,34 @@
       }
     });
 
-    refs.globalForm.addEventListener("input", () => {
+    refs.globalForm.addEventListener("input", (event) => {
       state.globalConfigDraft = {
         admin_key: refs.globalAdminKey.value,
         token_estimation_enabled: refs.globalTokenEstimation.checked,
         client_keys: refs.globalClientKeys.value
       };
       state.globalConfigDirty = true;
+      if (event.target === refs.globalAdminKey) {
+        state.globalAdminKeyDirty = true;
+      }
+      if (event.target === refs.globalClientKeys) {
+        state.globalClientKeysDirty = true;
+      }
     });
 
-    refs.globalForm.addEventListener("change", () => {
+    refs.globalForm.addEventListener("change", (event) => {
       state.globalConfigDraft = {
         admin_key: refs.globalAdminKey.value,
         token_estimation_enabled: refs.globalTokenEstimation.checked,
         client_keys: refs.globalClientKeys.value
       };
       state.globalConfigDirty = true;
+      if (event.target === refs.globalAdminKey) {
+        state.globalAdminKeyDirty = true;
+      }
+      if (event.target === refs.globalClientKeys) {
+        state.globalClientKeysDirty = true;
+      }
     });
 
     refs.createForm.addEventListener("input", () => {
@@ -3149,7 +3156,7 @@
         if (action === "select-page-keys" && currentProvider) {
           const filteredKeys = filterProviderKeys(currentProvider, state.keySearchQuery);
           const { pageKeys } = paginateProviderKeys(filteredKeys, currentProvider.name);
-          const mergedKeys = new Set([...getSelectedKeys(currentProvider.name), ...pageKeys.map((item) => item.value)]);
+          const mergedKeys = new Set([...getSelectedKeys(currentProvider.name), ...pageKeys.map((item) => String(item.ref || item.value))]);
           setSelectedKeys(currentProvider.name, Array.from(mergedKeys));
           renderAdminWorkspaceProviders();
         }
@@ -3158,10 +3165,11 @@
           const { pageKeys } = paginateProviderKeys(filteredKeys, currentProvider.name);
           const nextSelectedKeys = new Set(getSelectedKeys(currentProvider.name));
           for (const pageKey of pageKeys) {
-            if (nextSelectedKeys.has(pageKey.value)) {
-              nextSelectedKeys.delete(pageKey.value);
+            const keyRef = String(pageKey.ref || pageKey.value);
+            if (nextSelectedKeys.has(keyRef)) {
+              nextSelectedKeys.delete(keyRef);
             } else {
-              nextSelectedKeys.add(pageKey.value);
+              nextSelectedKeys.add(keyRef);
             }
           }
           setSelectedKeys(currentProvider.name, Array.from(nextSelectedKeys));
@@ -3192,16 +3200,8 @@
       startOverviewPolling();
 
       if (route === "admin") {
-        if (state.adminKey) {
-          refs.loginKey.value = state.adminKey;
-          setMessage(refs.loginStatus, t("admin.localKeyLoaded"), "ok");
-        }
         try {
-          if (state.adminKey) {
-            await loadAdminOverview();
-            return;
-          }
-          await loadStatusOverview();
+          await loadAdminOverview();
         } catch (error) {
           setMessage(refs.loginStatus, error.message || t("error.read"), "error");
         }

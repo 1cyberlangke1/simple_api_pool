@@ -8,7 +8,6 @@ import (
 	"runtime/debug"
 
 	"simple-api-pool/applog"
-	"simple-api-pool/auth"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
 	"simple-api-pool/handler"
@@ -48,13 +47,6 @@ func main() {
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		skipAuth := path == "/api/health" || path == "/api/status/stats" || path == "/api/status/overview" || path == "/" || path == "/status" || path == "/admin" || path == "/favicon.svg" || path == "/favicon.ico"
-		if !skipAuth && !auth.CheckClientKey(r, cfg) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"未授权"}`))
-			return
-		}
 		if path == "/" || path == "/status" || path == "/admin" {
 			serveFrontendIndex(w, r, frontendRoot)
 			return
@@ -71,7 +63,7 @@ func main() {
 	}))
 
 	addr := config.ListenAddr()
-	muxWithLogs := applog.LoggingMiddleware(mux)
+	muxWithLogs := securityHeadersMiddleware(applog.LoggingMiddleware(mux))
 	log.Printf("simple-api-pool listening on %s", addr)
 	if err := http.ListenAndServe(addr, muxWithLogs); err != nil {
 		log.Fatalf("server error: %v", err)

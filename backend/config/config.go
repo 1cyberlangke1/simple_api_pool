@@ -320,6 +320,29 @@ func (c *Config) UpdateGlobalConfig(adminKey string, tokenEst bool, clientKeys [
 	c.save()
 }
 
+func (c *Config) PatchGlobalConfig(adminKey *string, tokenEstimationEnabled *bool, clientKeys *[]string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if adminKey != nil {
+		c.state.AdminKey = strings.TrimSpace(*adminKey)
+	}
+	if tokenEstimationEnabled != nil {
+		c.state.TokenEstimationEnabled = *tokenEstimationEnabled
+	}
+	if clientKeys != nil {
+		nextClientKeys := make([]string, 0, len(*clientKeys))
+		for _, clientKey := range *clientKeys {
+			trimmedClientKey := strings.TrimSpace(clientKey)
+			if trimmedClientKey == "" {
+				continue
+			}
+			nextClientKeys = append(nextClientKeys, trimmedClientKey)
+		}
+		c.state.ClientKeys = nextClientKeys
+	}
+	c.save()
+}
+
 func (c *Config) AdminKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

@@ -91,7 +91,6 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `requestOverview("/admin/overview", "admin", true)`)
 		mustContain(t, body, `requestOverview("/status/overview", "status")`)
 		mustContain(t, body, `If-None-Match`)
-		mustContain(t, body, `localStorage.getItem(STORAGE_KEY)`)
 		mustContain(t, body, `provider.tagAvailableKeys`)
 		mustContain(t, body, `data-action="clear-cache"`)
 		mustContain(t, body, `/admin/providers/${encodeURIComponent(provider)}/cache`)
@@ -130,6 +129,18 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(string(indexHTML), `function requestOverview(`) {
 		t.Fatal("期望前端具备总览协商缓存请求逻辑")
+	}
+	if strings.Contains(string(indexHTML), `localStorage.getItem(STORAGE_KEY)`) {
+		t.Fatal("期望前端不再把管理员密钥持久化到本地存储")
+	}
+	if strings.Contains(string(indexHTML), `Authorization`) || strings.Contains(string(indexHTML), `Bearer`) {
+		t.Fatal("期望前端不再通过 Authorization 头长期携带管理员密钥")
+	}
+	if !strings.Contains(string(indexHTML), `credentials: "same-origin"`) {
+		t.Fatal("期望前端通过同源 Cookie 维持管理员会话")
+	}
+	if !strings.Contains(string(indexHTML), `await request("/admin/logout", { method: "POST" }, true);`) {
+		t.Fatal("期望前端支持管理员主动登出")
 	}
 	if !strings.Contains(string(indexHTML), `function renderBuildVersion(`) {
 		t.Fatal("期望前端具备构建版本展示逻辑")

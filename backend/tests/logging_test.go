@@ -133,6 +133,56 @@ func TestProxyRequestWritesStructuredLogs(t *testing.T) {
 	}
 }
 
+func TestProxyAndAccessLogsRedactSensitiveQueryValues(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(applog.NewTestLogger(&logs))
+	defer slog.SetDefault(oldLogger)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-gemini-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "gemini",
+		Type:    config.Gemini,
+		BaseURL: upstream.URL,
+		Keys: []config.Key{
+			{Value: "upstream-gemini-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	req := httptest.NewRequest(http.MethodGet, "/gemini/v1beta/models?key=client-gemini-key&pageSize=20", nil)
+	req.Header.Set("x-goog-api-key", "client-gemini-key")
+	rec := httptest.NewRecorder()
+
+	applog.LoggingMiddleware(proxy).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	logOutput := logs.String()
+	if strings.Contains(logOutput, "client-gemini-key") {
+		t.Fatalf("期望日志脱敏敏感 query key，实际日志是 %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"query":"key=%5Bredacted%5D&pageSize=20"`) &&
+		!strings.Contains(logOutput, `"query":"pageSize=20&key=%5Bredacted%5D"`) {
+		t.Fatalf("期望日志保留业务参数并脱敏 key，实际日志是 %s", logOutput)
+	}
+}
+
 func TestAccessLoggingMiddlewareWritesStatusAndResponseBytes(t *testing.T) {
 	var logs bytes.Buffer
 	oldLogger := slog.Default()

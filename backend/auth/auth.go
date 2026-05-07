@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,14 +12,14 @@ import (
 func CheckClientKey(r *http.Request, cfg *config.Config) bool {
 	keys := cfg.ClientKeys()
 	if len(keys) == 0 {
-		return true
+		return false
 	}
 	key := extractClientKey(r, cfg)
 	if key == "" {
 		return false
 	}
 	for _, k := range keys {
-		if k == key {
+		if constantTimeEqual(k, key) {
 			return true
 		}
 	}
@@ -31,7 +32,10 @@ func CheckAdminKey(r *http.Request, cfg *config.Config) bool {
 		return false
 	}
 	key := extractBearer(r)
-	return key == adminKey
+	if key != "" && constantTimeEqual(key, adminKey) {
+		return true
+	}
+	return CheckAdminSession(r, cfg)
 }
 
 func extractClientKey(r *http.Request, cfg *config.Config) string {
@@ -98,4 +102,11 @@ func queryKey(values url.Values, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(values.Get(key))
+}
+
+func constantTimeEqual(left, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }

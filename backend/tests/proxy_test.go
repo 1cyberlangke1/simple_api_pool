@@ -276,13 +276,14 @@ func TestCacheHitReturnsWithoutAvailableUpstreamKey(t *testing.T) {
 	}
 }
 
-func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
+func TestSecondStreamRequestHitsStoredStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"id":"resp-1","usage":{"prompt_tokens":4,"completion_tokens":6},"choices":[{"message":{"role":"assistant","content":"cached hello"}}]}`))
+		_, _ = w.Write([]byte("data: {\"id\":\"resp-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"cached hello\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":6,\"total_tokens\":10}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer upstream.Close()
 
@@ -306,10 +307,11 @@ func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
 	cacheStore := newTestCacheStore(t)
 	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
-	nonStreamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":false}`
-	firstReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(nonStreamBody))
+	streamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
 	firstReq.Header.Set("Authorization", "Bearer client-key")
 	firstReq.Header.Set("Content-Type", "application/json")
+	firstReq.Header.Set("Accept", "text/event-stream")
 	firstRec := httptest.NewRecorder()
 	proxy.ServeHTTP(firstRec, firstReq)
 
@@ -317,7 +319,6 @@ func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
 		t.Fatalf("第一次请求期望状态码 %d，实际是 %d", http.StatusOK, firstRec.Code)
 	}
 
-	streamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	secondReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
 	secondReq.Header.Set("Authorization", "Bearer client-key")
 	secondReq.Header.Set("Content-Type", "application/json")
@@ -349,26 +350,32 @@ func TestCacheHitIgnoresStreamFlagAndReturnsStreamFormat(t *testing.T) {
 	}
 }
 
-func TestFirstStreamResponseBuildsNonStreamCacheForLaterNonStreamHits(t *testing.T) {
+func TestFirstStreamResponseRequiresNonStreamBackfillBeforeLaterNonStreamHit(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			chunks := []string{
+				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
+				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12}}\n\n",
+				"data: [DONE]\n\n",
+			}
+			for _, chunk := range chunks {
+				if _, err := w.Write([]byte(chunk)); err != nil {
+					t.Fatalf("写入流式块失败: %v", err)
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		chunks := []string{
-			"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}],\"usage\":null}\n\n",
-			"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
-			"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12}}\n\n",
-			"data: [DONE]\n\n",
-		}
-		for _, chunk := range chunks {
-			if _, err := w.Write([]byte(chunk)); err != nil {
-				t.Fatalf("写入流式块失败: %v", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1-json","object":"chat.completion","model":"gpt-4.1","choices":[{"index":0,"message":{"role":"assistant","content":"Hello world"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}}`))
 	}))
 	defer upstream.Close()
 
@@ -417,8 +424,8 @@ func TestFirstStreamResponseBuildsNonStreamCacheForLaterNonStreamHits(t *testing
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("第二次非流式请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
 	}
-	if upstreamCalls != 1 {
-		t.Fatalf("期望第二次非流式请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	if upstreamCalls != 2 {
+		t.Fatalf("期望跨形态首次非流式请求回源补齐，实际上游调用次数是 %d", upstreamCalls)
 	}
 
 	var payload map[string]any
@@ -430,31 +437,53 @@ func TestFirstStreamResponseBuildsNonStreamCacheForLaterNonStreamHits(t *testing
 	if message["content"] != "Hello world" {
 		t.Fatalf("期望缓存里的非流式内容为 Hello world，实际是 %#v", message["content"])
 	}
-	usage := payload["usage"].(map[string]any)
-	if usage["cache_tokens"] != float64(12) {
-		t.Fatalf("期望 cache_tokens 为 12，实际是 %#v", usage["cache_tokens"])
+	thirdReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(nonStreamBody))
+	thirdReq.Header.Set("Authorization", "Bearer client-key")
+	thirdReq.Header.Set("Content-Type", "application/json")
+	thirdRec := httptest.NewRecorder()
+	proxy.ServeHTTP(thirdRec, thirdReq)
+
+	if thirdRec.Code != http.StatusOK {
+		t.Fatalf("第三次非流式请求期望状态码 %d，实际是 %d", http.StatusOK, thirdRec.Code)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望第三次非流式请求命中刚补齐的缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	var thirdPayload map[string]any
+	if err := json.Unmarshal(thirdRec.Body.Bytes(), &thirdPayload); err != nil {
+		t.Fatalf("解析第三次非流式缓存响应失败: %v", err)
+	}
+	thirdUsage := thirdPayload["usage"].(map[string]any)
+	if thirdUsage["cache_tokens"] != float64(12) {
+		t.Fatalf("期望第三次缓存命中时 cache_tokens 为 12，实际是 %#v", thirdUsage["cache_tokens"])
 	}
 }
 
-func TestOpenAIChatStreamCachePreservesAdditionalFieldsInCanonicalResponse(t *testing.T) {
+func TestOpenAIChatCrossShapeBackfillUsesRawNonStreamResponse(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			chunks := []string{
+				"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"答\",\"reasoning_content\":\"想\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+				"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"案\",\"reasoning_content\":\"法\"},\"finish_reason\":\"stop\",\"extra_field\":\"keep-me\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12}}\n\n",
+				"data: [DONE]\n\n",
+			}
+			for _, chunk := range chunks {
+				if _, err := w.Write([]byte(chunk)); err != nil {
+					t.Fatalf("写入流式块失败: %v", err)
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		chunks := []string{
-			"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"答\",\"reasoning_content\":\"想\"},\"finish_reason\":null}],\"usage\":null}\n\n",
-			"data: {\"id\":\"chatcmpl-extra\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-4.6v-flash\",\"system_fingerprint\":\"fp-zhipu\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"案\",\"reasoning_content\":\"法\"},\"finish_reason\":\"stop\",\"extra_field\":\"keep-me\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12}}\n\n",
-			"data: [DONE]\n\n",
-		}
-		for _, chunk := range chunks {
-			if _, err := w.Write([]byte(chunk)); err != nil {
-				t.Fatalf("写入流式块失败: %v", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-extra-json","object":"chat.completion","model":"glm-4.6v-flash","system_fingerprint":"fp-zhipu-json","choices":[{"index":0,"message":{"role":"assistant","content":"答案","reasoning_content":"想法"},"finish_reason":"stop","extra_field":"keep-me-json"}],"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}}`))
 	}))
 	defer upstream.Close()
 
@@ -500,54 +529,76 @@ func TestOpenAIChatStreamCachePreservesAdditionalFieldsInCanonicalResponse(t *te
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("第二次非流式请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, secondRec.Code, secondRec.Body.String())
 	}
-	if upstreamCalls != 1 {
-		t.Fatalf("期望第二次请求命中缓存，实际上游调用次数是 %d", upstreamCalls)
+	if upstreamCalls != 2 {
+		t.Fatalf("期望跨形态首次非流式请求回源补齐，实际上游调用次数是 %d", upstreamCalls)
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(secondRec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析缓存响应失败: %v", err)
 	}
-	if payload["system_fingerprint"] != "fp-zhipu" {
+	if payload["system_fingerprint"] != "fp-zhipu-json" {
 		t.Fatalf("期望保留顶层额外字段 system_fingerprint，实际是 %#v", payload["system_fingerprint"])
 	}
 	choices := payload["choices"].([]any)
 	choice := choices[0].(map[string]any)
-	if choice["extra_field"] != "keep-me" {
+	if choice["extra_field"] != "keep-me-json" {
 		t.Fatalf("期望保留 choice 上的额外字段，实际是 %#v", choice["extra_field"])
 	}
 	message := choice["message"].(map[string]any)
+	if message["role"] != "assistant" {
+		t.Fatalf("期望 role 保持 assistant，实际是 %#v", message["role"])
+	}
 	if message["content"] != "答案" {
 		t.Fatalf("期望拼接正文为 答案，实际是 %#v", message["content"])
 	}
 	if message["reasoning_content"] != "想法" {
 		t.Fatalf("期望拼接 reasoning_content 为 想法，实际是 %#v", message["reasoning_content"])
 	}
+
+	thirdReq := httptest.NewRequest(http.MethodPost, "/cache/zhipu/chat/completions", strings.NewReader(nonStreamBody))
+	thirdReq.Header.Set("Authorization", "Bearer client-key")
+	thirdReq.Header.Set("Content-Type", "application/json")
+	thirdRec := httptest.NewRecorder()
+	proxy.ServeHTTP(thirdRec, thirdReq)
+
+	if thirdRec.Code != http.StatusOK {
+		t.Fatalf("第三次非流式请求期望状态码 %d，实际是 %d", http.StatusOK, thirdRec.Code)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望第三次非流式请求命中补齐后的缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
 }
 
-func TestClaudeFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
+func TestClaudeCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			events := []string{
+				"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-5\",\"stop_reason\":null,\"stop_sequence\":null}}\n\n",
+				"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" Claude\"}}\n\n",
+				"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":8,\"output_tokens\":6}}\n\n",
+				"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+			}
+			for _, event := range events {
+				if _, err := w.Write([]byte(event)); err != nil {
+					t.Fatalf("写入 Claude 流式事件失败: %v", err)
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		events := []string{
-			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-5\",\"stop_reason\":null,\"stop_sequence\":null}}\n\n",
-			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
-			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
-			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" Claude\"}}\n\n",
-			"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
-			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":8,\"output_tokens\":6}}\n\n",
-			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
-		}
-		for _, event := range events {
-			if _, err := w.Write([]byte(event)); err != nil {
-				t.Fatalf("写入 Claude 流式事件失败: %v", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
+		_, _ = w.Write([]byte(`{"id":"msg_1_json","type":"message","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","stop_sequence":null,"content":[{"type":"text","text":"Hello Claude"}],"usage":{"input_tokens":8,"output_tokens":6}}`))
 	}))
 	defer upstream.Close()
 
@@ -593,8 +644,8 @@ func TestClaudeFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("第二次 Claude 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
 	}
-	if upstreamCalls != 1 {
-		t.Fatalf("期望 Claude 第二次请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Claude 跨形态首次非流式请求回源补齐，实际上游调用次数是 %d", upstreamCalls)
 	}
 
 	var payload map[string]any
@@ -606,32 +657,54 @@ func TestClaudeFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if block["text"] != "Hello Claude" {
 		t.Fatalf("期望 Claude 缓存文本为 Hello Claude，实际是 %#v", block["text"])
 	}
-	usage := payload["usage"].(map[string]any)
-	if usage["cache_tokens"] != float64(14) {
-		t.Fatalf("期望 Claude cache_tokens 为 14，实际是 %#v", usage["cache_tokens"])
+	thirdReq := httptest.NewRequest(http.MethodPost, "/cache/claude/v1/messages", strings.NewReader(nonStreamBody))
+	thirdReq.Header.Set("Authorization", "Bearer client-key")
+	thirdReq.Header.Set("Content-Type", "application/json")
+	thirdRec := httptest.NewRecorder()
+	proxy.ServeHTTP(thirdRec, thirdReq)
+
+	if thirdRec.Code != http.StatusOK {
+		t.Fatalf("第三次 Claude 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, thirdRec.Code)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Claude 第三次非流式请求命中补齐后的缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	var thirdPayload map[string]any
+	if err := json.Unmarshal(thirdRec.Body.Bytes(), &thirdPayload); err != nil {
+		t.Fatalf("解析第三次 Claude 非流式缓存响应失败: %v", err)
+	}
+	thirdUsage := thirdPayload["usage"].(map[string]any)
+	if thirdUsage["cache_tokens"] != float64(14) {
+		t.Fatalf("期望 Claude 第三次缓存命中时 cache_tokens 为 14，实际是 %#v", thirdUsage["cache_tokens"])
 	}
 }
 
-func TestOpenAIResponsesFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
+func TestOpenAIResponsesCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			events := []string{
+				"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5\",\"output\":[],\"usage\":null}}\n\n",
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\" Responses\"}\n\n",
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5\",\"output\":[{\"type\":\"message\",\"id\":\"msg_1\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello Responses\",\"annotations\":[]}]}],\"usage\":{\"input_tokens\":9,\"output_tokens\":4,\"total_tokens\":13}}}\n\n",
+			}
+			for _, event := range events {
+				if _, err := w.Write([]byte(event)); err != nil {
+					t.Fatalf("写入 Responses 流式事件失败: %v", err)
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		events := []string{
-			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5\",\"output\":[],\"usage\":null}}\n\n",
-			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
-			"data: {\"type\":\"response.output_text.delta\",\"delta\":\" Responses\"}\n\n",
-			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5\",\"output\":[{\"type\":\"message\",\"id\":\"msg_1\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello Responses\",\"annotations\":[]}]}],\"usage\":{\"input_tokens\":9,\"output_tokens\":4,\"total_tokens\":13}}}\n\n",
-		}
-		for _, event := range events {
-			if _, err := w.Write([]byte(event)); err != nil {
-				t.Fatalf("写入 Responses 流式事件失败: %v", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
+		_, _ = w.Write([]byte(`{"id":"resp_1_json","object":"response","status":"completed","model":"gpt-5","output":[{"type":"message","id":"msg_1_json","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello Responses","annotations":[]}]}],"usage":{"input_tokens":9,"output_tokens":4,"total_tokens":13}}`))
 	}))
 	defer upstream.Close()
 
@@ -677,8 +750,8 @@ func TestOpenAIResponsesFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("第二次 Responses 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
 	}
-	if upstreamCalls != 1 {
-		t.Fatalf("期望 Responses 第二次请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Responses 跨形态首次非流式请求回源补齐，实际上游调用次数是 %d", upstreamCalls)
 	}
 
 	var payload map[string]any
@@ -692,31 +765,53 @@ func TestOpenAIResponsesFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if part["text"] != "Hello Responses" {
 		t.Fatalf("期望 Responses 缓存文本为 Hello Responses，实际是 %#v", part["text"])
 	}
-	usage := payload["usage"].(map[string]any)
-	if usage["cache_tokens"] != float64(13) {
-		t.Fatalf("期望 Responses cache_tokens 为 13，实际是 %#v", usage["cache_tokens"])
+	thirdReq := httptest.NewRequest(http.MethodPost, "/cache/responses/v1/responses", strings.NewReader(nonStreamBody))
+	thirdReq.Header.Set("Authorization", "Bearer client-key")
+	thirdReq.Header.Set("Content-Type", "application/json")
+	thirdRec := httptest.NewRecorder()
+	proxy.ServeHTTP(thirdRec, thirdReq)
+
+	if thirdRec.Code != http.StatusOK {
+		t.Fatalf("第三次 Responses 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, thirdRec.Code)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Responses 第三次非流式请求命中补齐后的缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	var thirdPayload map[string]any
+	if err := json.Unmarshal(thirdRec.Body.Bytes(), &thirdPayload); err != nil {
+		t.Fatalf("解析第三次 Responses 非流式缓存响应失败: %v", err)
+	}
+	thirdUsage := thirdPayload["usage"].(map[string]any)
+	if thirdUsage["cache_tokens"] != float64(13) {
+		t.Fatalf("期望 Responses 第三次缓存命中时 cache_tokens 为 13，实际是 %#v", thirdUsage["cache_tokens"])
 	}
 }
 
-func TestGeminiFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
+func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("alt") == "sse" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			events := []string{
+				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n",
+				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\n",
+				"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
+			}
+			for _, event := range events {
+				if _, err := w.Write([]byte(event)); err != nil {
+					t.Fatalf("写入 Gemini 流式事件失败: %v", err)
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		events := []string{
-			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n",
-			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\n",
-			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
-		}
-		for _, event := range events {
-			if _, err := w.Write([]byte(event)); err != nil {
-				t.Fatalf("写入 Gemini 流式事件失败: %v", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"Hello Gemini"}]}}],"usageMetadata":{"promptTokenCount":6,"candidatesTokenCount":5,"totalTokenCount":11}}`))
 	}))
 	defer upstream.Close()
 
@@ -762,8 +857,8 @@ func TestGeminiFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("第二次 Gemini 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
 	}
-	if upstreamCalls != 1 {
-		t.Fatalf("期望 Gemini 第二次请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Gemini 跨形态首次非流式请求回源补齐，实际上游调用次数是 %d", upstreamCalls)
 	}
 
 	var payload map[string]any
@@ -776,9 +871,25 @@ func TestGeminiFirstStreamResponseBuildsNonStreamCache(t *testing.T) {
 	if parts[0].(map[string]any)["text"] != "Hello Gemini" {
 		t.Fatalf("期望 Gemini 缓存文本为 Hello Gemini，实际是 %#v", parts[0].(map[string]any)["text"])
 	}
-	usage := payload["usageMetadata"].(map[string]any)
-	if usage["cacheTokens"] != float64(11) {
-		t.Fatalf("期望 Gemini cacheTokens 为 11，实际是 %#v", usage["cacheTokens"])
+	thirdReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent", strings.NewReader(nonStreamBody))
+	thirdReq.Header.Set("Authorization", "Bearer client-key")
+	thirdReq.Header.Set("Content-Type", "application/json")
+	thirdRec := httptest.NewRecorder()
+	proxy.ServeHTTP(thirdRec, thirdReq)
+
+	if thirdRec.Code != http.StatusOK {
+		t.Fatalf("第三次 Gemini 非流式请求期望状态码 %d，实际是 %d", http.StatusOK, thirdRec.Code)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望 Gemini 第三次非流式请求命中补齐后的缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	var thirdPayload map[string]any
+	if err := json.Unmarshal(thirdRec.Body.Bytes(), &thirdPayload); err != nil {
+		t.Fatalf("解析第三次 Gemini 非流式缓存响应失败: %v", err)
+	}
+	thirdUsage := thirdPayload["usageMetadata"].(map[string]any)
+	if thirdUsage["cacheTokens"] != float64(11) {
+		t.Fatalf("期望 Gemini 第三次缓存命中时 cacheTokens 为 11，实际是 %#v", thirdUsage["cacheTokens"])
 	}
 }
 

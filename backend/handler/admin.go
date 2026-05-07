@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"simple-api-pool/auth"
 	"simple-api-pool/cache"
@@ -17,10 +19,16 @@ type AdminHandler struct {
 	cfg   *config.Config
 	stats *stats.Manager
 	cache *cache.Store
+	limiter *auth.FailureLimiter
 }
 
 func NewAdminHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *AdminHandler {
-	return &AdminHandler{cfg: cfg, stats: sm, cache: cs}
+	return &AdminHandler{
+		cfg:     cfg,
+		stats:   sm,
+		cache:   cs,
+		limiter: auth.NewFailureLimiter(10, time.Minute, 10*time.Minute),
+	}
 }
 
 func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +38,8 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && path == "login":
 		ah.handleLogin(w, r)
+	case r.Method == http.MethodPost && path == "logout":
+		ah.handleLogout(w, r)
 	case r.Method == http.MethodGet && path == "overview":
 		if !ah.authorizeAdminRequest(w, r) {
 			return
@@ -80,14 +90,29 @@ func (ah *AdminHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ah *AdminHandler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) bool {
+	if ah.limiter != nil && !ah.limiter.Allow(r.RemoteAddr) {
+		writeErrorResponse(w, http.StatusTooManyRequests, "鉴权失败次数过多，请稍后再试")
+		return false
+	}
 	if auth.CheckAdminKey(r, ah.cfg) {
+		if ah.limiter != nil {
+			ah.limiter.RecordSuccess(r.RemoteAddr)
+		}
 		return true
+	}
+	if ah.limiter != nil {
+		ah.limiter.RecordFailure(r.RemoteAddr)
 	}
 	writeErrorResponse(w, http.StatusUnauthorized, "未授权")
 	return false
 }
 
 func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if ah.limiter != nil && !ah.limiter.Allow(r.RemoteAddr) {
+		writeErrorResponse(w, http.StatusTooManyRequests, "登录失败次数过多，请稍后再试")
+		return
+	}
+
 	var body struct {
 		AdminKey string `json:"admin_key"`
 	}
@@ -96,16 +121,31 @@ func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.AdminKey == "" || body.AdminKey != ah.cfg.AdminKey() {
+		if ah.limiter != nil {
+			ah.limiter.RecordFailure(r.RemoteAddr)
+		}
 		writeErrorResponse(w, http.StatusUnauthorized, "管理员密钥错误")
 		return
 	}
+	if err := auth.SetAdminSessionCookie(w, r, ah.cfg); err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "创建管理员会话失败")
+		return
+	}
+	if ah.limiter != nil {
+		ah.limiter.RecordSuccess(r.RemoteAddr)
+	}
+	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (ah *AdminHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearAdminSessionCookie(w, r)
 	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (ah *AdminHandler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSONResponse(w, http.StatusOK, ah.cfg.Providers())
+		writeJSONResponse(w, http.StatusOK, buildAdminProviderSnapshots(ah.cfg.Providers()))
 	case http.MethodPost:
 		var p config.Provider
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -120,7 +160,7 @@ func (ah *AdminHandler) handleProviders(w http.ResponseWriter, r *http.Request) 
 			writeErrorResponse(w, http.StatusBadRequest, "保存提供商失败")
 			return
 		}
-		writeJSONResponse(w, http.StatusCreated, p)
+		writeJSONResponse(w, http.StatusCreated, buildAdminProviderSnapshot(p))
 	default:
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
@@ -143,7 +183,7 @@ func (ah *AdminHandler) handleSingleProvider(w http.ResponseWriter, r *http.Requ
 			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
-		writeJSONResponse(w, http.StatusOK, p)
+		writeJSONResponse(w, http.StatusOK, buildAdminProviderSnapshot(*p))
 	}
 }
 
@@ -171,13 +211,22 @@ func (ah *AdminHandler) handleProviderKeys(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		p, _ := ah.cfg.Provider(name)
-		writeJSONResponse(w, http.StatusOK, p.Keys)
+		writeJSONResponse(w, http.StatusOK, buildAdminProviderSnapshot(*p).Keys)
 	case http.MethodDelete:
 		if len(parts) < 2 {
 			writeErrorResponse(w, http.StatusBadRequest, "缺少要删除的密钥")
 			return
 		}
-		keyValue := parts[1]
+		keyValue, err := url.PathUnescape(parts[1])
+		if err != nil {
+			writeErrorResponse(w, http.StatusBadRequest, "密钥标识无效")
+			return
+		}
+		keyValue = ah.resolveProviderKeyIdentifier(name, keyValue)
+		if keyValue == "" {
+			writeErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
+			return
+		}
 		if err := ah.cfg.DeleteKey(name, keyValue); err != nil {
 			writeErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
 			return
@@ -221,18 +270,33 @@ func (ah *AdminHandler) handleProviderCache(w http.ResponseWriter, r *http.Reque
 func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSONResponse(w, http.StatusOK, ah.cfg.GlobalConfig())
+		globalConfig := ah.cfg.GlobalConfig()
+		writeJSONResponse(w, http.StatusOK, GlobalConfigSnapshot{
+			AdminKeyConfigured:     globalConfig.AdminKey != "",
+			TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
+			ClientKeyCount:         len(globalConfig.ClientKeys),
+		})
 	case http.MethodPut:
 		var body struct {
-			AdminKey               string   `json:"admin_key"`
-			TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
-			ClientKeys             []string `json:"client_keys"`
+			AdminKey               *string  `json:"admin_key"`
+			TokenEstimationEnabled *bool    `json:"token_estimation_enabled"`
+			ClientKeys             *[]string `json:"client_keys"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
-		ah.cfg.UpdateGlobalConfig(body.AdminKey, body.TokenEstimationEnabled, body.ClientKeys)
+		if body.AdminKey != nil && strings.TrimSpace(*body.AdminKey) == "" {
+			writeErrorResponse(w, http.StatusBadRequest, "管理员密钥不能为空")
+			return
+		}
+		ah.cfg.PatchGlobalConfig(body.AdminKey, body.TokenEstimationEnabled, body.ClientKeys)
+		if body.AdminKey != nil {
+			if err := auth.SetAdminSessionCookie(w, r, ah.cfg); err != nil {
+				writeErrorResponse(w, http.StatusInternalServerError, "更新管理员会话失败")
+				return
+			}
+		}
 		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "updated"})
 	default:
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
@@ -264,7 +328,8 @@ func (ah *AdminHandler) handleProviderKeyBulkAction(w http.ResponseWriter, r *ht
 		writeErrorResponse(w, http.StatusBadRequest, "批量操作类型无效")
 		return
 	}
-	if err := ah.cfg.ApplyKeyAction(parts[0], body.Action, body.Keys); err != nil {
+	resolvedKeys := ah.resolveProviderKeyIdentifiers(parts[0], body.Keys)
+	if err := ah.cfg.ApplyKeyAction(parts[0], body.Action, resolvedKeys); err != nil {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
@@ -281,7 +346,42 @@ func (ah *AdminHandler) handleProviderKeyBulkAction(w http.ResponseWriter, r *ht
 		writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
-	writeJSONResponse(w, http.StatusOK, provider.Keys)
+	writeJSONResponse(w, http.StatusOK, buildAdminProviderSnapshot(*provider).Keys)
+}
+
+func (ah *AdminHandler) resolveProviderKeyIdentifiers(providerName string, identifiers []string) []string {
+	provider, _ := ah.cfg.Provider(providerName)
+	if provider == nil {
+		return identifiers
+	}
+
+	resolvedValues := make([]string, 0, len(identifiers))
+	seenValues := make(map[string]struct{}, len(identifiers))
+	for _, identifier := range identifiers {
+		resolvedValue := ah.resolveProviderKeyIdentifier(providerName, identifier)
+		if resolvedValue == "" {
+			continue
+		}
+		if _, exists := seenValues[resolvedValue]; exists {
+			continue
+		}
+		seenValues[resolvedValue] = struct{}{}
+		resolvedValues = append(resolvedValues, resolvedValue)
+	}
+	return resolvedValues
+}
+
+func (ah *AdminHandler) resolveProviderKeyIdentifier(providerName, identifier string) string {
+	provider, _ := ah.cfg.Provider(providerName)
+	if provider == nil {
+		return ""
+	}
+	for _, key := range provider.Keys {
+		if key.Value == identifier || buildSecretRef(key.Value) == identifier {
+			return key.Value
+		}
+	}
+	return ""
 }
 
 func parseImportedKeys(raw string) []string {

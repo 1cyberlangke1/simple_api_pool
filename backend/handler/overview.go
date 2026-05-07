@@ -20,15 +20,15 @@ type StatusOverviewResponse struct {
 }
 
 type GlobalConfigSnapshot struct {
-	AdminKey               string   `json:"admin_key"`
-	TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
-	ClientKeys             []string `json:"client_keys"`
+	AdminKeyConfigured     bool `json:"admin_key_configured"`
+	TokenEstimationEnabled bool `json:"token_estimation_enabled"`
+	ClientKeyCount         int  `json:"client_key_count"`
 }
 
 type AdminOverviewResponse struct {
 	Health        ServiceHealthSnapshot     `json:"health"`
 	GlobalConfig  GlobalConfigSnapshot      `json:"global_config"`
-	Providers     []config.Provider         `json:"providers"`
+	Providers     []AdminProviderSnapshot   `json:"providers"`
 	ProviderStats map[string]StatusSnapshot `json:"provider_stats"`
 	RecentLogs    []applog.Entry            `json:"recent_logs"`
 }
@@ -45,11 +45,11 @@ func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) A
 	return AdminOverviewResponse{
 		Health: newServiceHealthSnapshot(),
 		GlobalConfig: GlobalConfigSnapshot{
-			AdminKey:               globalConfig.AdminKey,
+			AdminKeyConfigured:     globalConfig.AdminKey != "",
 			TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
-			ClientKeys:             append([]string(nil), globalConfig.ClientKeys...),
+			ClientKeyCount:         len(globalConfig.ClientKeys),
 		},
-		Providers:     cfg.Providers(),
+		Providers:     buildAdminProviderSnapshots(cfg.Providers()),
 		ProviderStats: collectProviderStatusSnapshots(cfg, statsManager),
 		RecentLogs:    applog.RecentEntries(adminRecentLogLimit),
 	}
