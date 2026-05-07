@@ -176,6 +176,15 @@ func (m *Manager) RecordSuccess(provider string, input, output int64) {
 	m.markDirty()
 }
 
+func (m *Manager) RecordCacheTokens(provider string, tokens int64) {
+	if tokens <= 0 {
+		return
+	}
+	s := m.getOrCreate(provider)
+	s.CacheTokens.Add(tokens)
+	m.markDirty()
+}
+
 func (m *Manager) RecordError(provider string, statusCode int) {
 	s := m.getOrCreate(provider)
 	s.ErrorCount.Add(1)

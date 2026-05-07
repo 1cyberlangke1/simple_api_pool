@@ -47,26 +47,25 @@ func decorateCachedResponse(providerType config.ProviderType, responseBody []byt
 	}
 
 	totalTokens := inputTokens + outputTokens
-	cachedInputTokens := inputTokens
 
 	switch providerType {
 	case config.OpenAIChat:
 		usage := ensureMap(payload, "usage")
 		usage["total_tokens"] = totalTokens
 		promptDetails := ensureChildMap(usage, "prompt_tokens_details")
-		promptDetails["cached_tokens"] = cachedInputTokens
+		promptDetails["cached_tokens"] = totalTokens
 	case config.OpenAIResponses:
 		usage := ensureMap(payload, "usage")
 		usage["total_tokens"] = totalTokens
 		inputDetails := ensureChildMap(usage, "input_tokens_details")
-		inputDetails["cached_tokens"] = cachedInputTokens
+		inputDetails["cached_tokens"] = totalTokens
 	case config.Claude:
 		usage := ensureMap(payload, "usage")
-		usage["cache_read_input_tokens"] = cachedInputTokens
+		usage["cache_read_input_tokens"] = totalTokens
 	case config.Gemini:
 		usage := ensureMap(payload, "usageMetadata")
 		usage["totalTokenCount"] = totalTokens
-		usage["cachedContentTokenCount"] = cachedInputTokens
+		usage["cachedContentTokenCount"] = totalTokens
 	}
 
 	decorated, err := json.Marshal(payload)

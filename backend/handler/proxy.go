@@ -188,7 +188,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				upstreamBodyReader = bytes.NewReader(analysis.requestBody)
 
 				if entry, ok := h.cache.GetForRequestByKeyContext(r.Context(), parts.provider, p.Type, analysis.cacheKey, analysis.stream); ok {
-					h.stats.RecordCacheHit(parts.provider, entry.InputTokens)
+					h.stats.RecordCacheHit(parts.provider, entry.InputTokens+entry.OutputTokens)
 					logFields.CacheHit = true
 					logFields.Status = entry.StatusCode
 					logFields.UpstreamStatus = entry.StatusCode
@@ -326,6 +326,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	usage := token.Extract(string(p.Type), respBody, h.cfg.TokenEstimationEnabled())
 	h.stats.RecordSuccess(parts.provider, usage.InputTokens, usage.OutputTokens)
+	h.stats.RecordCacheTokens(parts.provider, usage.CacheTokens)
 	h.keyring.RecordSuccess(parts.provider, upstreamKey)
 
 	if cacheEligible {

@@ -1064,6 +1064,8 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - 上游没有返回 Token 时，可按字符串字节数除以 `4` 估算
 - 命中缓存时会记录缓存命中次数
 - 命中缓存时，返回结果会按各提供商官方响应结构补充缓存 Token 字段
+- 命中本地硬盘缓存时，缓存 Token 统计按整次响应的 `total token` 计
+- 上游如果自带缓存机制，则额外累计它返回的官方缓存 Token 字段
 - `OpenAI Chat` 使用 `usage.prompt_tokens_details.cached_tokens`
 - `OpenAI Responses` 使用 `usage.input_tokens_details.cached_tokens`
 - `Claude` 使用 `usage.cache_read_input_tokens`

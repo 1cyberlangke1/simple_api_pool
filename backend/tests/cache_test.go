@@ -145,7 +145,7 @@ func TestGetForRequestReturnsPreDecoratedCachedBody(t *testing.T) {
 	if !ok {
 		t.Fatal("期望命中非流式缓存")
 	}
-	if !strings.Contains(entry.ResponseBody, `"prompt_tokens_details":{"cached_tokens":4}`) {
+	if !strings.Contains(entry.ResponseBody, `"prompt_tokens_details":{"cached_tokens":10}`) {
 		t.Fatalf("期望直接返回已注入 prompt_tokens_details.cached_tokens 的缓存体，实际是 %s", entry.ResponseBody)
 	}
 	if !strings.Contains(entry.ResponseBody, `"total_tokens":10`) {
@@ -189,7 +189,7 @@ func TestPrepareCachedBodiesBuildsLegalOpenAIChatStream(t *testing.T) {
 		7,
 	)
 
-	if !strings.Contains(string(nonStreamBody), `"prompt_tokens_details":{"cached_tokens":5}`) {
+	if !strings.Contains(string(nonStreamBody), `"prompt_tokens_details":{"cached_tokens":12}`) {
 		t.Fatalf("期望 OpenAI Chat 缓存响应注入 prompt_tokens_details.cached_tokens，实际是 %s", nonStreamBody)
 	}
 	if !strings.Contains(string(streamBody), `"object":"chat.completion.chunk"`) {

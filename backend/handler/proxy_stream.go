@@ -52,6 +52,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	logFields.ResponseBytes = collected.Len()
 	usage := token.ExtractFromStream(string(providerType), collected.Bytes(), h.cfg.TokenEstimationEnabled())
 	h.stats.RecordSuccess(provider, usage.InputTokens, usage.OutputTokens)
+	h.stats.RecordCacheTokens(provider, usage.CacheTokens)
 	h.keyring.RecordSuccess(provider, upstreamKey)
 
 	if cacheEnabled {

@@ -42,13 +42,19 @@ func extractOpenAIStream(body []byte) Usage {
 		jsonStr := strings.TrimPrefix(line, "data: ")
 		var chunk struct {
 			Usage struct {
-				PromptTokens     int64 `json:"prompt_tokens"`
-				CompletionTokens int64 `json:"completion_tokens"`
+				PromptTokens       int64 `json:"prompt_tokens"`
+				CompletionTokens   int64 `json:"completion_tokens"`
+				PromptTokenDetails struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
 			Response struct {
 				Usage struct {
-					InputTokens  int64 `json:"input_tokens"`
-					OutputTokens int64 `json:"output_tokens"`
+					InputTokens       int64 `json:"input_tokens"`
+					OutputTokens      int64 `json:"output_tokens"`
+					InputTokenDetails struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
 				} `json:"usage"`
 			} `json:"response"`
 		}
@@ -56,11 +62,19 @@ func extractOpenAIStream(body []byte) Usage {
 			continue
 		}
 		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
-			u = Usage{InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens}
+			u = Usage{
+				InputTokens:  chunk.Usage.PromptTokens,
+				OutputTokens: chunk.Usage.CompletionTokens,
+				CacheTokens:  chunk.Usage.PromptTokenDetails.CachedTokens,
+			}
 			break
 		}
 		if chunk.Response.Usage.InputTokens > 0 || chunk.Response.Usage.OutputTokens > 0 {
-			u = Usage{InputTokens: chunk.Response.Usage.InputTokens, OutputTokens: chunk.Response.Usage.OutputTokens}
+			u = Usage{
+				InputTokens:  chunk.Response.Usage.InputTokens,
+				OutputTokens: chunk.Response.Usage.OutputTokens,
+				CacheTokens:  chunk.Response.Usage.InputTokenDetails.CachedTokens,
+			}
 			break
 		}
 	}
@@ -79,15 +93,21 @@ func extractClaudeStream(body []byte) Usage {
 		var msg struct {
 			Type  string `json:"type"`
 			Usage struct {
-				InputTokens  int64 `json:"input_tokens"`
-				OutputTokens int64 `json:"output_tokens"`
+				InputTokens              int64 `json:"input_tokens"`
+				OutputTokens             int64 `json:"output_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &msg); err != nil {
 			continue
 		}
 		if msg.Usage.InputTokens > 0 || msg.Usage.OutputTokens > 0 {
-			u = Usage{InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens}
+			u = Usage{
+				InputTokens:  msg.Usage.InputTokens,
+				OutputTokens: msg.Usage.OutputTokens,
+				CacheTokens:  msg.Usage.CacheCreationInputTokens + msg.Usage.CacheReadInputTokens,
+			}
 			break
 		}
 	}
@@ -105,9 +125,10 @@ func extractGeminiStream(body []byte) Usage {
 		jsonStr := strings.TrimPrefix(line, "data: ")
 		var resp struct {
 			UsageMetadata struct {
-				PromptTokenCount     int64 `json:"promptTokenCount"`
-				CandidatesTokenCount int64 `json:"candidatesTokenCount"`
-				TotalTokenCount      int64 `json:"totalTokenCount"`
+				PromptTokenCount        int64 `json:"promptTokenCount"`
+				CandidatesTokenCount    int64 `json:"candidatesTokenCount"`
+				TotalTokenCount         int64 `json:"totalTokenCount"`
+				CachedContentTokenCount int64 `json:"cachedContentTokenCount"`
 			} `json:"usageMetadata"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
@@ -120,7 +141,7 @@ func extractGeminiStream(body []byte) Usage {
 			output = resp.UsageMetadata.TotalTokenCount - input
 		}
 		if input > 0 || output > 0 {
-			u = Usage{InputTokens: input, OutputTokens: output}
+			u = Usage{InputTokens: input, OutputTokens: output, CacheTokens: resp.UsageMetadata.CachedContentTokenCount}
 			break
 		}
 	}
