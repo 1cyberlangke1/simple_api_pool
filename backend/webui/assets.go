@@ -48,8 +48,8 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 		if len(match) < 2 {
 			continue
 		}
-		scriptBody := strings.TrimSpace(string(match[1]))
-		if scriptBody == "" {
+		scriptBody := string(match[1])
+		if strings.TrimSpace(scriptBody) == "" {
 			continue
 		}
 		sum := sha256.Sum256([]byte(scriptBody))
@@ -62,8 +62,8 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 		if len(match) < 2 {
 			continue
 		}
-		styleBody := strings.TrimSpace(string(match[1]))
-		if styleBody == "" {
+		styleBody := string(match[1])
+		if strings.TrimSpace(styleBody) == "" {
 			continue
 		}
 		sum := sha256.Sum256([]byte(styleBody))
