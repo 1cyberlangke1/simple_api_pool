@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"simple-api-pool/applog"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
 	"simple-api-pool/handler"
@@ -185,6 +186,78 @@ func TestAdminClearProviderCache(t *testing.T) {
 	}
 	if _, ok := cacheStore.Get("openai", config.OpenAIChat, "gpt-4.1", requestBody); ok {
 		t.Fatal("期望清空缓存后不再命中")
+	}
+}
+
+func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
+	restoreRecentLogs := applog.ReplaceRecentEntriesForTesting(10)
+	defer restoreRecentLogs()
+	applog.AppendRecentEntryForTesting(applog.Entry{
+		Time:  "2026-05-07T08:00:00Z",
+		Level: "INFO",
+		Msg:   "proxy_request",
+		Attrs: map[string]any{"provider": "openai"},
+	})
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", true, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		CacheEnabled:    true,
+		CacheMaxEntries: 20,
+		Keys: []config.Key{
+			{Value: "key-1"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	statsManager.RecordSuccess("openai", 3, 4)
+
+	h := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Health struct {
+			Status string `json:"status"`
+		} `json:"health"`
+		GlobalConfig struct {
+			AdminKey               string   `json:"admin_key"`
+			TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
+			ClientKeys             []string `json:"client_keys"`
+		} `json:"global_config"`
+		Providers     []config.Provider                 `json:"providers"`
+		ProviderStats map[string]handler.StatusSnapshot `json:"provider_stats"`
+		RecentLogs    []applog.Entry                    `json:"recent_logs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析管理总览响应失败: %v", err)
+	}
+	if payload.Health.Status != "ok" {
+		t.Fatalf("期望 health.status 为 ok，实际是 %q", payload.Health.Status)
+	}
+	if payload.GlobalConfig.AdminKey != "secret-admin" || !payload.GlobalConfig.TokenEstimationEnabled {
+		t.Fatalf("期望返回全局配置，实际是 %+v", payload.GlobalConfig)
+	}
+	if len(payload.Providers) != 1 || payload.Providers[0].Name != "openai" {
+		t.Fatalf("期望返回提供商列表，实际是 %+v", payload.Providers)
+	}
+	if payload.ProviderStats["openai"].InputTokens != 3 || payload.ProviderStats["openai"].OutputTokens != 4 {
+		t.Fatalf("期望返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
+	}
+	if len(payload.RecentLogs) != 1 || payload.RecentLogs[0].Msg != "proxy_request" {
+		t.Fatalf("期望返回最近日志，实际是 %+v", payload.RecentLogs)
 	}
 }
 

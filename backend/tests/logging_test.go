@@ -166,6 +166,23 @@ func TestAccessLoggingMiddlewareWritesStatusAndResponseBytes(t *testing.T) {
 	}
 }
 
+func TestRecentEntriesKeepsOnlyLatestRecords(t *testing.T) {
+	restoreRecentEntries := applog.ReplaceRecentEntriesForTesting(2)
+	defer restoreRecentEntries()
+
+	applog.AppendRecentEntryForTesting(applog.Entry{Time: "1", Level: "INFO", Msg: "first"})
+	applog.AppendRecentEntryForTesting(applog.Entry{Time: "2", Level: "INFO", Msg: "second"})
+	applog.AppendRecentEntryForTesting(applog.Entry{Time: "3", Level: "ERROR", Msg: "third"})
+
+	entries := applog.RecentEntries(10)
+	if len(entries) != 2 {
+		t.Fatalf("期望只保留最近 2 条日志，实际是 %d", len(entries))
+	}
+	if entries[0].Msg != "second" || entries[1].Msg != "third" {
+		t.Fatalf("期望日志顺序为 second, third，实际是 %+v", entries)
+	}
+}
+
 func TestGeminiClientAuthIsReplacedWithUpstreamKey(t *testing.T) {
 	received := struct {
 		APIKey string

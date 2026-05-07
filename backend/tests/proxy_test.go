@@ -1299,3 +1299,46 @@ func TestStatusEndpointReturnsKeyOverviewWithoutRequestStats(t *testing.T) {
 		t.Fatalf("期望没有错误类型时不返回 error_types，实际是 %+v", geminiPayload["error_types"])
 	}
 }
+
+func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
+	cfg := newTestConfig(t)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "key-1"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	statsMgr.RecordSuccess("openai", 7, 5)
+
+	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	req := httptest.NewRequest(http.MethodGet, "/api/status/overview", nil)
+	rec := httptest.NewRecorder()
+
+	statusHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Health struct {
+			Status string `json:"status"`
+		} `json:"health"`
+		ProviderStats map[string]handler.StatusSnapshot `json:"provider_stats"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析状态总览响应失败: %v", err)
+	}
+	if payload.Health.Status != "ok" {
+		t.Fatalf("期望 health.status 为 ok，实际是 %q", payload.Health.Status)
+	}
+	if payload.ProviderStats["openai"].InputTokens != 7 || payload.ProviderStats["openai"].OutputTokens != 5 {
+		t.Fatalf("期望状态总览返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
+	}
+}

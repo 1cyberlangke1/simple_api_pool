@@ -32,6 +32,12 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && path == "login":
 		ah.handleLogin(w, r)
+	case r.Method == http.MethodGet && path == "overview":
+		if !auth.CheckAdminKey(r, ah.cfg) {
+			writeJSONError(w, http.StatusUnauthorized, "未授权")
+			return
+		}
+		ah.handleOverview(w, r)
 	case path == "providers":
 		if !auth.CheckAdminKey(r, ah.cfg) {
 			writeJSONError(w, http.StatusUnauthorized, "未授权")
@@ -71,6 +77,10 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONError(w, http.StatusNotFound, "接口不存在")
 	}
+}
+
+func (ah *AdminHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
+	_ = json.NewEncoder(w).Encode(buildAdminOverviewResponse(ah.cfg, ah.stats))
 }
 
 func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {

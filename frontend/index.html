@@ -310,6 +310,38 @@
       margin-top: 20px;
     }
 
+    .single-column-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .admin-dashboard-grid {
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      align-items: start;
+      margin-top: 20px;
+    }
+
+    .admin-sidebar {
+      position: sticky;
+      top: 20px;
+    }
+
+    .admin-workspace-column {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .scroll-panel {
+      min-height: 0;
+    }
+
+    .scroll-panel-body {
+      min-height: 0;
+      max-height: min(62vh, 880px);
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
     /* Panels */
     .panel {
       background: var(--panel);
@@ -611,6 +643,9 @@
       display: grid;
       gap: 8px;
       margin-top: 12px;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 4px;
     }
 
     .key-item {
@@ -630,6 +665,50 @@
       color: var(--accent-deep);
       font-size: 13px;
       font-family: "JetBrains Mono", "Consolas", monospace;
+    }
+
+    .recent-log-list {
+      display: grid;
+      gap: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    .log-entry {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-input);
+      border: 1px solid var(--line-soft);
+      display: grid;
+      gap: 6px;
+    }
+
+    .log-entry-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .log-entry-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .log-entry-time {
+      font-size: 11.5px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .log-entry-summary {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+      overflow-wrap: anywhere;
     }
 
     /* Empty state */
@@ -696,6 +775,8 @@
     /* Responsive */
     @media (max-width: 960px) {
       .content-grid { grid-template-columns: 1fr; }
+      .admin-dashboard-grid { grid-template-columns: 1fr; }
+      .admin-sidebar { position: static; }
       .legend-grid { grid-template-columns: 1fr; }
     }
 
@@ -767,7 +848,7 @@
       </div>
     </section>
 
-    <section id="status-view" class="grid content-grid">
+    <section id="status-view" class="grid content-grid single-column-grid">
       <article class="panel">
         <div class="panel-header">
           <h2 data-i18n="status.detailsTitle">提供商明细</h2>
@@ -778,8 +859,8 @@
       </article>
     </section>
 
-    <section id="admin-view" class="grid content-grid hidden">
-      <article class="panel">
+    <section id="admin-view" class="grid admin-dashboard-grid hidden">
+      <article class="panel admin-sidebar">
         <h2 data-i18n="admin.workspaceTitle">管理工作区</h2>
         <div class="panel-subtitle" data-i18n="admin.workspaceSub">登录后维护全局配置、提供商与上游密钥。</div>
         <div id="admin-action-status" class="inline-status"></div>
@@ -895,15 +976,29 @@
         </div>
       </article>
 
-      <article class="panel">
-        <div class="panel-header">
-          <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
-        </div>
-        <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
-        <div id="provider-list" class="list">
-          <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
-        </div>
-      </article>
+      <div class="admin-workspace-column">
+        <article class="panel scroll-panel">
+          <div class="panel-header">
+            <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
+          </div>
+          <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
+          <div id="provider-list-panel-body" class="scroll-panel-body">
+            <div id="provider-list" class="list">
+              <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2 data-i18n="admin.logTitle">最近日志</h2>
+          </div>
+          <div class="panel-subtitle" data-i18n="admin.logSub">仅展示最近固定条数，便于快速排查代理与鉴权问题。</div>
+          <div id="recent-log-list" class="recent-log-list">
+            <div class="empty" data-i18n="admin.logEmpty">暂无日志</div>
+          </div>
+        </article>
+      </div>
     </section>
   </main>
 
@@ -963,6 +1058,9 @@
         "admin.saveProvider": "保存提供商",
         "admin.providerListTitle": "提供商列表",
         "admin.providerListSub": "点击卡片内表单可修改配置、导入或删除上游密钥。",
+        "admin.logTitle": "最近日志",
+        "admin.logSub": "仅展示最近固定条数，便于快速排查代理与鉴权问题。",
+        "admin.logEmpty": "暂无日志",
         "admin.loginToLoad": "登录后加载提供商配置",
         "admin.pleaseLogin": "请先登录",
         "admin.localKeyExpired": "本地密钥已失效，请重新登录",
@@ -1081,6 +1179,9 @@
         "admin.saveProvider": "Save Provider",
         "admin.providerListTitle": "Providers",
         "admin.providerListSub": "Edit, import or delete upstream keys via card forms.",
+        "admin.logTitle": "Recent Logs",
+        "admin.logSub": "Shows only a fixed number of recent records for quick debugging.",
+        "admin.logEmpty": "No logs yet",
         "admin.loginToLoad": "Sign in to load provider config",
         "admin.pleaseLogin": "Please sign in",
         "admin.localKeyExpired": "Local key expired, please sign in again",
@@ -1174,6 +1275,7 @@
       adminKey: localStorage.getItem(STORAGE_KEY) || "",
       providers: [],
       stats: {},
+      recentLogs: [],
       lang: detectInitialLang(),
       theme: detectInitialTheme(),
       themeManual: localStorage.getItem(THEME_KEY) !== null
@@ -1242,9 +1344,8 @@
       // Re-render dynamic content
       setRouteView();
       renderStatusCards(state.stats);
-      if (state.providers && state.providers.length) {
-        renderProviders(state.providers);
-      }
+      renderProviders(state.providers || []);
+      renderRecentLogs(state.recentLogs || []);
     }
 
     /* ---------- core ---------- */
@@ -1277,6 +1378,7 @@
       createForm: document.getElementById("provider-create-form"),
       createStatus: document.getElementById("provider-create-status"),
       providerList: document.getElementById("provider-list"),
+      recentLogList: document.getElementById("recent-log-list"),
       themeToggle: document.getElementById("theme-toggle"),
       langToggle: document.getElementById("lang-toggle")
     };
@@ -1368,23 +1470,13 @@
       return fetch(`${API_BASE}${path}`, { ...options, headers });
     }
 
-    async function loadHealth() {
-      try {
-        const response = await request("/health");
-        if (!response.ok) {
-          throw new Error(t("error.healthAbnormal"));
-        }
-        const data = await response.json();
-        refs.serviceHealth.textContent = t("metric.healthOnline");
-        refs.serviceHealthNote.textContent = t("metric.healthNote", { status: data.status || "ok" });
-        refs.statusBadge.textContent = t("status.updated");
-        refs.statusBadge.className = "status-badge ok";
-      } catch (error) {
-        refs.serviceHealth.textContent = t("metric.healthError");
-        refs.serviceHealthNote.textContent = error.message || t("metric.healthUnavailable");
-        refs.statusBadge.textContent = t("status.failed");
-        refs.statusBadge.className = "status-badge err";
-      }
+    function applyHealthSnapshot(health) {
+      const statusText = health && health.status ? health.status : "ok";
+      const healthy = statusText === "ok";
+      refs.serviceHealth.textContent = healthy ? t("metric.healthOnline") : t("metric.healthError");
+      refs.serviceHealthNote.textContent = t("metric.healthNote", { status: statusText });
+      refs.statusBadge.textContent = healthy ? t("status.updated") : t("status.failed");
+      refs.statusBadge.className = healthy ? "status-badge ok" : "status-badge err";
     }
 
     function renderStatusCards(statsMap) {
@@ -1447,22 +1539,77 @@
       }).join("");
     }
 
-    async function loadStatus() {
+    function formatLogTimestamp(rawValue) {
+      if (!rawValue) {
+        return "";
+      }
+
+      const parsedDate = new Date(rawValue);
+      if (Number.isNaN(parsedDate.getTime())) {
+        return String(rawValue);
+      }
+
+      const locale = state.lang === "en" ? "en-US" : "zh-CN";
+      return parsedDate.toLocaleString(locale, { hour12: false });
+    }
+
+    function formatLogSummary(attributes) {
+      const entries = Object.entries(attributes || {}).slice(0, 6);
+      if (!entries.length) {
+        return "";
+      }
+
+      return entries.map(([key, value]) => {
+        const formattedValue = typeof value === "object" && value !== null
+          ? JSON.stringify(value)
+          : String(value);
+        return `${key}=${formattedValue}`;
+      }).join(" · ");
+    }
+
+    function renderRecentLogs(logEntries) {
+      state.recentLogs = Array.isArray(logEntries) ? logEntries : [];
+
+      if (!state.recentLogs.length) {
+        refs.recentLogList.innerHTML = `<div class="empty">${escapeHTML(t("admin.logEmpty"))}</div>`;
+        return;
+      }
+
+      refs.recentLogList.innerHTML = state.recentLogs.slice().reverse().map((entry) => {
+        const levelClass = String(entry.level || "").toLowerCase().includes("error") ? "err" : (String(entry.level || "").toLowerCase().includes("warn") ? "muted" : "ok");
+        const summary = formatLogSummary(entry.attrs);
+        return `
+          <article class="log-entry">
+            <div class="log-entry-head">
+              <div class="tag ${levelClass}">${escapeHTML(entry.level || "INFO")}</div>
+              <div class="log-entry-time">${escapeHTML(formatLogTimestamp(entry.time))}</div>
+            </div>
+            <div class="log-entry-title">${escapeHTML(entry.msg || "")}</div>
+            <div class="log-entry-summary">${escapeHTML(summary || "")}</div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function loadStatusOverview() {
       try {
-        const response = await request("/status/stats");
+        const response = await request("/status/overview");
         if (!response.ok) {
           throw new Error(await parseErrorMessage(response, t("error.readStatus")));
         }
         const data = await response.json();
-        renderStatusCards(data);
+        applyHealthSnapshot(data.health);
+        renderStatusCards(data.provider_stats || {});
       } catch (error) {
+        refs.serviceHealth.textContent = t("metric.healthError");
+        refs.serviceHealthNote.textContent = error.message || t("metric.healthUnavailable");
         refs.statusList.innerHTML = `<div class="empty">${escapeHTML(error.message || t("error.readStatus"))}</div>`;
         refs.statusBadge.textContent = t("status.failed");
         refs.statusBadge.className = "status-badge err";
       }
     }
 
-    function startStatusPolling() {
+    function startOverviewPolling() {
       if (statusPollTimer !== null) {
         clearInterval(statusPollTimer);
       }
@@ -1470,7 +1617,11 @@
         if (document.visibilityState === "hidden") {
           return;
         }
-        void loadStatus();
+        if (route === "admin" && state.adminKey) {
+          void loadAdminOverview();
+          return;
+        }
+        void loadStatusOverview();
       }, STATUS_POLL_INTERVAL_MS);
     }
 
@@ -1488,48 +1639,47 @@
       setMessage(refs.loginStatus, t("admin.loginSuccess"), "ok");
     }
 
-    async function loadAdminData() {
+    async function loadAdminOverview() {
       if (!state.adminKey) {
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
+        renderRecentLogs([]);
         return;
       }
 
       refs.loginKey.value = state.adminKey;
       refs.logoutButton.classList.remove("hidden");
 
-      const [configResponse, providersResponse] = await Promise.all([
-        request("/admin/config", {}, true),
-        request("/admin/providers", {}, true)
-      ]);
+      const response = await request("/admin/overview", {}, true);
 
-      if (configResponse.status === 401 || providersResponse.status === 401) {
+      if (response.status === 401) {
         setStoredAdminKey("");
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
+        renderRecentLogs([]);
         setMessage(refs.loginStatus, t("admin.invalidKey"), "error");
         return;
       }
 
-      if (!configResponse.ok) {
-        throw new Error(await parseErrorMessage(configResponse, t("error.readGlobal")));
-      }
-      if (!providersResponse.ok) {
-        throw new Error(await parseErrorMessage(providersResponse, t("error.readProviders")));
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.readProviders")));
       }
 
-      const globalConfig = await configResponse.json();
-      const providers = await providersResponse.json();
-      state.providers = providers;
+      const overview = await response.json();
+      state.providers = overview.providers || [];
+      state.stats = overview.provider_stats || {};
 
-      refs.globalAdminKey.value = globalConfig.admin_key || "";
-      refs.globalTokenEstimation.checked = Boolean(globalConfig.token_estimation_enabled);
-      refs.globalClientKeys.value = (globalConfig.client_keys || []).join("\n");
+      applyHealthSnapshot(overview.health);
+      renderStatusCards(state.stats);
+      refs.globalAdminKey.value = overview.global_config?.admin_key || "";
+      refs.globalTokenEstimation.checked = Boolean(overview.global_config?.token_estimation_enabled);
+      refs.globalClientKeys.value = (overview.global_config?.client_keys || []).join("\n");
       refs.adminWorkspace.classList.remove("hidden");
       setMessage(refs.adminActionStatus, "", "");
-      renderProviders(providers);
+      renderProviders(state.providers);
+      renderRecentLogs(overview.recent_logs || []);
     }
 
     function providerTypeOptions(selected) {
@@ -1706,8 +1856,7 @@
 
       setMessage(statusElement, t("admin.savedTip"), "ok");
       setMessage(refs.adminActionStatus, t("admin.savedProvider", { name: payload.name }), "ok");
-      await loadAdminData();
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     async function saveGlobalConfig() {
@@ -1735,7 +1884,7 @@
       }
       setMessage(refs.globalStatus, t("admin.savedTip"), "ok");
       setMessage(refs.adminActionStatus, t("admin.savedGlobal"), "ok");
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     async function importKeys(form, statusElement) {
@@ -1753,8 +1902,7 @@
       form.reset();
       setMessage(statusElement, t("admin.importDone"), "ok");
       setMessage(refs.adminActionStatus, t("admin.importDoneTip", { provider }), "ok");
-      await loadAdminData();
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     async function deleteProvider(name) {
@@ -1765,8 +1913,7 @@
         throw new Error(await parseErrorMessage(response, t("error.delete")));
       }
       setMessage(refs.adminActionStatus, t("admin.deletedProvider", { name }), "ok");
-      await loadAdminData();
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     async function deleteKey(provider, key) {
@@ -1777,8 +1924,7 @@
         throw new Error(await parseErrorMessage(response, t("error.delete")));
       }
       setMessage(refs.adminActionStatus, t("admin.deletedKey", { provider }), "ok");
-      await loadAdminData();
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     async function clearProviderCache(provider) {
@@ -1789,8 +1935,7 @@
         throw new Error(await parseErrorMessage(response, t("error.action")));
       }
       setMessage(refs.adminActionStatus, t("admin.clearedCache", { provider }), "ok");
-      await loadAdminData();
-      await loadStatus();
+      await loadAdminOverview();
     }
 
     /* ---------- listeners ---------- */
@@ -1808,7 +1953,11 @@
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        void loadStatus();
+        if (route === "admin" && state.adminKey) {
+          void loadAdminOverview();
+          return;
+        }
+        void loadStatusOverview();
       }
     });
 
@@ -1832,7 +1981,7 @@
 
       try {
         await loginAdmin(adminKey);
-        await loadAdminData();
+        await loadAdminOverview();
       } catch (error) {
         setMessage(refs.loginStatus, error.message || t("error.login"), "error");
       }
@@ -1843,9 +1992,11 @@
       refs.loginKey.value = "";
       refs.adminWorkspace.classList.add("hidden");
       refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.loggedOut"))}</div>`;
+      renderRecentLogs([]);
       refs.logoutButton.classList.add("hidden");
       setMessage(refs.adminActionStatus, "", "");
       setMessage(refs.loginStatus, t("admin.loggedOutMsg"), "ok");
+      void loadStatusOverview();
     });
 
     refs.globalForm.addEventListener("submit", async (event) => {
@@ -1919,9 +2070,7 @@
       applyTheme();
       applyI18nStatic();
       setRouteView();
-      startStatusPolling();
-      await loadHealth();
-      await loadStatus();
+      startOverviewPolling();
 
       if (route === "admin") {
         if (state.adminKey) {
@@ -1929,11 +2078,18 @@
           setMessage(refs.loginStatus, t("admin.localKeyLoaded"), "ok");
         }
         try {
-          await loadAdminData();
+          if (state.adminKey) {
+            await loadAdminOverview();
+            return;
+          }
+          await loadStatusOverview();
         } catch (error) {
           setMessage(refs.loginStatus, error.message || t("error.read"), "error");
         }
+        return;
       }
+
+      await loadStatusOverview();
     }
 
     init();

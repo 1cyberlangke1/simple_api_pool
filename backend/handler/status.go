@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"simple-api-pool/config"
 	"simple-api-pool/stats"
@@ -32,31 +31,10 @@ func NewStatusHandler(cfg *config.Config, sm *stats.Manager) *StatusHandler {
 
 func (sh *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	payload := make(map[string]StatusSnapshot)
-	for name, snap := range sh.stats.Snapshot() {
-		payload[name] = StatusSnapshot{
-			SuccessCount: snap.SuccessCount,
-			ErrorCount:   snap.ErrorCount,
-			InputTokens:  snap.InputTokens,
-			OutputTokens: snap.OutputTokens,
-			CacheTokens:  snap.CacheTokens,
-			CacheHits:    snap.CacheHits,
-			ErrorTypes:   snap.ErrorTypes,
-		}
+	if r.URL.Path == "/api/status/overview" {
+		_ = json.NewEncoder(w).Encode(buildStatusOverviewResponse(sh.cfg, sh.stats))
+		return
 	}
 
-	now := time.Now().Unix()
-	for _, provider := range sh.cfg.Providers() {
-		entry := payload[provider.Name]
-		entry.TotalKeys = int64(len(provider.Keys))
-		for _, key := range provider.Keys {
-			if key.DisabledUntil > now {
-				continue
-			}
-			entry.AvailableKeys++
-		}
-		payload[provider.Name] = entry
-	}
-
-	json.NewEncoder(w).Encode(payload)
+	_ = json.NewEncoder(w).Encode(buildProviderStatusSnapshots(sh.cfg, sh.stats))
 }

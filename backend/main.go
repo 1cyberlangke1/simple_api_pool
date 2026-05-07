@@ -42,12 +42,13 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.Handle("/api/status/stats", statusHandler)
+	mux.Handle("/api/status/overview", statusHandler)
 	mux.Handle("/api/admin/", adminHandler)
 	mux.Handle("/api/admin", adminHandler)
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		skipAuth := path == "/api/health" || path == "/api/status/stats" || path == "/" || path == "/status" || path == "/admin"
+		skipAuth := path == "/api/health" || path == "/api/status/stats" || path == "/api/status/overview" || path == "/" || path == "/status" || path == "/admin"
 		if !skipAuth && !auth.CheckClientKey(r, cfg) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)

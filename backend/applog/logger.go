@@ -31,6 +31,7 @@ func InitFromEnv() *slog.Logger {
 	default:
 		handler = slog.NewJSONHandler(os.Stdout, opts)
 	}
+	handler = NewRecentEntryHandler(handler)
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
