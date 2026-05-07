@@ -258,6 +258,30 @@
       margin: 8px 0 0;
     }
 
+    .hero-meta {
+      margin-top: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--muted-strong);
+      font-size: 12px;
+      line-height: 1.4;
+      max-width: 100%;
+    }
+
+    .hero-meta strong {
+      color: var(--accent-deep);
+      white-space: nowrap;
+    }
+
+    .hero-meta span {
+      overflow-wrap: anywhere;
+    }
+
     /* Buttons */
     button.primary,
     .button-link.primary {
@@ -464,10 +488,7 @@
     /* Lists */
     .list { display: grid; gap: 14px; }
 
-    .provider-catalog {
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-      align-items: start;
-    }
+    .provider-catalog { grid-template-columns: 1fr; }
 
     .provider-card {
       border: 1px solid var(--line);
@@ -493,18 +514,27 @@
       gap: 12px;
       justify-content: space-between;
       align-items: flex-start;
+      margin-bottom: 10px;
     }
 
     .provider-body-grid {
       display: grid;
       gap: 18px;
-      grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+      grid-template-columns: 1fr;
       align-items: start;
     }
 
     .provider-config-column,
     .provider-key-column {
       min-width: 0;
+    }
+
+    .provider-key-column {
+      padding-top: 2px;
+    }
+
+    .provider-key-column h3 {
+      margin-bottom: 10px;
     }
 
     .provider-name {
@@ -647,6 +677,10 @@
       flex-wrap: wrap;
     }
 
+    .provider-compact-fields {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
     .inline-status {
       min-height: 20px;
       font-size: 12.5px;
@@ -684,6 +718,11 @@
       border: 1px solid var(--line-soft);
     }
 
+    .key-item > div {
+      min-width: 0;
+      flex: 1;
+    }
+
     .key-item code {
       display: block;
       overflow-wrap: anywhere;
@@ -696,46 +735,138 @@
       display: grid;
       gap: 10px;
       min-height: 0;
-      height: 100%;
+      max-height: min(68vh, 720px);
       overflow-y: auto;
       padding-right: 6px;
     }
 
-    .log-entry {
-      padding: 12px 14px;
-      border-radius: var(--radius-sm);
-      background: var(--panel-input);
-      border: 1px solid var(--line-soft);
-      display: grid;
-      gap: 6px;
+    .log-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(24, 18, 11, 0.42);
+      backdrop-filter: blur(8px);
     }
 
-    .log-entry-head {
+    .log-modal-panel {
+      width: min(1040px, calc(100vw - 24px));
+      max-height: min(82vh, 860px);
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      padding: 20px;
+      border-radius: 22px;
+      background: #111418;
+      border: 1px solid rgba(214, 221, 231, 0.12);
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+      color: #dce7f3;
+    }
+
+    .log-modal-header {
       display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .log-modal-title {
+      margin: 0;
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 18px;
+      color: #f6efe3;
+    }
+
+    .log-modal-subtitle {
+      margin: 0 0 14px;
+      color: #8fa0b6;
+      font-size: 12.5px;
+      line-height: 1.6;
+      font-family: "JetBrains Mono", "Consolas", monospace;
+    }
+
+    .log-modal-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .terminal-filter-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(214, 221, 231, 0.08);
+      color: #dce7f3;
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+
+    .terminal-filter-toggle input {
+      width: 16px;
+      height: 16px;
+      min-height: 16px;
+      margin: 0;
+      accent-color: #7dd3fc;
+    }
+
+    .terminal-log-entry {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(214, 221, 231, 0.08);
+      display: grid;
       gap: 8px;
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    .terminal-log-head {
+      display: flex;
+      gap: 10px;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
     }
 
-    .log-entry-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text);
+    .terminal-log-level {
+      font-weight: 700;
+      letter-spacing: 0.08em;
     }
 
-    .log-entry-time {
-      font-size: 11.5px;
-      color: var(--muted);
+    .terminal-log-time {
+      color: #94a3b8;
       white-space: nowrap;
+      font-size: 12px;
     }
 
-    .log-entry-summary {
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.6;
+    .terminal-log-title {
+      color: #f8fafc;
+      font-weight: 600;
       overflow-wrap: anywhere;
     }
+
+    .terminal-log-summary {
+      color: #cbd5e1;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .terminal-log-entry.level-info .terminal-log-level { color: #7dd3fc; }
+    .terminal-log-entry.level-warn .terminal-log-level { color: #fbbf24; }
+    .terminal-log-entry.level-error .terminal-log-level { color: #f87171; }
+    .terminal-log-entry.level-debug .terminal-log-level { color: #a78bfa; }
 
     /* Empty state */
     .empty {
@@ -804,8 +935,6 @@
       .admin-dashboard-grid { grid-template-columns: 1fr; }
       .admin-sidebar { position: static; }
       .admin-workspace-column { grid-template-rows: auto auto; }
-      .provider-catalog { grid-template-columns: 1fr; }
-      .provider-body-grid { grid-template-columns: 1fr; }
       .legend-grid { grid-template-columns: 1fr; }
     }
 
@@ -827,6 +956,7 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
 
       .provider-head { flex-direction: column; align-items: stretch; }
+      .key-item { flex-direction: column; align-items: stretch; }
     }
   </style>
 </head>
@@ -838,6 +968,10 @@
           <div class="eyebrow">Simple API Pool</div>
           <h1 id="hero-title" data-i18n="hero.statusTitle">运行总览</h1>
           <p id="hero-copy" data-i18n="hero.statusCopy">实时查看各提供商的请求与 Token 用量。</p>
+          <div id="build-version" class="hero-meta">
+            <strong data-i18n="meta.version">版本</strong>
+            <span id="build-version-value">dev / local / unknown</span>
+          </div>
         </div>
         <div class="hero-actions">
           <div class="nav">
@@ -1009,6 +1143,7 @@
         <article class="panel scroll-panel">
           <div class="panel-header">
             <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
+            <button id="open-log-modal" class="secondary" type="button" data-i18n="admin.viewLogs">查看日志</button>
           </div>
           <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
           <div id="provider-list-panel-body" class="scroll-panel-body">
@@ -1017,21 +1152,28 @@
             </div>
           </div>
         </article>
-
-        <article class="panel scroll-panel">
-          <div class="panel-header">
-            <h2 data-i18n="admin.logTitle">最近日志</h2>
-          </div>
-          <div class="panel-subtitle" data-i18n="admin.logSub">仅展示最近固定条数，便于快速排查代理与鉴权问题。</div>
-          <div class="scroll-panel-body">
-            <div id="recent-log-list" class="recent-log-list">
-              <div class="empty" data-i18n="admin.logEmpty">暂无日志</div>
-            </div>
-          </div>
-        </article>
       </div>
     </section>
   </main>
+
+  <div id="log-modal" class="log-modal hidden">
+    <div class="log-modal-panel">
+      <div class="log-modal-header">
+        <h2 class="log-modal-title" data-i18n="admin.logTitle">最近日志</h2>
+        <button id="close-log-modal" class="secondary" type="button" data-i18n="admin.closeLogs">关闭</button>
+      </div>
+      <p class="log-modal-subtitle" data-i18n="admin.logSub">终端风格展示最近固定条数日志，用不同颜色区分级别，便于快速排查代理与鉴权问题。</p>
+      <div class="log-modal-toolbar">
+        <label class="terminal-filter-toggle">
+          <input id="hide-panel-logs" type="checkbox" checked>
+          <span data-i18n="admin.hidePanelLogs">隐藏面板请求与健康检查</span>
+        </label>
+      </div>
+      <div id="recent-log-list" class="recent-log-list">
+        <div class="empty" data-i18n="admin.logEmpty">暂无日志</div>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API_BASE = "/api";
@@ -1039,6 +1181,9 @@
     const STORAGE_KEY = "simple-api-pool-admin-key";
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
+    const RAW_APP_VERSION = "__APP_VERSION__";
+    const RAW_APP_REVISION = "__APP_REVISION__";
+    const RAW_APP_BUILD_TIME = "__APP_BUILD_TIME__";
     const route = location.pathname === "/admin" ? "admin" : "status";
     let statusPollTimer = null;
 
@@ -1052,6 +1197,7 @@
         "hero.statusCopy": "实时查看各提供商的请求与 Token 用量。",
         "hero.adminTitle": "管理控制台",
         "hero.adminCopy": "维护全局配置、提供商策略与上游密钥。",
+        "meta.version": "版本",
         "metric.health": "服务状态",
         "metric.healthChecking": "检测中",
         "metric.healthCheckingNote": "正在检测后端健康接口",
@@ -1090,8 +1236,11 @@
         "admin.providerListTitle": "提供商列表",
         "admin.providerListSub": "点击卡片内表单可修改配置、导入或删除上游密钥。",
         "admin.logTitle": "最近日志",
-        "admin.logSub": "仅展示最近固定条数，便于快速排查代理与鉴权问题。",
+        "admin.logSub": "终端风格展示最近固定条数日志，用不同颜色区分级别，便于快速排查代理与鉴权问题。",
         "admin.logEmpty": "暂无日志",
+        "admin.viewLogs": "查看日志",
+        "admin.closeLogs": "关闭",
+        "admin.hidePanelLogs": "隐藏面板请求与健康检查",
         "admin.loginToLoad": "登录后加载提供商配置",
         "admin.pleaseLogin": "请先登录",
         "admin.localKeyExpired": "本地密钥已失效，请重新登录",
@@ -1173,6 +1322,7 @@
         "hero.statusCopy": "Real-time request and token usage across providers.",
         "hero.adminTitle": "Admin Console",
         "hero.adminCopy": "Manage global config, provider policies and upstream keys.",
+        "meta.version": "Version",
         "metric.health": "Service",
         "metric.healthChecking": "Checking",
         "metric.healthCheckingNote": "Probing backend health endpoint",
@@ -1211,8 +1361,11 @@
         "admin.providerListTitle": "Providers",
         "admin.providerListSub": "Edit, import or delete upstream keys via card forms.",
         "admin.logTitle": "Recent Logs",
-        "admin.logSub": "Shows only a fixed number of recent records for quick debugging.",
+        "admin.logSub": "Terminal-style recent logs with color-coded levels for quick proxy and auth debugging.",
         "admin.logEmpty": "No logs yet",
+        "admin.viewLogs": "View Logs",
+        "admin.closeLogs": "Close",
+        "admin.hidePanelLogs": "Hide panel and health requests",
         "admin.loginToLoad": "Sign in to load provider config",
         "admin.pleaseLogin": "Please sign in",
         "admin.localKeyExpired": "Local key expired, please sign in again",
@@ -1307,6 +1460,7 @@
       providers: [],
       stats: {},
       recentLogs: [],
+      hidePanelLogs: true,
       overviewEtags: {
         status: "",
         admin: ""
@@ -1377,6 +1531,7 @@
       localStorage.setItem(LANG_KEY, state.lang);
       applyI18nStatic();
       // Re-render dynamic content
+      renderBuildVersion();
       setRouteView();
       renderStatusCards(state.stats);
       renderProviders(state.providers || []);
@@ -1388,6 +1543,7 @@
     const refs = {
       heroTitle: document.getElementById("hero-title"),
       heroCopy: document.getElementById("hero-copy"),
+      buildVersionValue: document.getElementById("build-version-value"),
       navStatus: document.getElementById("nav-status"),
       navAdmin: document.getElementById("nav-admin"),
       statusView: document.getElementById("status-view"),
@@ -1414,6 +1570,10 @@
       createStatus: document.getElementById("provider-create-status"),
       providerList: document.getElementById("provider-list"),
       recentLogList: document.getElementById("recent-log-list"),
+      logModal: document.getElementById("log-modal"),
+      openLogModalButton: document.getElementById("open-log-modal"),
+      closeLogModalButton: document.getElementById("close-log-modal"),
+      hidePanelLogsToggle: document.getElementById("hide-panel-logs"),
       themeToggle: document.getElementById("theme-toggle"),
       langToggle: document.getElementById("lang-toggle")
     };
@@ -1439,6 +1599,24 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function normalizeBuildToken(value, fallback) {
+      if (!value || value.startsWith("__APP_")) {
+        return fallback;
+      }
+      return value;
+    }
+
+    function createBuildVersionText() {
+      const version = normalizeBuildToken(RAW_APP_VERSION, "dev");
+      const revision = normalizeBuildToken(RAW_APP_REVISION, "local");
+      const buildTime = normalizeBuildToken(RAW_APP_BUILD_TIME, "unknown");
+      return `${version} / ${revision} / ${buildTime}`;
+    }
+
+    function renderBuildVersion() {
+      refs.buildVersionValue.textContent = createBuildVersionText();
     }
 
     function setMessage(element, text, kind = "") {
@@ -1617,25 +1795,65 @@
       }).join(" · ");
     }
 
+    function classifyLogLevel(level) {
+      const normalizedLevel = String(level || "").toLowerCase();
+      if (normalizedLevel.includes("error")) {
+        return "level-error";
+      }
+      if (normalizedLevel.includes("warn")) {
+        return "level-warn";
+      }
+      if (normalizedLevel.includes("debug")) {
+        return "level-debug";
+      }
+      return "level-info";
+    }
+
+    function isPanelRequestLog(entry) {
+      if (!entry || entry.msg !== "http_request") {
+        return false;
+      }
+
+      const path = String(entry.attrs?.path || "");
+      if (!path) {
+        return false;
+      }
+
+      return path === "/" ||
+        path === "/status" ||
+        path === "/admin" ||
+        path === "/api/health" ||
+        path.startsWith("/api/status") ||
+        path.startsWith("/api/admin");
+    }
+
+    function setLogModalOpen(visible) {
+      refs.logModal.classList.toggle("hidden", !visible);
+      document.body.style.overflow = visible ? "hidden" : "";
+    }
+
     function renderRecentLogs(logEntries) {
       state.recentLogs = Array.isArray(logEntries) ? logEntries : [];
+      const visibleLogs = state.hidePanelLogs
+        ? state.recentLogs.filter((entry) => !isPanelRequestLog(entry))
+        : state.recentLogs;
 
-      if (!state.recentLogs.length) {
+      if (!visibleLogs.length) {
         refs.recentLogList.innerHTML = `<div class="empty">${escapeHTML(t("admin.logEmpty"))}</div>`;
         return;
       }
 
-      refs.recentLogList.innerHTML = state.recentLogs.slice().reverse().map((entry) => {
-        const levelClass = String(entry.level || "").toLowerCase().includes("error") ? "err" : (String(entry.level || "").toLowerCase().includes("warn") ? "muted" : "ok");
+      refs.recentLogList.innerHTML = visibleLogs.slice().reverse().map((entry) => {
+        const levelClass = classifyLogLevel(entry.level);
         const summary = formatLogSummary(entry.attrs);
         return `
-          <article class="log-entry">
-            <div class="log-entry-head">
-              <div class="tag ${levelClass}">${escapeHTML(entry.level || "INFO")}</div>
-              <div class="log-entry-time">${escapeHTML(formatLogTimestamp(entry.time))}</div>
+          <article class="terminal-log-entry ${levelClass}">
+            <div class="terminal-log-head">
+              <div class="terminal-log-level">${escapeHTML(entry.level || "INFO")}</div>
+              <div class="terminal-log-time">${escapeHTML(formatLogTimestamp(entry.time))}</div>
             </div>
-            <div class="log-entry-title">${escapeHTML(entry.msg || "")}</div>
-            <div class="log-entry-summary">${escapeHTML(summary || "")}</div>
+            <div class="terminal-log-title">${escapeHTML(entry.msg || "")}</div>
+            <div class="terminal-log-summary">${escapeHTML(summary || "")}</div>
           </article>
         `;
       }).join("");
@@ -1696,6 +1914,7 @@
     async function loadAdminOverview() {
       if (!state.adminKey) {
         state.overviewEtags.admin = "";
+        setLogModalOpen(false);
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
@@ -1711,6 +1930,7 @@
       if (response.status === 401) {
         setStoredAdminKey("");
         state.overviewEtags.admin = "";
+        setLogModalOpen(false);
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
@@ -1808,6 +2028,15 @@
               <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
             </div>
 
+            <div class="stats-grid">
+              <div class="mini"><strong>${stats.success_count || 0}</strong><span>${escapeHTML(t("provider.statSuccess"))}</span></div>
+              <div class="mini"><strong>${stats.error_count || 0}</strong><span>${escapeHTML(t("provider.statError"))}</span></div>
+              <div class="mini"><strong>${stats.input_tokens || 0}</strong><span>${escapeHTML(t("provider.statInputTokens"))}</span></div>
+              <div class="mini"><strong>${stats.output_tokens || 0}</strong><span>${escapeHTML(t("provider.statOutputTokens"))}</span></div>
+              <div class="mini"><strong>${stats.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
+              <div class="mini"><strong>${stats.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
+            </div>
+
             <hr class="divider">
 
             <div class="provider-body-grid">
@@ -1833,7 +2062,7 @@
                       <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
                     </label>
                   </div>
-                  <div class="form-grid three">
+                  <div class="form-grid provider-compact-fields">
                     <label>
                       ${escapeHTML(t("provider.failThreshold"))}
                       <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
@@ -2016,6 +2245,31 @@
       setLang(state.lang === "zh-CN" ? "en" : "zh-CN");
     });
 
+    refs.openLogModalButton.addEventListener("click", () => {
+      setLogModalOpen(true);
+    });
+
+    refs.closeLogModalButton.addEventListener("click", () => {
+      setLogModalOpen(false);
+    });
+
+    refs.hidePanelLogsToggle.addEventListener("change", () => {
+      state.hidePanelLogs = refs.hidePanelLogsToggle.checked;
+      renderRecentLogs(state.recentLogs || []);
+    });
+
+    refs.logModal.addEventListener("click", (event) => {
+      if (event.target === refs.logModal) {
+        setLogModalOpen(false);
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !refs.logModal.classList.contains("hidden")) {
+        setLogModalOpen(false);
+      }
+    });
+
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
         if (route === "admin" && state.adminKey) {
@@ -2055,6 +2309,7 @@
     refs.logoutButton.addEventListener("click", () => {
       setStoredAdminKey("");
       state.overviewEtags.admin = "";
+      setLogModalOpen(false);
       refs.loginKey.value = "";
       refs.adminWorkspace.classList.add("hidden");
       refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.loggedOut"))}</div>`;
@@ -2135,6 +2390,8 @@
     async function init() {
       applyTheme();
       applyI18nStatic();
+      renderBuildVersion();
+      refs.hidePanelLogsToggle.checked = state.hidePanelLogs;
       setRouteView();
       startOverviewPolling();
 

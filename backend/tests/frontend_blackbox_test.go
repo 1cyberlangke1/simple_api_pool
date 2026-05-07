@@ -59,8 +59,16 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="admin-workspace"`)
 		mustContain(t, body, `id="provider-list"`)
 		mustContain(t, body, `id="recent-log-list"`)
+		mustContain(t, body, `id="open-log-modal"`)
+		mustContain(t, body, `id="log-modal"`)
+		mustContain(t, body, `id="hide-panel-logs"`)
+		mustContain(t, body, `id="build-version"`)
+		mustContain(t, body, `id="build-version-value"`)
 		mustContain(t, body, `class="list provider-catalog"`)
 		mustContain(t, body, `const API_BASE = "/api"`)
+		mustContain(t, body, `__APP_VERSION__`)
+		mustContain(t, body, `__APP_REVISION__`)
+		mustContain(t, body, `__APP_BUILD_TIME__`)
 		mustContain(t, body, `request("/admin/login"`)
 		mustContain(t, body, `requestOverview("/admin/overview", "admin", true)`)
 		mustContain(t, body, `requestOverview("/status/overview", "status")`)
@@ -87,6 +95,24 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(string(indexHTML), `function requestOverview(`) {
 		t.Fatal("期望前端具备总览协商缓存请求逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function renderBuildVersion(`) {
+		t.Fatal("期望前端具备构建版本展示逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function setLogModalOpen(`) {
+		t.Fatal("期望前端具备日志弹窗控制逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function isPanelRequestLog(`) {
+		t.Fatal("期望前端具备面板请求过滤逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `state.hidePanelLogs = refs.hidePanelLogsToggle.checked`) {
+		t.Fatal("期望前端支持切换隐藏面板日志")
+	}
+	if !strings.Contains(string(indexHTML), `terminal-log-entry`) {
+		t.Fatal("期望前端使用终端风格日志样式")
+	}
+	if !strings.Contains(string(indexHTML), `provider-compact-fields`) {
+		t.Fatal("期望前端收紧提供商配置布局")
 	}
 	if !strings.Contains(string(indexHTML), `await loadStatusOverview();`) || !strings.Contains(string(indexHTML), `await loadAdminOverview();`) {
 		t.Fatal("期望前端使用总览接口刷新状态和管理数据")
