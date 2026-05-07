@@ -684,6 +684,7 @@ func cacheFieldForProviderType(providerType config.ProviderType) string {
 }
 
 type recordedRequestBody struct {
+	mu           sync.Mutex
 	source       io.ReadCloser
 	copyBody     *bytes.Buffer
 	copyLimit    int
@@ -707,6 +708,7 @@ func newRecordedRequestBody(source io.ReadCloser, copyLimit int) *recordedReques
 func (r *recordedRequestBody) Read(p []byte) (int, error) {
 	n, err := r.source.Read(p)
 	if n > 0 {
+		r.mu.Lock()
 		r.bytesRead += n
 		if r.copyBody != nil {
 			remaining := r.copyLimit - r.copyBody.Len()
@@ -722,9 +724,12 @@ func (r *recordedRequestBody) Read(p []byte) (int, error) {
 				r.copyBody = nil
 			}
 		}
+		r.mu.Unlock()
 	}
 	if err == io.EOF {
+		r.mu.Lock()
 		r.finished = true
+		r.mu.Unlock()
 	}
 	return n, err
 }
@@ -737,11 +742,18 @@ func (r *recordedRequestBody) BytesRead() int {
 	if r == nil {
 		return 0
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.bytesRead
 }
 
 func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
-	if r == nil || !r.finished || r.copyBody == nil || r.copyExceeded {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.finished || r.copyBody == nil || r.copyExceeded {
 		return nil, false
 	}
 	return append([]byte(nil), r.copyBody.Bytes()...), true
