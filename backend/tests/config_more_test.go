@@ -76,3 +76,51 @@ func TestConfigReturnsNotExistForMissingKeyDeletionAndUnknownProviderKeyAdd(t *t
 		t.Fatalf("期望 DeleteKey 返回 os.ErrNotExist，实际是 %v", err)
 	}
 }
+
+func TestConfigSupportsBulkKeyActions(t *testing.T) {
+	cfg := config.New(store.New(t.TempDir()))
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "k1"},
+			{Value: "k2"},
+			{Value: "k3"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	if err := cfg.ApplyKeyAction("openai", "disable", []string{"k1", "k3"}); err != nil {
+		t.Fatalf("批量禁用失败: %v", err)
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if provider.Keys[0].DisabledUntil == 0 || provider.Keys[2].DisabledUntil == 0 {
+		t.Fatalf("期望 k1 和 k3 被禁用，实际是 %+v", provider.Keys)
+	}
+
+	if err := cfg.ApplyKeyAction("openai", "enable", []string{"k1"}); err != nil {
+		t.Fatalf("批量启用失败: %v", err)
+	}
+
+	provider, _ = cfg.Provider("openai")
+	if provider.Keys[0].DisabledUntil != 0 || provider.Keys[0].ConsecutiveFails != 0 {
+		t.Fatalf("期望 k1 被启用并清空失败计数，实际是 %+v", provider.Keys[0])
+	}
+	if provider.Keys[2].DisabledUntil == 0 {
+		t.Fatalf("期望 k3 仍保持禁用，实际是 %+v", provider.Keys[2])
+	}
+
+	if err := cfg.ApplyKeyAction("openai", "delete", []string{"k2", "k3"}); err != nil {
+		t.Fatalf("批量删除失败: %v", err)
+	}
+
+	provider, _ = cfg.Provider("openai")
+	if len(provider.Keys) != 1 || provider.Keys[0].Value != "k1" {
+		t.Fatalf("期望最终只剩 k1，实际是 %+v", provider.Keys)
+	}
+}

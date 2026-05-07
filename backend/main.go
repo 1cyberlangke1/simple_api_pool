@@ -48,7 +48,7 @@ func main() {
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		skipAuth := path == "/api/health" || path == "/api/status/stats" || path == "/api/status/overview" || path == "/" || path == "/status" || path == "/admin"
+		skipAuth := path == "/api/health" || path == "/api/status/stats" || path == "/api/status/overview" || path == "/" || path == "/status" || path == "/admin" || path == "/favicon.svg" || path == "/favicon.ico"
 		if !skipAuth && !auth.CheckClientKey(r, cfg) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -57,6 +57,14 @@ func main() {
 		}
 		if path == "/" || path == "/status" || path == "/admin" {
 			serveFrontendIndex(w, r, frontendRoot)
+			return
+		}
+		if path == "/favicon.svg" {
+			serveFrontendAsset(w, r, frontendRoot, "favicon.svg")
+			return
+		}
+		if path == "/favicon.ico" {
+			http.Redirect(w, r, "/favicon.svg", http.StatusMovedPermanently)
 			return
 		}
 		proxyHandler.ServeHTTP(w, r)
@@ -87,4 +95,12 @@ func serveFrontendIndex(w http.ResponseWriter, r *http.Request, frontendRoot str
 		return
 	}
 	http.ServeFile(w, r, filepath.Join(frontendRoot, "index.html"))
+}
+
+func serveFrontendAsset(w http.ResponseWriter, r *http.Request, frontendRoot, assetName string) {
+	if frontendRoot == "" {
+		http.Error(w, `{"error":"前端资源不存在"}`, http.StatusServiceUnavailable)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(frontendRoot, assetName))
 }

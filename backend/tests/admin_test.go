@@ -154,6 +154,102 @@ func TestAdminDeleteSingleKey(t *testing.T) {
 	}
 }
 
+func TestAdminBulkUpdateKeyStateAndDeleteKeys(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "key-1"},
+			{Value: "key-2"},
+			{Value: "key-3"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+
+	disableBody, err := json.Marshal(map[string]any{
+		"action": "disable",
+		"keys":   []string{"key-1", "key-3"},
+	})
+	if err != nil {
+		t.Fatalf("构造批量禁用请求失败: %v", err)
+	}
+
+	disableReq := httptest.NewRequest(http.MethodPost, "/api/admin/providers/openai/keys/bulk", bytes.NewReader(disableBody))
+	disableReq.Header.Set("Authorization", "Bearer secret-admin")
+	disableRec := httptest.NewRecorder()
+	h.ServeHTTP(disableRec, disableReq)
+
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("批量禁用期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, disableRec.Code, disableRec.Body.String())
+	}
+
+	providerAfterDisable, _ := cfg.Provider("openai")
+	if providerAfterDisable == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if providerAfterDisable.Keys[0].DisabledUntil == 0 || providerAfterDisable.Keys[2].DisabledUntil == 0 {
+		t.Fatalf("期望 key-1 和 key-3 被禁用，实际是 %+v", providerAfterDisable.Keys)
+	}
+
+	enableBody, err := json.Marshal(map[string]any{
+		"action": "enable",
+		"keys":   []string{"key-1"},
+	})
+	if err != nil {
+		t.Fatalf("构造批量启用请求失败: %v", err)
+	}
+
+	enableReq := httptest.NewRequest(http.MethodPost, "/api/admin/providers/openai/keys/bulk", bytes.NewReader(enableBody))
+	enableReq.Header.Set("Authorization", "Bearer secret-admin")
+	enableRec := httptest.NewRecorder()
+	h.ServeHTTP(enableRec, enableReq)
+
+	if enableRec.Code != http.StatusOK {
+		t.Fatalf("批量启用期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, enableRec.Code, enableRec.Body.String())
+	}
+
+	providerAfterEnable, _ := cfg.Provider("openai")
+	if providerAfterEnable == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if providerAfterEnable.Keys[0].DisabledUntil != 0 {
+		t.Fatalf("期望 key-1 已重新启用，实际是 %+v", providerAfterEnable.Keys[0])
+	}
+	if providerAfterEnable.Keys[2].DisabledUntil == 0 {
+		t.Fatalf("期望 key-3 仍保持禁用，实际是 %+v", providerAfterEnable.Keys[2])
+	}
+
+	deleteBody, err := json.Marshal(map[string]any{
+		"action": "delete",
+		"keys":   []string{"key-2", "key-3"},
+	})
+	if err != nil {
+		t.Fatalf("构造批量删除请求失败: %v", err)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodPost, "/api/admin/providers/openai/keys/bulk", bytes.NewReader(deleteBody))
+	deleteReq.Header.Set("Authorization", "Bearer secret-admin")
+	deleteRec := httptest.NewRecorder()
+	h.ServeHTTP(deleteRec, deleteReq)
+
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("批量删除期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, deleteRec.Code, deleteRec.Body.String())
+	}
+
+	providerAfterDelete, _ := cfg.Provider("openai")
+	if providerAfterDelete == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if len(providerAfterDelete.Keys) != 1 || providerAfterDelete.Keys[0].Value != "key-1" {
+		t.Fatalf("期望最终只剩 key-1，实际是 %+v", providerAfterDelete.Keys)
+	}
+}
+
 func TestAdminClearProviderCache(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)

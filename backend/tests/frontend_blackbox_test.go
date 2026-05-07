@@ -17,9 +17,14 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		t.Fatal("读取测试文件路径失败")
 	}
 	indexPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "frontend", "index.html")
+	faviconPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "frontend", "favicon.svg")
 	indexHTML, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("读取前端首页失败: %v", err)
+	}
+	faviconSVG, err := os.ReadFile(faviconPath)
+	if err != nil {
+		t.Fatalf("读取 favicon 失败: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -27,6 +32,8 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		switch r.URL.Path {
 		case "/", "/status", "/admin":
 			http.ServeFile(w, r, indexPath)
+		case "/favicon.svg":
+			http.ServeFile(w, r, faviconPath)
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,12 +65,22 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="login-form"`)
 		mustContain(t, body, `id="admin-workspace"`)
 		mustContain(t, body, `id="provider-list"`)
+		mustContain(t, body, `id="provider-page-prev"`)
+		mustContain(t, body, `id="provider-page-next"`)
+		mustContain(t, body, `id="provider-page-indicator"`)
 		mustContain(t, body, `id="recent-log-list"`)
 		mustContain(t, body, `id="open-log-modal"`)
 		mustContain(t, body, `id="log-modal"`)
 		mustContain(t, body, `id="hide-panel-logs"`)
+		mustContain(t, body, `id="key-search"`)
+		mustContain(t, body, `data-action="select-page-keys"`)
+		mustContain(t, body, `data-action="invert-page-keys"`)
+		mustContain(t, body, `data-action="enable-selected-keys"`)
+		mustContain(t, body, `data-action="disable-selected-keys"`)
+		mustContain(t, body, `data-action="delete-selected-keys"`)
 		mustContain(t, body, `id="build-version"`)
 		mustContain(t, body, `id="build-version-value"`)
+		mustContain(t, body, `rel="icon" type="image/svg+xml" href="/favicon.svg"`)
 		mustContain(t, body, `class="list provider-catalog"`)
 		mustContain(t, body, `const API_BASE = "/api"`)
 		mustContain(t, body, `__APP_VERSION__`)
@@ -81,8 +98,25 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="admin-view" class="grid admin-dashboard-grid hidden"`)
 	}
 
+	faviconResp, err := http.Get(server.URL + "/favicon.svg")
+	if err != nil {
+		t.Fatalf("请求 favicon 失败: %v", err)
+	}
+	if faviconResp.StatusCode != http.StatusOK {
+		t.Fatalf("请求 favicon 期望状态码 %d，实际是 %d", http.StatusOK, faviconResp.StatusCode)
+	}
+	if got := faviconResp.Header.Get("Content-Type"); !strings.Contains(got, "image/svg+xml") && !strings.Contains(got, "text/xml") {
+		t.Fatalf("请求 favicon 期望返回 SVG，实际 Content-Type 是 %q", got)
+	}
+
 	if !strings.Contains(string(indexHTML), `refs.navStatus.addEventListener("click", () => goTo("/status"))`) {
 		t.Fatal("期望管理页保留跳转到状态页的前端交互")
+	}
+	if !strings.Contains(string(indexHTML), `rel="shortcut icon" href="/favicon.svg"`) {
+		t.Fatal("期望前端声明浏览器图标")
+	}
+	if !strings.Contains(string(faviconSVG), `<svg`) || !strings.Contains(string(faviconSVG), `linearGradient`) {
+		t.Fatal("期望 favicon 使用可渲染的 SVG 图形")
 	}
 	if !strings.Contains(string(indexHTML), `const STATUS_POLL_INTERVAL_MS =`) {
 		t.Fatal("期望前端定义状态轮询间隔")
@@ -105,14 +139,47 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(indexHTML), `function isPanelRequestLog(`) {
 		t.Fatal("期望前端具备面板请求过滤逻辑")
 	}
+	if !strings.Contains(string(indexHTML), `path === "/favicon.ico"`) {
+		t.Fatal("期望前端过滤 favicon 请求日志")
+	}
 	if !strings.Contains(string(indexHTML), `state.hidePanelLogs = refs.hidePanelLogsToggle.checked`) {
 		t.Fatal("期望前端支持切换隐藏面板日志")
 	}
 	if !strings.Contains(string(indexHTML), `terminal-log-entry`) {
 		t.Fatal("期望前端使用终端风格日志样式")
 	}
+	if !strings.Contains(string(indexHTML), `function renderProviderPager(`) {
+		t.Fatal("期望前端具备提供商分页渲染逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function filterProviderKeys(`) {
+		t.Fatal("期望前端具备密钥搜索过滤逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function renderProviderKeysSection(`) {
+		t.Fatal("期望前端具备独立的密钥区域渲染逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `function updateProviderKeysInState(`) {
+		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
+	}
+	if !strings.Contains(string(indexHTML), `function applyBulkKeyAction(`) {
+		t.Fatal("期望前端具备批量 Key 操作逻辑")
+	}
+	if !strings.Contains(string(indexHTML), `provider-single-panel`) {
+		t.Fatal("期望前端使用单提供商聚焦布局")
+	}
 	if !strings.Contains(string(indexHTML), `provider-compact-fields`) {
 		t.Fatal("期望前端收紧提供商配置布局")
+	}
+	bulkActionStart := strings.Index(string(indexHTML), `async function applyBulkKeyAction(`)
+	if bulkActionStart == -1 {
+		t.Fatal("期望前端具备批量 Key 操作逻辑")
+	}
+	listenerSectionStart := strings.Index(string(indexHTML)[bulkActionStart:], `/* ---------- listeners ---------- */`)
+	if listenerSectionStart == -1 {
+		t.Fatal("期望前端保留监听器区段标记")
+	}
+	bulkActionBody := string(indexHTML)[bulkActionStart : bulkActionStart+listenerSectionStart]
+	if strings.Contains(bulkActionBody, `await loadAdminOverview();`) {
+		t.Fatal("期望批量 Key 操作优先更新前端本地状态，而不是每次整页重载")
 	}
 	if !strings.Contains(string(indexHTML), `await loadStatusOverview();`) || !strings.Contains(string(indexHTML), `await loadAdminOverview();`) {
 		t.Fatal("期望前端使用总览接口刷新状态和管理数据")

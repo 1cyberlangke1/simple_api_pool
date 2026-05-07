@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"simple-api-pool/store"
 )
@@ -225,6 +226,64 @@ func (c *Config) DeleteKey(providerName, keyValue string) error {
 			}
 		}
 	}
+	return os.ErrNotExist
+}
+
+func (c *Config) ApplyKeyAction(providerName, action string, keys []string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	targetKeys := make(map[string]struct{}, len(keys))
+	for _, keyValue := range keys {
+		trimmedKeyValue := strings.TrimSpace(keyValue)
+		if trimmedKeyValue == "" {
+			continue
+		}
+		targetKeys[trimmedKeyValue] = struct{}{}
+	}
+	if len(targetKeys) == 0 {
+		return os.ErrInvalid
+	}
+
+	for providerIndex, provider := range c.state.Providers {
+		if provider.Name != providerName {
+			continue
+		}
+
+		switch action {
+		case "delete":
+			filteredKeys := make([]Key, 0, len(provider.Keys))
+			for _, existingKey := range provider.Keys {
+				if _, shouldDelete := targetKeys[existingKey.Value]; shouldDelete {
+					continue
+				}
+				filteredKeys = append(filteredKeys, existingKey)
+			}
+			c.state.Providers[providerIndex].Keys = filteredKeys
+		case "disable":
+			disabledUntil := time.Now().AddDate(20, 0, 0).Unix()
+			for keyIndex, existingKey := range provider.Keys {
+				if _, shouldDisable := targetKeys[existingKey.Value]; !shouldDisable {
+					continue
+				}
+				c.state.Providers[providerIndex].Keys[keyIndex].DisabledUntil = disabledUntil
+			}
+		case "enable":
+			for keyIndex, existingKey := range provider.Keys {
+				if _, shouldEnable := targetKeys[existingKey.Value]; !shouldEnable {
+					continue
+				}
+				c.state.Providers[providerIndex].Keys[keyIndex].DisabledUntil = 0
+				c.state.Providers[providerIndex].Keys[keyIndex].ConsecutiveFails = 0
+			}
+		default:
+			return os.ErrInvalid
+		}
+
+		c.save()
+		return nil
+	}
+
 	return os.ErrNotExist
 }
 

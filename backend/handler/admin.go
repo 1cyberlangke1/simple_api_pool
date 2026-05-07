@@ -40,6 +40,11 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ah.handleProviders(w, r)
+	case strings.HasPrefix(path, "providers/") && strings.HasSuffix(path, "/keys/bulk"):
+		if !ah.authorizeAdminRequest(w, r) {
+			return
+		}
+		ah.handleProviderKeyBulkAction(w, r)
 	case strings.HasPrefix(path, "providers/") && strings.HasSuffix(path, "/keys"):
 		if !ah.authorizeAdminRequest(w, r) {
 			return
@@ -232,6 +237,51 @@ func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
+}
+
+func (ah *AdminHandler) handleProviderKeyBulkAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+		return
+	}
+
+	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/providers/")
+	parts := strings.Split(rest, "/")
+	if len(parts) < 3 || parts[1] != "keys" || parts[2] != "bulk" {
+		writeErrorResponse(w, http.StatusBadRequest, "请求路径无效")
+		return
+	}
+
+	var body struct {
+		Action string   `json:"action"`
+		Keys   []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		return
+	}
+	if body.Action != "enable" && body.Action != "disable" && body.Action != "delete" {
+		writeErrorResponse(w, http.StatusBadRequest, "批量操作类型无效")
+		return
+	}
+	if err := ah.cfg.ApplyKeyAction(parts[0], body.Action, body.Keys); err != nil {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
+		case errors.Is(err, os.ErrInvalid):
+			writeErrorResponse(w, http.StatusBadRequest, "批量操作参数无效")
+		default:
+			writeErrorResponse(w, http.StatusBadRequest, "批量操作失败")
+		}
+		return
+	}
+
+	provider, _ := ah.cfg.Provider(parts[0])
+	if provider == nil {
+		writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
+		return
+	}
+	writeJSONResponse(w, http.StatusOK, provider.Keys)
 }
 
 func parseImportedKeys(raw string) []string {

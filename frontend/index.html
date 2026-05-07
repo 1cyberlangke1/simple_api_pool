@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="shortcut icon" href="/favicon.svg">
   <title>Simple API Pool 控制台</title>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=IBM+Plex+Sans+SC:wght@400;500;600&display=swap");
@@ -356,7 +358,7 @@
       gap: 18px;
       min-width: 0;
       min-height: 0;
-      grid-template-rows: minmax(0, 1fr) minmax(260px, 340px);
+      grid-template-rows: minmax(0, 1fr);
     }
 
     .scroll-panel {
@@ -490,6 +492,59 @@
 
     .provider-catalog { grid-template-columns: 1fr; }
 
+    .provider-workspace-body {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .provider-toolbar {
+      display: grid;
+      gap: 10px;
+      padding: 14px 16px;
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-md);
+      background: var(--panel-soft);
+    }
+
+    .provider-pager {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .provider-pager-indicator {
+      min-width: 0;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--muted-strong);
+      overflow-wrap: anywhere;
+    }
+
+    .provider-toolbar-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .key-bulk-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .search-label {
+      display: grid;
+      gap: 6px;
+    }
+
+    .search-label input {
+      min-width: 0;
+    }
+
     .provider-card {
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
@@ -520,8 +575,14 @@
     .provider-body-grid {
       display: grid;
       gap: 18px;
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
       align-items: start;
+    }
+
+    .provider-single-panel {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr);
     }
 
     .provider-config-column,
@@ -531,6 +592,9 @@
 
     .provider-key-column {
       padding-top: 2px;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
     }
 
     .provider-key-column h3 {
@@ -702,20 +766,28 @@
       display: grid;
       gap: 8px;
       margin-top: 12px;
-      max-height: min(30vh, 220px);
+      min-height: 0;
+      max-height: none;
       overflow-y: auto;
       padding-right: 4px;
     }
 
     .key-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       gap: 12px;
       align-items: center;
-      justify-content: space-between;
       padding: 10px 14px;
       border-radius: var(--radius-sm);
       background: var(--panel-key);
       border: 1px solid var(--line-soft);
+    }
+
+    .key-item .checkbox {
+      min-height: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
     }
 
     .key-item > div {
@@ -731,13 +803,38 @@
       font-family: "JetBrains Mono", "Consolas", monospace;
     }
 
-    .recent-log-list {
-      display: grid;
+    .key-list-summary {
+      display: flex;
+      justify-content: space-between;
       gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .key-pager {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .key-pager-indicator {
+      color: var(--muted-strong);
+      font-size: 12px;
+    }
+
+    .recent-log-list {
+      display: block;
       min-height: 0;
       max-height: min(68vh, 720px);
       overflow-y: auto;
-      padding-right: 6px;
+      padding: 12px 0 8px;
+      background: #0b0f14;
+      border: 1px solid rgba(214, 221, 231, 0.08);
     }
 
     .log-modal {
@@ -758,7 +855,7 @@
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
       padding: 20px;
-      border-radius: 22px;
+      border-radius: 6px;
       background: #111418;
       border: 1px solid rgba(214, 221, 231, 0.12);
       box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
@@ -801,10 +898,10 @@
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(214, 221, 231, 0.08);
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
       color: #dce7f3;
       font-family: "JetBrains Mono", "Consolas", monospace;
       font-size: 12px;
@@ -821,12 +918,13 @@
     }
 
     .terminal-log-entry {
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(214, 221, 231, 0.08);
+      padding: 8px 14px;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
       display: grid;
-      gap: 8px;
+      gap: 4px;
       font-family: "JetBrains Mono", "Consolas", monospace;
       font-size: 12.5px;
       line-height: 1.6;
@@ -934,7 +1032,10 @@
       .content-grid { grid-template-columns: 1fr; }
       .admin-dashboard-grid { grid-template-columns: 1fr; }
       .admin-sidebar { position: static; }
-      .admin-workspace-column { grid-template-rows: auto auto; }
+      .admin-workspace-column { grid-template-rows: auto; }
+      .provider-body-grid { grid-template-columns: 1fr; }
+      .provider-toolbar-grid { grid-template-columns: 1fr; }
+      .key-bulk-actions { justify-content: flex-start; }
       .legend-grid { grid-template-columns: 1fr; }
     }
 
@@ -956,7 +1057,7 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
 
       .provider-head { flex-direction: column; align-items: stretch; }
-      .key-item { flex-direction: column; align-items: stretch; }
+      .key-item { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1145,8 +1246,30 @@
             <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
             <button id="open-log-modal" class="secondary" type="button" data-i18n="admin.viewLogs">查看日志</button>
           </div>
-          <div class="panel-subtitle" data-i18n="admin.providerListSub">点击卡片内表单可修改配置、导入或删除上游密钥。</div>
-          <div id="provider-list-panel-body" class="scroll-panel-body">
+          <div class="panel-subtitle" data-i18n="admin.providerListSub">一次只聚焦一个提供商，分页处理配置与密钥。</div>
+          <div id="provider-list-panel-body" class="scroll-panel-body provider-workspace-body">
+            <div class="provider-toolbar">
+              <div class="provider-pager">
+                <button id="provider-page-prev" class="secondary" type="button" data-i18n="admin.prevProvider">上一项</button>
+                <div id="provider-page-indicator" class="provider-pager-indicator">-</div>
+                <button id="provider-page-next" class="secondary" type="button" data-i18n="admin.nextProvider">下一项</button>
+              </div>
+            </div>
+            <div class="provider-toolbar">
+              <div class="provider-toolbar-grid">
+                <label class="search-label">
+                  <span data-i18n="admin.keySearch">搜索 Key</span>
+                  <input id="key-search" type="search" data-i18n-placeholder="admin.keySearchPlaceholder" placeholder="输入关键词过滤当前提供商的 Key">
+                </label>
+                <div class="key-bulk-actions">
+                  <button class="secondary" type="button" data-action="select-page-keys" data-i18n="admin.selectPageKeys">本页全选</button>
+                  <button class="secondary" type="button" data-action="invert-page-keys" data-i18n="admin.invertPageKeys">反选</button>
+                  <button class="secondary" type="button" data-action="enable-selected-keys" data-i18n="admin.enableSelectedKeys">启用选中</button>
+                  <button class="secondary" type="button" data-action="disable-selected-keys" data-i18n="admin.disableSelectedKeys">禁用选中</button>
+                  <button class="secondary" type="button" data-action="delete-selected-keys" data-i18n="admin.deleteSelectedKeys">删除选中</button>
+                </div>
+              </div>
+            </div>
             <div id="provider-list" class="list provider-catalog">
               <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
             </div>
@@ -1178,6 +1301,7 @@
   <script>
     const API_BASE = "/api";
     const STATUS_POLL_INTERVAL_MS = 5000;
+    const KEY_PAGE_SIZE = 8;
     const STORAGE_KEY = "simple-api-pool-admin-key";
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
@@ -1234,13 +1358,31 @@
         "admin.newProvider": "新增提供商",
         "admin.saveProvider": "保存提供商",
         "admin.providerListTitle": "提供商列表",
-        "admin.providerListSub": "点击卡片内表单可修改配置、导入或删除上游密钥。",
+        "admin.providerListSub": "一次只聚焦一个提供商，分页处理配置与密钥。",
         "admin.logTitle": "最近日志",
         "admin.logSub": "终端风格展示最近固定条数日志，用不同颜色区分级别，便于快速排查代理与鉴权问题。",
         "admin.logEmpty": "暂无日志",
         "admin.viewLogs": "查看日志",
         "admin.closeLogs": "关闭",
         "admin.hidePanelLogs": "隐藏面板请求与健康检查",
+        "admin.prevProvider": "上一项",
+        "admin.nextProvider": "下一项",
+        "admin.keySearch": "搜索 Key",
+        "admin.keySearchPlaceholder": "输入关键词过滤当前提供商的 Key",
+        "admin.selectPageKeys": "本页全选",
+        "admin.invertPageKeys": "反选",
+        "admin.enableSelectedKeys": "启用选中",
+        "admin.disableSelectedKeys": "禁用选中",
+        "admin.deleteSelectedKeys": "删除选中",
+        "admin.keySelectionSummary": "已选 {selected} / 本页 {page} / 结果 {total}",
+        "admin.keyPagePrev": "上一页",
+        "admin.keyPageNext": "下一页",
+        "admin.keyPageIndicator": "第 {current} / {total} 页",
+        "admin.bulkActionDone": "已完成 {action}。",
+        "admin.bulkActionEnable": "启用",
+        "admin.bulkActionDisable": "禁用",
+        "admin.bulkActionDelete": "删除",
+        "admin.noSelectedKeys": "请先选择至少一个 Key。",
         "admin.loginToLoad": "登录后加载提供商配置",
         "admin.pleaseLogin": "请先登录",
         "admin.localKeyExpired": "本地密钥已失效，请重新登录",
@@ -1270,7 +1412,7 @@
         "provider.cacheEnabled": "启用硬盘缓存",
         "provider.cacheMax": "最大缓存条目",
         "provider.empty": "尚未配置提供商，先在左侧新增一个",
-        "provider.noKeys": "尚未导入上游密钥",
+        "provider.noKeys": "当前筛选条件下没有 Key",
         "provider.defaultUpstream": "默认上游",
         "provider.upstreamKeys": "上游密钥",
         "provider.batchImport": "批量导入",
@@ -1359,13 +1501,31 @@
         "admin.newProvider": "New Provider",
         "admin.saveProvider": "Save Provider",
         "admin.providerListTitle": "Providers",
-        "admin.providerListSub": "Edit, import or delete upstream keys via card forms.",
+        "admin.providerListSub": "Focus on one provider at a time with paged config and key management.",
         "admin.logTitle": "Recent Logs",
         "admin.logSub": "Terminal-style recent logs with color-coded levels for quick proxy and auth debugging.",
         "admin.logEmpty": "No logs yet",
         "admin.viewLogs": "View Logs",
         "admin.closeLogs": "Close",
         "admin.hidePanelLogs": "Hide panel and health requests",
+        "admin.prevProvider": "Previous",
+        "admin.nextProvider": "Next",
+        "admin.keySearch": "Search Keys",
+        "admin.keySearchPlaceholder": "Filter keys in the current provider",
+        "admin.selectPageKeys": "Select Page",
+        "admin.invertPageKeys": "Invert",
+        "admin.enableSelectedKeys": "Enable Selected",
+        "admin.disableSelectedKeys": "Disable Selected",
+        "admin.deleteSelectedKeys": "Delete Selected",
+        "admin.keySelectionSummary": "Selected {selected} / Page {page} / Results {total}",
+        "admin.keyPagePrev": "Prev Page",
+        "admin.keyPageNext": "Next Page",
+        "admin.keyPageIndicator": "Page {current} / {total}",
+        "admin.bulkActionDone": "{action} completed.",
+        "admin.bulkActionEnable": "Enable",
+        "admin.bulkActionDisable": "Disable",
+        "admin.bulkActionDelete": "Delete",
+        "admin.noSelectedKeys": "Select at least one key first.",
         "admin.loginToLoad": "Sign in to load provider config",
         "admin.pleaseLogin": "Please sign in",
         "admin.localKeyExpired": "Local key expired, please sign in again",
@@ -1395,7 +1555,7 @@
         "provider.cacheEnabled": "Enable Disk Cache",
         "provider.cacheMax": "Max Cache Entries",
         "provider.empty": "No providers yet — add one on the left",
-        "provider.noKeys": "No upstream keys imported",
+        "provider.noKeys": "No keys match the current filter",
         "provider.defaultUpstream": "default upstream",
         "provider.upstreamKeys": "Upstream Keys",
         "provider.batchImport": "Batch Import",
@@ -1461,6 +1621,10 @@
       stats: {},
       recentLogs: [],
       hidePanelLogs: true,
+      providerPageIndex: 0,
+      keySearchQuery: "",
+      keyPageIndexByProvider: {},
+      selectedKeysByProvider: {},
       overviewEtags: {
         status: "",
         admin: ""
@@ -1568,7 +1732,12 @@
       globalStatus: document.getElementById("global-status"),
       createForm: document.getElementById("provider-create-form"),
       createStatus: document.getElementById("provider-create-status"),
+      providerListPanelBody: document.getElementById("provider-list-panel-body"),
       providerList: document.getElementById("provider-list"),
+      providerPagePrev: document.getElementById("provider-page-prev"),
+      providerPageNext: document.getElementById("provider-page-next"),
+      providerPageIndicator: document.getElementById("provider-page-indicator"),
+      keySearchInput: document.getElementById("key-search"),
       recentLogList: document.getElementById("recent-log-list"),
       logModal: document.getElementById("log-modal"),
       openLogModalButton: document.getElementById("open-log-modal"),
@@ -1661,6 +1830,158 @@
         available += 1;
       }
       return { available, disabled };
+    }
+
+    function normalizeProviderWorkspaceState() {
+      const providers = Array.isArray(state.providers) ? state.providers : [];
+      if (!providers.length) {
+        state.providerPageIndex = 0;
+        state.keySearchQuery = "";
+        state.keyPageIndexByProvider = {};
+        state.selectedKeysByProvider = {};
+        return;
+      }
+
+      if (state.providerPageIndex < 0) {
+        state.providerPageIndex = 0;
+      }
+      if (state.providerPageIndex >= providers.length) {
+        state.providerPageIndex = providers.length - 1;
+      }
+
+      const providerNames = new Set(providers.map((provider) => provider.name));
+      Object.keys(state.keyPageIndexByProvider).forEach((providerName) => {
+        if (!providerNames.has(providerName)) {
+          delete state.keyPageIndexByProvider[providerName];
+        }
+      });
+      Object.keys(state.selectedKeysByProvider).forEach((providerName) => {
+        if (!providerNames.has(providerName)) {
+          delete state.selectedKeysByProvider[providerName];
+        }
+      });
+
+      for (const provider of providers) {
+        if (!(provider.name in state.keyPageIndexByProvider)) {
+          state.keyPageIndexByProvider[provider.name] = 0;
+        }
+        if (!(provider.name in state.selectedKeysByProvider)) {
+          state.selectedKeysByProvider[provider.name] = [];
+        }
+      }
+    }
+
+    function getCurrentProvider() {
+      normalizeProviderWorkspaceState();
+      if (!state.providers.length) {
+        return null;
+      }
+      return state.providers[state.providerPageIndex] || null;
+    }
+
+    function setProviderPage(nextPageIndex) {
+      if (!state.providers.length) {
+        state.providerPageIndex = 0;
+        return;
+      }
+      state.providerPageIndex = Math.max(0, Math.min(nextPageIndex, state.providers.length - 1));
+      const provider = getCurrentProvider();
+      if (provider) {
+        syncKeySearchInput();
+        state.keyPageIndexByProvider[provider.name] = state.keyPageIndexByProvider[provider.name] || 0;
+      }
+      renderProviders(state.providers || []);
+    }
+
+    function syncKeySearchInput() {
+      if (!refs.keySearchInput) {
+        return;
+      }
+      refs.keySearchInput.value = state.keySearchQuery;
+    }
+
+    function renderProviderPager(providers) {
+      const totalProviders = providers.length;
+      const currentProvider = getCurrentProvider();
+      const currentNumber = totalProviders ? state.providerPageIndex + 1 : 0;
+
+      refs.providerPagePrev.disabled = currentNumber <= 1;
+      refs.providerPageNext.disabled = !totalProviders || currentNumber >= totalProviders;
+      refs.keySearchInput.disabled = totalProviders === 0;
+      refs.providerPageIndicator.textContent = totalProviders
+        ? `${currentNumber} / ${totalProviders} · ${currentProvider.name}`
+        : "-";
+    }
+
+    function getSelectedKeys(providerName) {
+      const selectedKeys = state.selectedKeysByProvider[providerName];
+      return Array.isArray(selectedKeys) ? selectedKeys : [];
+    }
+
+    function setSelectedKeys(providerName, keys) {
+      state.selectedKeysByProvider[providerName] = Array.from(new Set((keys || []).filter(Boolean)));
+    }
+
+    function filterProviderKeys(provider, searchQuery) {
+      const keys = Array.isArray(provider?.keys) ? provider.keys : [];
+      const normalizedQuery = String(searchQuery || "").trim().toLowerCase();
+      if (!normalizedQuery) {
+        return keys;
+      }
+
+      const queryParts = normalizedQuery.split(/\s+/).filter(Boolean);
+      return keys.filter((key) => {
+        const keyValue = String(key?.value || "").toLowerCase();
+        return queryParts.every((queryPart) => keyValue.includes(queryPart));
+      });
+    }
+
+    function paginateProviderKeys(keys, providerName) {
+      const totalPages = Math.max(1, Math.ceil(keys.length / KEY_PAGE_SIZE));
+      const currentPageIndex = Math.max(0, Math.min(state.keyPageIndexByProvider[providerName] || 0, totalPages - 1));
+      state.keyPageIndexByProvider[providerName] = currentPageIndex;
+      const startIndex = currentPageIndex * KEY_PAGE_SIZE;
+      return {
+        pageKeys: keys.slice(startIndex, startIndex + KEY_PAGE_SIZE),
+        currentPageIndex,
+        totalPages
+      };
+    }
+
+    function updateProviderKeysInState(providerName, nextKeys) {
+      state.providers = (state.providers || []).map((provider) => {
+        if (provider.name !== providerName) {
+          return provider;
+        }
+        return { ...provider, keys: Array.isArray(nextKeys) ? nextKeys : [] };
+      });
+
+      const currentSelected = new Set(getSelectedKeys(providerName));
+      const nextKeyValues = new Set((nextKeys || []).map((key) => key.value));
+      setSelectedKeys(providerName, Array.from(currentSelected).filter((keyValue) => nextKeyValues.has(keyValue)));
+      syncProviderKeyStats(providerName);
+      normalizeProviderWorkspaceState();
+    }
+
+    function syncProviderKeyStats(providerName) {
+      const provider = (state.providers || []).find((item) => item.name === providerName);
+      if (!provider) {
+        delete state.stats[providerName];
+        return;
+      }
+
+      const summary = summarizeProviderKeys(provider.keys || []);
+      const currentStats = state.stats[providerName] || {};
+      state.stats[providerName] = {
+        ...currentStats,
+        available_keys: summary.available,
+        total_keys: (provider.keys || []).length
+      };
+    }
+
+    function setKeyPage(providerName, nextPageIndex) {
+      state.keyPageIndexByProvider[providerName] = Math.max(0, nextPageIndex);
+      renderProviders(state.providers || []);
     }
 
     async function parseErrorMessage(response, fallback) {
@@ -1822,6 +2143,7 @@
       return path === "/" ||
         path === "/status" ||
         path === "/admin" ||
+        path === "/favicon.ico" ||
         path === "/api/health" ||
         path.startsWith("/api/status") ||
         path.startsWith("/api/admin");
@@ -1917,7 +2239,11 @@
         setLogModalOpen(false);
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
+        state.providers = [];
+        state.stats = {};
+        normalizeProviderWorkspaceState();
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.pleaseLogin"))}</div>`;
+        renderProviderPager([]);
         renderRecentLogs([]);
         return;
       }
@@ -1933,7 +2259,11 @@
         setLogModalOpen(false);
         refs.adminWorkspace.classList.add("hidden");
         refs.logoutButton.classList.add("hidden");
+        state.providers = [];
+        state.stats = {};
+        normalizeProviderWorkspaceState();
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.localKeyExpired"))}</div>`;
+        renderProviderPager([]);
         renderRecentLogs([]);
         setMessage(refs.loginStatus, t("admin.invalidKey"), "error");
         return;
@@ -1951,6 +2281,7 @@
       const overview = await response.json();
       state.providers = overview.providers || [];
       state.stats = overview.provider_stats || {};
+      normalizeProviderWorkspaceState();
 
       applyHealthSnapshot(overview.health);
       renderStatusCards(state.stats);
@@ -1981,137 +2312,169 @@
       return options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
     }
 
+    function renderProviderKeysSection(provider) {
+      const filteredKeys = filterProviderKeys(provider, state.keySearchQuery);
+      const { pageKeys, currentPageIndex, totalPages } = paginateProviderKeys(filteredKeys, provider.name);
+      const selectedKeys = new Set(getSelectedKeys(provider.name));
+      const selectionSummary = t("admin.keySelectionSummary", {
+        selected: selectedKeys.size,
+        page: pageKeys.length,
+        total: filteredKeys.length
+      });
+
+      const keyListMarkup = pageKeys.length
+        ? `<div class="key-list">${pageKeys.map((key) => {
+            const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
+            const stateText = isDisabled
+              ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
+              : t("provider.usable");
+            const checked = selectedKeys.has(key.value) ? "checked" : "";
+            return `
+              <div class="key-item">
+                <label class="checkbox">
+                  <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}" ${checked}>
+                </label>
+                <div>
+                  <code>${escapeHTML(key.value)}</code>
+                  <div class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))} · ${escapeHTML(stateText)}</div>
+                </div>
+                <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}">${escapeHTML(t("provider.delete"))}</button>
+              </div>
+            `;
+          }).join("")}</div>`
+        : `<div class="empty">${escapeHTML(t("provider.noKeys"))}</div>`;
+
+      return `
+        <div class="key-list-summary">
+          <span>${escapeHTML(selectionSummary)}</span>
+          <span>${escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages }))}</span>
+        </div>
+        ${keyListMarkup}
+        <div class="key-pager">
+          <button class="secondary" type="button" data-action="prev-key-page" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("admin.keyPagePrev"))}</button>
+          <span class="key-pager-indicator">${escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages }))}</span>
+          <button class="secondary" type="button" data-action="next-key-page" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("admin.keyPageNext"))}</button>
+        </div>
+      `;
+    }
+
     function renderProviders(providers) {
+      normalizeProviderWorkspaceState();
+      renderProviderPager(providers);
+      syncKeySearchInput();
+
       if (!providers.length) {
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("provider.empty"))}</div>`;
         return;
       }
 
-      refs.providerList.innerHTML = providers.map((provider) => {
-        const stats = state.stats[provider.name] || {};
-        const keys = provider.keys || [];
-        const keySummary = summarizeProviderKeys(keys);
-        const keyHTML = keys.length
-          ? `<div class="key-list">${keys.map((key) => {
-              const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
-              const stateText = isDisabled
-                ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
-                : t("provider.usable");
-              return `
-                <div class="key-item">
-                  <div>
-                    <code>${escapeHTML(key.value)}</code>
-                    <div class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))} · ${escapeHTML(stateText)}</div>
-                  </div>
-                  <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(key.value)}">${escapeHTML(t("provider.delete"))}</button>
-                </div>
-              `;
-            }).join("")}</div>`
-          : `<div class="empty">${escapeHTML(t("provider.noKeys"))}</div>`;
+      const provider = getCurrentProvider();
+      const stats = state.stats[provider.name] || {};
+      const keys = provider.keys || [];
+      const keySummary = summarizeProviderKeys(keys);
 
-        return `
-          <article class="provider-card">
-            <div class="provider-head">
-              <div>
-                <h3 class="provider-name">${escapeHTML(provider.name)}</h3>
-                <div class="provider-meta">${escapeHTML(provider.type)} · ${escapeHTML(provider.base_url || t("provider.defaultUpstream"))}</div>
-                <div class="tag-row">
-                  <span class="tag ok">${escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 }))}</span>
-                  <span class="tag err">${escapeHTML(t("provider.tagError", { n: stats.error_count || 0 }))}</span>
-                  <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: stats.cache_hits || 0 }))}</span>
-                  <span class="tag">${escapeHTML(t("provider.tagKeys", { n: keys.length }))}</span>
-                  <span class="tag ok">${escapeHTML(t("provider.tagAvailable", { n: keySummary.available }))}</span>
-                  <span class="tag err">${escapeHTML(t("provider.tagDisabled", { n: keySummary.disabled }))}</span>
-                  <span class="tag ${provider.cache_enabled ? "ok" : "muted"}">${escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff"))}</span>
-                </div>
+      refs.providerList.innerHTML = `
+        <article class="provider-card provider-single-panel">
+          <div class="provider-head">
+            <div>
+              <h3 class="provider-name">${escapeHTML(provider.name)}</h3>
+              <div class="provider-meta">${escapeHTML(provider.type)} · ${escapeHTML(provider.base_url || t("provider.defaultUpstream"))}</div>
+              <div class="tag-row">
+                <span class="tag ok">${escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 }))}</span>
+                <span class="tag err">${escapeHTML(t("provider.tagError", { n: stats.error_count || 0 }))}</span>
+                <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: stats.cache_hits || 0 }))}</span>
+                <span class="tag">${escapeHTML(t("provider.tagKeys", { n: keys.length }))}</span>
+                <span class="tag ok">${escapeHTML(t("provider.tagAvailable", { n: keySummary.available }))}</span>
+                <span class="tag err">${escapeHTML(t("provider.tagDisabled", { n: keySummary.disabled }))}</span>
+                <span class="tag ${provider.cache_enabled ? "ok" : "muted"}">${escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff"))}</span>
               </div>
-              <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
             </div>
+            <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
+          </div>
 
-            <div class="stats-grid">
-              <div class="mini"><strong>${stats.success_count || 0}</strong><span>${escapeHTML(t("provider.statSuccess"))}</span></div>
-              <div class="mini"><strong>${stats.error_count || 0}</strong><span>${escapeHTML(t("provider.statError"))}</span></div>
-              <div class="mini"><strong>${stats.input_tokens || 0}</strong><span>${escapeHTML(t("provider.statInputTokens"))}</span></div>
-              <div class="mini"><strong>${stats.output_tokens || 0}</strong><span>${escapeHTML(t("provider.statOutputTokens"))}</span></div>
-              <div class="mini"><strong>${stats.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
-              <div class="mini"><strong>${stats.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
-            </div>
+          <div class="stats-grid">
+            <div class="mini"><strong>${stats.success_count || 0}</strong><span>${escapeHTML(t("provider.statSuccess"))}</span></div>
+            <div class="mini"><strong>${stats.error_count || 0}</strong><span>${escapeHTML(t("provider.statError"))}</span></div>
+            <div class="mini"><strong>${stats.input_tokens || 0}</strong><span>${escapeHTML(t("provider.statInputTokens"))}</span></div>
+            <div class="mini"><strong>${stats.output_tokens || 0}</strong><span>${escapeHTML(t("provider.statOutputTokens"))}</span></div>
+            <div class="mini"><strong>${stats.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
+            <div class="mini"><strong>${stats.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
+          </div>
 
-            <hr class="divider">
+          <hr class="divider">
 
-            <div class="provider-body-grid">
-              <div class="provider-config-column">
-                <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
-                  <div class="form-grid">
-                    <label>
-                      ${escapeHTML(t("provider.name"))}
-                      <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
-                    </label>
-                    <label>
-                      ${escapeHTML(t("provider.type"))}
-                      <select name="type">${providerTypeOptions(provider.type)}</select>
-                    </label>
-                  </div>
-                  <div class="form-grid">
-                    <label>
-                      ${escapeHTML(t("provider.baseUrl"))}
-                      <input name="base_url" type="text" value="${escapeHTML(provider.base_url || "")}">
-                    </label>
-                    <label>
-                      ${escapeHTML(t("provider.strategy"))}
-                      <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
-                    </label>
-                  </div>
-                  <div class="form-grid provider-compact-fields">
-                    <label>
-                      ${escapeHTML(t("provider.failThreshold"))}
-                      <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
-                    </label>
-                    <label>
-                      ${escapeHTML(t("provider.minDisable"))}
-                      <input name="min_disable_secs" type="number" min="1" value="${Number(provider.min_disable_secs || 30)}">
-                    </label>
-                    <label>
-                      ${escapeHTML(t("provider.maxDisable"))}
-                      <input name="max_disable_secs" type="number" min="1" value="${Number(provider.max_disable_secs || 3600)}">
-                    </label>
-                  </div>
-                  <div class="form-grid">
-                    <label class="checkbox">
-                      <input name="cache_enabled" type="checkbox" ${provider.cache_enabled ? "checked" : ""}>
-                      <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
-                    </label>
-                    <label>
-                      ${escapeHTML(t("provider.cacheMax"))}
-                      <input name="cache_max_entries" type="number" min="1" value="${Number(provider.cache_max_entries || 1000)}">
-                    </label>
-                  </div>
-                  <div class="actions">
-                    <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
-                    <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
-                  </div>
-                  <div class="inline-status" data-role="provider-status"></div>
-                </form>
-              </div>
-
-              <div class="provider-key-column">
-                <h3>${escapeHTML(t("provider.upstreamKeys"))}</h3>
-                <form class="provider-keys-form" data-provider="${escapeHTML(provider.name)}">
+          <div class="provider-body-grid">
+            <div class="provider-config-column">
+              <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
+                <div class="form-grid">
                   <label>
-                    ${escapeHTML(t("provider.batchImport"))}
-                    <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}"></textarea>
+                    ${escapeHTML(t("provider.name"))}
+                    <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
                   </label>
-                  <div class="actions">
-                    <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
-                  </div>
-                  <div class="inline-status" data-role="keys-status"></div>
-                </form>
-                ${keyHTML}
-              </div>
+                  <label>
+                    ${escapeHTML(t("provider.type"))}
+                    <select name="type">${providerTypeOptions(provider.type)}</select>
+                  </label>
+                </div>
+                <div class="form-grid">
+                  <label>
+                    ${escapeHTML(t("provider.baseUrl"))}
+                    <input name="base_url" type="text" value="${escapeHTML(provider.base_url || "")}">
+                  </label>
+                  <label>
+                    ${escapeHTML(t("provider.strategy"))}
+                    <select name="key_strategy">${providerStrategyOptions(provider.key_strategy)}</select>
+                  </label>
+                </div>
+                <div class="form-grid provider-compact-fields">
+                  <label>
+                    ${escapeHTML(t("provider.failThreshold"))}
+                    <input name="fail_threshold" type="number" min="1" value="${Number(provider.fail_threshold || 3)}">
+                  </label>
+                  <label>
+                    ${escapeHTML(t("provider.minDisable"))}
+                    <input name="min_disable_secs" type="number" min="1" value="${Number(provider.min_disable_secs || 30)}">
+                  </label>
+                  <label>
+                    ${escapeHTML(t("provider.maxDisable"))}
+                    <input name="max_disable_secs" type="number" min="1" value="${Number(provider.max_disable_secs || 3600)}">
+                  </label>
+                </div>
+                <div class="form-grid">
+                  <label class="checkbox">
+                    <input name="cache_enabled" type="checkbox" ${provider.cache_enabled ? "checked" : ""}>
+                    <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
+                  </label>
+                  <label>
+                    ${escapeHTML(t("provider.cacheMax"))}
+                    <input name="cache_max_entries" type="number" min="1" value="${Number(provider.cache_max_entries || 1000)}">
+                  </label>
+                </div>
+                <div class="actions">
+                  <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+                  <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
+                </div>
+                <div class="inline-status" data-role="provider-status"></div>
+              </form>
             </div>
-          </article>
-        `;
-      }).join("");
+
+            <div class="provider-key-column">
+              <h3>${escapeHTML(t("provider.upstreamKeys"))}</h3>
+              <form class="provider-keys-form" data-provider="${escapeHTML(provider.name)}">
+                <label>
+                  ${escapeHTML(t("provider.batchImport"))}
+                  <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}"></textarea>
+                </label>
+                <div class="actions">
+                  <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+                </div>
+                <div class="inline-status" data-role="keys-status"></div>
+              </form>
+              ${renderProviderKeysSection(provider)}
+            </div>
+          </div>
+        </article>
+      `;
     }
 
     function readProviderPayload(form) {
@@ -2193,10 +2556,13 @@
         throw new Error(await parseErrorMessage(response, t("error.import")));
       }
 
+      const nextKeys = await response.json();
       form.reset();
+      updateProviderKeysInState(provider, nextKeys);
       setMessage(statusElement, t("admin.importDone"), "ok");
       setMessage(refs.adminActionStatus, t("admin.importDoneTip", { provider }), "ok");
-      await loadAdminOverview();
+      renderProviders(state.providers || []);
+      renderStatusCards(state.stats);
     }
 
     async function deleteProvider(name) {
@@ -2206,8 +2572,12 @@
       if (!response.ok) {
         throw new Error(await parseErrorMessage(response, t("error.delete")));
       }
+      state.providers = (state.providers || []).filter((provider) => provider.name !== name);
+      delete state.stats[name];
+      normalizeProviderWorkspaceState();
       setMessage(refs.adminActionStatus, t("admin.deletedProvider", { name }), "ok");
-      await loadAdminOverview();
+      renderProviders(state.providers || []);
+      renderStatusCards(state.stats);
     }
 
     async function deleteKey(provider, key) {
@@ -2217,8 +2587,12 @@
       if (!response.ok) {
         throw new Error(await parseErrorMessage(response, t("error.delete")));
       }
+      const currentProvider = (state.providers || []).find((item) => item.name === provider);
+      const nextKeys = (currentProvider?.keys || []).filter((item) => item.value !== key);
+      updateProviderKeysInState(provider, nextKeys);
       setMessage(refs.adminActionStatus, t("admin.deletedKey", { provider }), "ok");
-      await loadAdminOverview();
+      renderProviders(state.providers || []);
+      renderStatusCards(state.stats);
     }
 
     async function clearProviderCache(provider) {
@@ -2229,7 +2603,31 @@
         throw new Error(await parseErrorMessage(response, t("error.action")));
       }
       setMessage(refs.adminActionStatus, t("admin.clearedCache", { provider }), "ok");
-      await loadAdminOverview();
+    }
+
+    async function applyBulkKeyAction(providerName, actionName) {
+      const selectedKeys = getSelectedKeys(providerName);
+      if (!selectedKeys.length) {
+        throw new Error(t("admin.noSelectedKeys"));
+      }
+
+      const response = await request(`/admin/providers/${encodeURIComponent(providerName)}/keys/bulk`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: actionName,
+          keys: selectedKeys
+        })
+      }, true);
+      if (!response.ok) {
+        throw new Error(await parseErrorMessage(response, t("error.action")));
+      }
+
+      const nextKeys = await response.json();
+      updateProviderKeysInState(providerName, nextKeys);
+      setSelectedKeys(providerName, []);
+      setMessage(refs.adminActionStatus, t("admin.bulkActionDone", { action: t(`admin.bulkAction${actionName.charAt(0).toUpperCase()}${actionName.slice(1)}`) }), "ok");
+      renderProviders(state.providers || []);
+      renderStatusCards(state.stats);
     }
 
     /* ---------- listeners ---------- */
@@ -2256,6 +2654,23 @@
     refs.hidePanelLogsToggle.addEventListener("change", () => {
       state.hidePanelLogs = refs.hidePanelLogsToggle.checked;
       renderRecentLogs(state.recentLogs || []);
+    });
+
+    refs.providerPagePrev.addEventListener("click", () => {
+      setProviderPage(state.providerPageIndex - 1);
+    });
+
+    refs.providerPageNext.addEventListener("click", () => {
+      setProviderPage(state.providerPageIndex + 1);
+    });
+
+    refs.keySearchInput.addEventListener("input", () => {
+      state.keySearchQuery = refs.keySearchInput.value.trim();
+      const provider = getCurrentProvider();
+      if (provider) {
+        state.keyPageIndexByProvider[provider.name] = 0;
+      }
+      renderProviders(state.providers || []);
     });
 
     refs.logModal.addEventListener("click", (event) => {
@@ -2312,7 +2727,11 @@
       setLogModalOpen(false);
       refs.loginKey.value = "";
       refs.adminWorkspace.classList.add("hidden");
+      state.providers = [];
+      state.stats = {};
+      normalizeProviderWorkspaceState();
       refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.loggedOut"))}</div>`;
+      renderProviderPager([]);
       renderRecentLogs([]);
       refs.logoutButton.classList.add("hidden");
       setMessage(refs.adminActionStatus, "", "");
@@ -2362,7 +2781,25 @@
       }
     });
 
-    refs.providerList.addEventListener("click", async (event) => {
+    refs.providerListPanelBody.addEventListener("change", (event) => {
+      const checkbox = event.target.closest('input[data-role="key-selector"]');
+      if (!checkbox) {
+        return;
+      }
+
+      const providerName = checkbox.dataset.provider;
+      const keyValue = checkbox.dataset.key;
+      const selectedKeys = new Set(getSelectedKeys(providerName));
+      if (checkbox.checked) {
+        selectedKeys.add(keyValue);
+      } else {
+        selectedKeys.delete(keyValue);
+      }
+      setSelectedKeys(providerName, Array.from(selectedKeys));
+      renderProviders(state.providers || []);
+    });
+
+    refs.providerListPanelBody.addEventListener("click", async (event) => {
       const button = event.target.closest("button[data-action]");
       if (!button) {
         return;
@@ -2371,6 +2808,7 @@
       const action = button.dataset.action;
       const provider = button.dataset.provider;
       const key = button.dataset.key;
+      const currentProvider = getCurrentProvider();
 
       try {
         if (action === "delete-provider") {
@@ -2381,6 +2819,42 @@
         }
         if (action === "clear-cache") {
           await clearProviderCache(provider);
+        }
+        if (action === "prev-key-page" && currentProvider) {
+          setKeyPage(currentProvider.name, (state.keyPageIndexByProvider[currentProvider.name] || 0) - 1);
+        }
+        if (action === "next-key-page" && currentProvider) {
+          setKeyPage(currentProvider.name, (state.keyPageIndexByProvider[currentProvider.name] || 0) + 1);
+        }
+        if (action === "select-page-keys" && currentProvider) {
+          const filteredKeys = filterProviderKeys(currentProvider, state.keySearchQuery);
+          const { pageKeys } = paginateProviderKeys(filteredKeys, currentProvider.name);
+          const mergedKeys = new Set([...getSelectedKeys(currentProvider.name), ...pageKeys.map((item) => item.value)]);
+          setSelectedKeys(currentProvider.name, Array.from(mergedKeys));
+          renderProviders(state.providers || []);
+        }
+        if (action === "invert-page-keys" && currentProvider) {
+          const filteredKeys = filterProviderKeys(currentProvider, state.keySearchQuery);
+          const { pageKeys } = paginateProviderKeys(filteredKeys, currentProvider.name);
+          const nextSelectedKeys = new Set(getSelectedKeys(currentProvider.name));
+          for (const pageKey of pageKeys) {
+            if (nextSelectedKeys.has(pageKey.value)) {
+              nextSelectedKeys.delete(pageKey.value);
+            } else {
+              nextSelectedKeys.add(pageKey.value);
+            }
+          }
+          setSelectedKeys(currentProvider.name, Array.from(nextSelectedKeys));
+          renderProviders(state.providers || []);
+        }
+        if (action === "enable-selected-keys" && currentProvider) {
+          await applyBulkKeyAction(currentProvider.name, "enable");
+        }
+        if (action === "disable-selected-keys" && currentProvider) {
+          await applyBulkKeyAction(currentProvider.name, "disable");
+        }
+        if (action === "delete-selected-keys" && currentProvider) {
+          await applyBulkKeyAction(currentProvider.name, "delete");
         }
       } catch (error) {
         setMessage(refs.adminActionStatus, error.message || t("error.action"), "error");

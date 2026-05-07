@@ -183,6 +183,38 @@ func TestRecentEntriesKeepsOnlyLatestRecords(t *testing.T) {
 	}
 }
 
+func TestRecentEntriesEvictsOldRecordsWhenByteLimitIsReached(t *testing.T) {
+	restoreRecentEntries := applog.ReplaceRecentEntriesForTestingWithBytes(10, 90)
+	defer restoreRecentEntries()
+
+	applog.AppendRecentEntryForTesting(applog.Entry{
+		Time:  "1",
+		Level: "INFO",
+		Msg:   "first-message-with-size",
+		Attrs: map[string]any{"path": "/status"},
+	})
+	applog.AppendRecentEntryForTesting(applog.Entry{
+		Time:  "2",
+		Level: "WARN",
+		Msg:   "second-message-with-size",
+		Attrs: map[string]any{"path": "/openai"},
+	})
+	applog.AppendRecentEntryForTesting(applog.Entry{
+		Time:  "3",
+		Level: "ERROR",
+		Msg:   "third-message-with-size",
+		Attrs: map[string]any{"path": "/gemini"},
+	})
+
+	entries := applog.RecentEntries(10)
+	if len(entries) != 1 {
+		t.Fatalf("期望按字节限制淘汰旧日志后只剩 1 条，实际是 %d", len(entries))
+	}
+	if entries[0].Msg != "third-message-with-size" {
+		t.Fatalf("期望只保留最新日志，实际是 %+v", entries)
+	}
+}
+
 func TestGeminiClientAuthIsReplacedWithUpstreamKey(t *testing.T) {
 	received := struct {
 		APIKey string
