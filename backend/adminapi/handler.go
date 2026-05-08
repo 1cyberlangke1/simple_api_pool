@@ -485,14 +485,49 @@ func requestOrigin(r *http.Request) string {
 }
 
 func requestBaseURL(r *http.Request) string {
-	scheme := "http"
-	if r != nil && r.TLS != nil {
-		scheme = "https"
-	}
 	if r == nil {
 		return ""
 	}
+	scheme := forwardedRequestScheme(r)
 	return normalizeOrigin(scheme + "://" + r.Host)
+}
+
+func forwardedRequestScheme(r *http.Request) string {
+	if r == nil {
+		return "http"
+	}
+	if forwardedScheme := forwardedHeaderScheme(r.Header.Get("Forwarded")); forwardedScheme != "" {
+		return forwardedScheme
+	}
+	if forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		protoParts := strings.Split(forwardedProto, ",")
+		if len(protoParts) > 0 {
+			normalizedProto := strings.ToLower(strings.TrimSpace(protoParts[0]))
+			if normalizedProto == "http" || normalizedProto == "https" {
+				return normalizedProto
+			}
+		}
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func forwardedHeaderScheme(rawForwarded string) string {
+	for _, entry := range strings.Split(rawForwarded, ",") {
+		for _, pair := range strings.Split(entry, ";") {
+			parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+			if len(parts) != 2 || !strings.EqualFold(parts[0], "proto") {
+				continue
+			}
+			proto := strings.ToLower(strings.Trim(parts[1], `"`))
+			if proto == "http" || proto == "https" {
+				return proto
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeOrigin(rawOrigin string) string {

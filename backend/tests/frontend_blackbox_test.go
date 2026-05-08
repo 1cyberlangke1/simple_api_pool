@@ -126,6 +126,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="status-view" class="grid content-grid single-column-grid"`)
 		mustContain(t, body, `id="admin-view" class="grid admin-dashboard-grid hidden"`)
 		mustContain(t, body, `id="global-admin-key" name="admin_key" type="password"`)
+		if strings.Contains(body, `公开统计，无需登录。`) {
+			t.Fatal("期望状态页移除“公开统计，无需登录。”文案")
+		}
 	}
 
 	faviconResp, err := http.Get(server.URL + "/favicon.svg")
@@ -164,6 +167,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(scriptBundle, `provider-workbench-grid`) || !strings.Contains(scriptBundle, `key-workspace-panel`) || !strings.Contains(scriptBundle, `provider-config-sidebar`) {
 		t.Fatal("期望前端脚本包含新的 provider 工作台布局结构")
+	}
+	if !strings.Contains(scriptBundle, `status-provider-grid`) || !strings.Contains(string(stylesCSS), `.status-stats-grid`) {
+		t.Fatal("期望状态页使用紧凑横向统计布局")
 	}
 	if !strings.Contains(scriptBundle, `provider-selector-item`) || !strings.Contains(scriptBundle, `data-role="provider-selector"`) {
 		t.Fatal("期望前端脚本包含左侧提供商选择区")

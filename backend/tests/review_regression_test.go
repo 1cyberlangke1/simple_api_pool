@@ -307,6 +307,41 @@ func TestSessionAuthenticatedAdminWriteAllowsSameOriginRequest(t *testing.T) {
 	}
 }
 
+func TestSessionAuthenticatedAdminWriteAllowsForwardedHTTPSOrigin(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
+	loginReq.TLS = &tls.ConnectionState{}
+	loginRec := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(loginRec, loginReq, cfg); err != nil {
+		t.Fatalf("签发管理员会话失败: %v", err)
+	}
+
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(cookies))
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	body := bytes.NewBufferString(`{"token_estimation_enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/api/admin/config", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.AddCookie(cookies[0])
+	rec := httptest.NewRecorder()
+
+	adminHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("转发 HTTPS 同源会话写请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminWriteWithAuthorizationHeaderDoesNotRequireOrigin(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
