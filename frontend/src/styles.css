@@ -355,6 +355,10 @@
       grid-template-columns: 1fr;
     }
 
+    .content-grid.single-column-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
     .admin-dashboard-grid {
       grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
       align-items: stretch;

@@ -185,6 +185,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(indexHTML), `function renderProviderKeysSection(`) {
 		t.Fatal("期望前端具备独立的密钥区域渲染逻辑")
 	}
+	if !strings.Contains(string(indexHTML), `.content-grid.single-column-grid`) {
+		t.Fatal("期望状态页单列布局在宽屏下保持满宽展示")
+	}
 	if !strings.Contains(string(indexHTML), `function updateProviderKeysInState(`) {
 		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
 	}

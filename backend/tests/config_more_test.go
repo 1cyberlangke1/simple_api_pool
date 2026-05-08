@@ -157,3 +157,59 @@ func TestConfigSupportsBulkKeyActions(t *testing.T) {
 		t.Fatalf("期望最终只剩 k1，实际是 %+v", provider.Keys)
 	}
 }
+
+func TestProviderReturnsDetachedKeySlice(t *testing.T) {
+	cfg := config.New(store.New(t.TempDir()))
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "k1", DisabledUntil: 10, ConsecutiveFails: 2},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望读取到提供商")
+	}
+	provider.Keys[0].DisabledUntil = 999
+	provider.Keys[0].ConsecutiveFails = 999
+
+	reloaded, _ := cfg.Provider("openai")
+	if reloaded == nil {
+		t.Fatal("期望再次读取到提供商")
+	}
+	if reloaded.Keys[0].DisabledUntil != 10 || reloaded.Keys[0].ConsecutiveFails != 2 {
+		t.Fatalf("期望 Provider 返回值与内部状态隔离，实际是 %+v", reloaded.Keys[0])
+	}
+}
+
+func TestProvidersReturnsDetachedKeySlices(t *testing.T) {
+	cfg := config.New(store.New(t.TempDir()))
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "gemini",
+		Type: config.Gemini,
+		Keys: []config.Key{
+			{Value: "g1", DisabledUntil: 30, ConsecutiveFails: 1},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	providers := cfg.Providers()
+	if len(providers) != 1 {
+		t.Fatalf("期望 providers 长度为 1，实际是 %d", len(providers))
+	}
+	providers[0].Keys[0].DisabledUntil = 777
+	providers[0].Keys[0].ConsecutiveFails = 777
+
+	reloaded, _ := cfg.Provider("gemini")
+	if reloaded == nil {
+		t.Fatal("期望再次读取到 provider")
+	}
+	if reloaded.Keys[0].DisabledUntil != 30 || reloaded.Keys[0].ConsecutiveFails != 1 {
+		t.Fatalf("期望 Providers 返回值与内部状态隔离，实际是 %+v", reloaded.Keys[0])
+	}
+}

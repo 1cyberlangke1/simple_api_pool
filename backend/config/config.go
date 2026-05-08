@@ -105,7 +105,9 @@ func (c *Config) Providers() []Provider {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	cp := make([]Provider, len(c.state.Providers))
-	copy(cp, c.state.Providers)
+	for i := range c.state.Providers {
+		cp[i] = cloneProvider(c.state.Providers[i])
+	}
 	return cp
 }
 
@@ -114,7 +116,7 @@ func (c *Config) Provider(name string) (*Provider, int) {
 	defer c.mu.RUnlock()
 	for i, p := range c.state.Providers {
 		if p.Name == name {
-			cp := p
+			cp := cloneProvider(p)
 			return &cp, i
 		}
 	}
@@ -358,4 +360,12 @@ func (c *Config) TokenEstimationEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.state.TokenEstimationEnabled
+}
+
+func cloneProvider(p Provider) Provider {
+	cloned := p
+	if p.Keys != nil {
+		cloned.Keys = append([]Key(nil), p.Keys...)
+	}
+	return cloned
 }
