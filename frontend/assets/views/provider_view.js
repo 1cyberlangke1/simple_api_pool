@@ -1,23 +1,5 @@
 /* ---------- provider view ---------- */
 
-    function renderProviderPager(providers) {
-      const totalProviders = providers.length;
-      const currentProvider = getCurrentProvider();
-      const currentNumber = totalProviders ? state.providerPageIndex + 1 : 0;
-
-      refs.providerPagePrev.disabled = currentNumber <= 1;
-      refs.providerPageNext.disabled = !totalProviders || currentNumber >= totalProviders;
-
-      const keySearchInput = getKeySearchInputElement();
-      if (keySearchInput) {
-        keySearchInput.disabled = totalProviders === 0;
-      }
-
-      refs.providerPageIndicator.textContent = totalProviders
-        ? currentNumber + " / " + totalProviders + " · " + currentProvider.name
-        : "-";
-    }
-
     function providerTypeOptions(selected) {
       const options = [
         ["openai_chat", "OpenAI Chat"],
@@ -38,6 +20,41 @@
 
     function providerStrategyLabel(value) {
       return value === "fill" ? t("strategy.fill") : t("strategy.roundRobin");
+    }
+
+    function renderProviderSelector(providers) {
+      syncProviderSearchInput();
+      if (!refs.providerSelectorList) {
+        return;
+      }
+      if (!providers.length) {
+        refs.providerSelectorList.innerHTML = `<div class="empty">${escapeHTML(state.providerSearchQuery ? t("admin.providerSelectorEmpty") : t("admin.loginToLoad"))}</div>`;
+        return;
+      }
+
+      const currentProvider = getCurrentProvider();
+      refs.providerSelectorList.innerHTML = `
+        <div class="provider-selector-stack">
+          ${providers.map((provider) => {
+            const stats = state.stats[provider.name] || {};
+            const keySummary = summarizeProviderKeys(provider.keys || []);
+            const isActive = currentProvider && currentProvider.name === provider.name;
+            return `
+              <button class="provider-selector-item${isActive ? " active" : ""}" type="button" data-role="provider-selector" data-provider="${escapeHTML(provider.name)}">
+                <span class="provider-selector-name-row">
+                  <span class="provider-selector-name">${escapeHTML(provider.name)}</span>
+                  <span class="provider-selector-type">${escapeHTML(provider.type)}</span>
+                </span>
+                <span class="provider-selector-meta">
+                  <span>${escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 }))}</span>
+                  <span>${escapeHTML(t("provider.tagAvailableKeys", { available: keySummary.available, total: (provider.keys || []).length }))}</span>
+                  ${isActive ? `<span>${escapeHTML(t("provider.selected"))}</span>` : ""}
+                </span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
     function renderProviderOverview(provider, stats, keySummary) {
@@ -124,6 +141,7 @@
         total: filteredKeys.length
       });
       const importDraftValue = state.providerImportDraftsByName[provider.name] || "";
+      const importExpanded = Boolean(state.providerImportExpandedByName[provider.name]);
 
       return `
         <section class="provider-column-panel key-workspace-panel">
@@ -132,14 +150,16 @@
               <div class="provider-column-title">${escapeHTML(t("provider.upstreamKeys"))}</div>
               <div class="provider-meta">${escapeHTML(selectionSummary)}</div>
             </div>
-            <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
           </div>
 
           <div class="key-workspace-toolbar">
-            <label class="search-label workspace-search">
-              <span>${escapeHTML(t("admin.keySearch"))}</span>
-              <input id="key-search" data-role="key-search-input" type="search" value="${escapeHTML(state.keySearchQuery)}" placeholder="${escapeHTML(t("admin.keySearchPlaceholder"))}">
-            </label>
+            <div class="workspace-search-stack">
+              <label class="search-label workspace-search">
+                <span>${escapeHTML(t("admin.keySearch"))}</span>
+                <input id="key-search" data-role="key-search-input" type="search" value="${escapeHTML(state.keySearchQuery)}" placeholder="${escapeHTML(t("admin.keySearchPlaceholder"))}">
+              </label>
+              <button class="secondary workspace-import-toggle" type="button" data-action="toggle-import-keys" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t(importExpanded ? "admin.hideImportKeys" : "admin.importKeys"))}</button>
+            </div>
             <div class="workspace-action-stack">
               <div class="key-list-summary">
                 <span>${escapeHTML(selectionSummary)}</span>
@@ -155,16 +175,18 @@
             </div>
           </div>
 
-          <form class="provider-keys-form key-import-form" data-provider="${escapeHTML(provider.name)}">
-            <label>
-              ${escapeHTML(t("provider.batchImport"))}
-              <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}">${escapeHTML(importDraftValue)}</textarea>
-            </label>
-            <div class="actions key-import-actions">
-              <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
-            </div>
-            <div class="inline-status" data-role="keys-status"></div>
-          </form>
+          ${importExpanded ? `
+            <form class="provider-keys-form key-import-form" data-provider="${escapeHTML(provider.name)}">
+              <label>
+                ${escapeHTML(t("provider.batchImport"))}
+                <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}">${escapeHTML(importDraftValue)}</textarea>
+              </label>
+              <div class="actions key-import-actions">
+                <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+              </div>
+              <div class="inline-status" data-role="keys-status"></div>
+            </form>
+          ` : ""}
 
           ${renderKeyList(provider, pageKeys, selectedKeys)}
 
@@ -241,6 +263,7 @@
 
             <div class="actions provider-config-actions">
               <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+              <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
             </div>
             <div class="inline-status" data-role="provider-status"></div>
           </form>
@@ -250,16 +273,24 @@
 
     function renderProviders(providers) {
       normalizeProviderWorkspaceState();
-      renderProviderPager(providers);
       syncKeySearchInput();
+      const visibleProviders = filterProviders(state.providerSearchQuery);
 
       if (!providers.length) {
         const emptyText = state.adminAuthenticated ? t("provider.empty") : t("admin.loginToLoad");
         refs.providerList.innerHTML = `<div class="empty">${escapeHTML(emptyText)}</div>`;
         return;
       }
+      if (state.providerSearchQuery && !visibleProviders.length) {
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.providerSelectorEmpty"))}</div>`;
+        return;
+      }
 
       const provider = getCurrentProvider();
+      if (!provider) {
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(t("admin.providerSelectorEmpty"))}</div>`;
+        return;
+      }
       const stats = state.stats[provider.name] || {};
       const keys = provider.keys || [];
       const keySummary = summarizeProviderKeys(keys);

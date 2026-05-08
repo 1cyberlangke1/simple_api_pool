@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 func main() {
@@ -61,16 +62,21 @@ func outputDirPath(rootDir string) string {
 }
 
 type buildMetadata struct {
-	version   string
-	revision  string
-	buildTime string
+	version      string
+	revision     string
+	buildTime    string
+	assetVersion string
 }
 
 func loadBuildMetadata(rootDir string) buildMetadata {
+	version := firstNonEmpty(strings.TrimSpace(os.Getenv("APP_VERSION")), gitOutput(rootDir, "describe", "--tags", "--always", "--dirty"), "dev")
+	revision := firstNonEmpty(strings.TrimSpace(os.Getenv("APP_REVISION")), gitOutput(rootDir, "rev-parse", "--short", "HEAD"), "local")
+	buildTime := firstNonEmpty(strings.TrimSpace(os.Getenv("APP_BUILD_TIME")), time.Now().UTC().Format(time.RFC3339), "unknown")
 	return buildMetadata{
-		version:   firstNonEmpty(strings.TrimSpace(os.Getenv("APP_VERSION")), gitOutput(rootDir, "describe", "--tags", "--always", "--dirty"), "dev"),
-		revision:  firstNonEmpty(strings.TrimSpace(os.Getenv("APP_REVISION")), gitOutput(rootDir, "rev-parse", "--short", "HEAD"), "local"),
-		buildTime: firstNonEmpty(strings.TrimSpace(os.Getenv("APP_BUILD_TIME")), time.Now().UTC().Format(time.RFC3339), "unknown"),
+		version:      version,
+		revision:     revision,
+		buildTime:    buildTime,
+		assetVersion: buildScopedAssetVersion(revision, buildTime),
 	}
 }
 
@@ -79,10 +85,29 @@ func replaceBuildTokens(content []byte, metadata buildMetadata) []byte {
 		"__APP_VERSION__", metadata.version,
 		"__APP_REVISION__", metadata.revision,
 		"__APP_BUILD_TIME__", metadata.buildTime,
-		"__ASSET_VERSION__", metadata.revision,
+		"__ASSET_VERSION__", metadata.assetVersion,
 		"dev / local / unknown", metadata.version+" / "+metadata.revision+" / "+metadata.buildTime,
 	)
 	return []byte(replacer.Replace(string(content)))
+}
+
+func buildScopedAssetVersion(revision string, buildTime string) string {
+	rawValue := firstNonEmpty(revision, "local") + "-" + firstNonEmpty(buildTime, "unknown")
+	var builder strings.Builder
+	lastWasDash := false
+	for _, char := range rawValue {
+		if unicode.IsLetter(char) || unicode.IsDigit(char) {
+			builder.WriteRune(char)
+			lastWasDash = false
+			continue
+		}
+		if lastWasDash {
+			continue
+		}
+		builder.WriteByte('-')
+		lastWasDash = true
+	}
+	return strings.Trim(builder.String(), "-")
 }
 
 func gitOutput(rootDir string, args ...string) string {

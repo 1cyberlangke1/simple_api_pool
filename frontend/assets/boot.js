@@ -31,14 +31,6 @@
       renderRecentLogs(state.recentLogs || []);
     });
 
-    refs.providerPagePrev.addEventListener("click", () => {
-      setProviderPage(state.providerPageIndex - 1);
-    });
-
-    refs.providerPageNext.addEventListener("click", () => {
-      setProviderPage(state.providerPageIndex + 1);
-    });
-
     refs.logModal.addEventListener("click", (event) => {
       if (event.target === refs.logModal) {
         setLogModalOpen(false);
@@ -133,8 +125,7 @@
       state.providers = [];
       state.stats = {};
       normalizeProviderWorkspaceState();
-      refs.providerList.innerHTML = '<div class="empty">' + escapeHTML(t("admin.loggedOut")) + "</div>";
-      renderProviderPager([]);
+      renderAdminWorkspaceProviders();
       renderRecentLogs([]);
       refs.logoutButton.classList.add("hidden");
       if (!logoutFailed) {
@@ -227,6 +218,16 @@
 
     refs.globalForm.addEventListener("input", syncGlobalConfigDraftFromForm);
     refs.createForm.addEventListener("input", syncCreateProviderDraftFromForm);
+    refs.providerSelectorSearch.addEventListener("input", () => {
+      state.providerSearchQuery = refs.providerSelectorSearch.value.trim();
+      if (state.providerSearchDebounceTimer !== null) {
+        clearTimeout(state.providerSearchDebounceTimer);
+      }
+      state.providerSearchDebounceTimer = setTimeout(() => {
+        state.providerSearchDebounceTimer = null;
+        renderAdminWorkspaceProviders();
+      }, 100);
+    });
     refs.providerListPanelBody.addEventListener("input", syncProviderPanelDraftFromEvent);
     refs.providerListPanelBody.addEventListener("input", (event) => {
       const keySearchInput = event.target.closest('input[data-role="key-search-input"]');
@@ -279,6 +280,13 @@
 
       try {
         const actionHandlers = {
+          "toggle-import-keys": async () => {
+            if (!currentProvider) {
+              return;
+            }
+            state.providerImportExpandedByName[currentProvider.name] = !state.providerImportExpandedByName[currentProvider.name];
+            renderAdminWorkspaceProviders();
+          },
           "delete-provider": async () => deleteProvider(provider),
           "delete-key": async () => deleteKey(provider, key),
           "clear-cache": async () => clearProviderCache(provider),
@@ -345,6 +353,14 @@
       } catch (error) {
         setMessage(refs.adminActionStatus, error.message || t("error.action"), "error");
       }
+    });
+
+    refs.providerSelectorList.addEventListener("click", (event) => {
+      const button = event.target.closest('button[data-role="provider-selector"]');
+      if (!button) {
+        return;
+      }
+      setProviderByName(button.dataset.provider);
     });
 
     function init() {

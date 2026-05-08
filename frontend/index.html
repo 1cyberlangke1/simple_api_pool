@@ -6,7 +6,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="shortcut icon" href="/favicon.svg">
   <title>Simple API Pool 控制台</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=88bc958">
+  <link rel="stylesheet" href="/assets/styles.css?v=8a37307-2026-05-08T14-51-40Z">
 </head>
 <body>
   <main class="shell">
@@ -18,7 +18,7 @@
           <p id="hero-copy" data-i18n="hero.statusCopy">实时查看各提供商的请求与 Token 用量。</p>
           <div id="build-version" class="hero-meta">
             <strong data-i18n="meta.version">版本</strong>
-            <span id="build-version-value">v0.1.28-dirty / 88bc958 / 2026-05-08T14:27:37Z</span>
+            <span id="build-version-value">v0.1.28-1-g8a37307-dirty / 8a37307 / 2026-05-08T14:51:40Z</span>
           </div>
         </div>
         <div class="hero-actions">
@@ -99,7 +99,7 @@
             代理入口 <code>/{provider}/...</code> · 缓存入口 <code>/cache/{provider}/...</code>
           </div>
 
-          <div class="panel-section">
+          <div class="panel-section admin-rail-section">
             <h3 data-i18n="admin.globalTitle">全局配置</h3>
             <form id="global-config-form">
               <div class="form-grid">
@@ -123,7 +123,22 @@
             </form>
           </div>
 
-          <div class="panel-section">
+          <div class="panel-section admin-rail-section">
+            <div class="panel-header admin-rail-header">
+              <h3 data-i18n="admin.providerListTitle">提供商列表</h3>
+              <button id="open-log-modal" class="secondary" type="button" data-i18n="admin.viewLogs">查看日志</button>
+            </div>
+            <div class="panel-subtitle" data-i18n="admin.providerListSub">一次只聚焦一个提供商，分页处理配置与密钥。</div>
+            <label class="search-label workspace-search provider-selector-search">
+              <span data-i18n="admin.providerSearch">搜索提供商</span>
+              <input id="provider-selector-search" type="search" data-i18n-placeholder="admin.providerSearchPlaceholder" placeholder="按名称筛选左侧提供商">
+            </label>
+            <div id="provider-selector-list" class="provider-selector-list">
+              <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
+            </div>
+          </div>
+
+          <div class="panel-section admin-rail-section">
             <h3 data-i18n="admin.newProvider">新增提供商</h3>
             <form id="provider-create-form">
               <div class="form-grid">
@@ -188,20 +203,12 @@
       </article>
 
       <div class="admin-workspace-column">
-        <article class="panel scroll-panel">
+        <article class="panel scroll-panel admin-workspace-panel">
           <div class="panel-header">
-            <h2 data-i18n="admin.providerListTitle">提供商列表</h2>
-            <button id="open-log-modal" class="secondary" type="button" data-i18n="admin.viewLogs">查看日志</button>
+            <h2 data-i18n="admin.providerWorkspaceTitle">提供商工作台</h2>
           </div>
-          <div class="panel-subtitle" data-i18n="admin.providerListSub">一次只聚焦一个提供商，分页处理配置与密钥。</div>
+          <div class="panel-subtitle" data-i18n="admin.providerWorkspaceSub">先选提供商，再在同一工作区完成搜索、导入、批量操作和配置调整。</div>
           <div id="provider-list-panel-body" class="scroll-panel-body provider-workspace-body">
-            <div class="provider-toolbar">
-              <div class="provider-pager">
-                <button id="provider-page-prev" class="secondary" type="button" data-i18n="admin.prevProvider">上一项</button>
-                <div id="provider-page-indicator" class="provider-pager-indicator">-</div>
-                <button id="provider-page-next" class="secondary" type="button" data-i18n="admin.nextProvider">下一项</button>
-              </div>
-            </div>
             <div id="provider-list" class="list provider-catalog">
               <div class="empty" data-i18n="admin.loginToLoad">登录后加载提供商配置</div>
             </div>
@@ -230,16 +237,16 @@
     </div>
   </div>
 
-  <script src="/assets/core.js?v=88bc958" defer></script>
-  <script src="/assets/state.js?v=88bc958" defer></script>
-  <script src="/assets/i18n.js?v=88bc958" defer></script>
-  <script src="/assets/app.js?v=88bc958" defer></script>
-  <script src="/assets/views/status_view.js?v=88bc958" defer></script>
-  <script src="/assets/views/logs_view.js?v=88bc958" defer></script>
-  <script src="/assets/views/provider_view.js?v=88bc958" defer></script>
-  <script src="/assets/api.js?v=88bc958" defer></script>
-  <script src="/assets/actions/polling_actions.js?v=88bc958" defer></script>
-  <script src="/assets/boot.js?v=88bc958" defer></script>
+  <script src="/assets/core.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/state.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/i18n.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/app.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/views/status_view.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/views/logs_view.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/views/provider_view.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/api.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/actions/polling_actions.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
+  <script src="/assets/boot.js?v=8a37307-2026-05-08T14-51-40Z" defer></script>
 </body>
 </html>
 

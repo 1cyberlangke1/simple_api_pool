@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -60,6 +61,7 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		allScripts = append(allScripts, string(scriptBody))
 	}
 	scriptBundle := strings.Join(allScripts, "\n\n")
+	coreJS := scriptContents["/assets/core.js"]
 	apiJS := scriptContents["/assets/api.js"]
 
 	mux := http.NewServeMux()
@@ -105,10 +107,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `<button id="nav-admin"`)
 		mustContain(t, body, `id="login-form"`)
 		mustContain(t, body, `id="admin-workspace"`)
+		mustContain(t, body, `id="provider-selector-search"`)
+		mustContain(t, body, `id="provider-selector-list"`)
 		mustContain(t, body, `id="provider-list"`)
-		mustContain(t, body, `id="provider-page-prev"`)
-		mustContain(t, body, `id="provider-page-next"`)
-		mustContain(t, body, `id="provider-page-indicator"`)
 		mustContain(t, body, `id="recent-log-list"`)
 		mustContain(t, body, `id="open-log-modal"`)
 		mustContain(t, body, `id="log-modal"`)
@@ -147,6 +148,11 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(scriptBundle, `const STATUS_POLL_INTERVAL_MS =`) {
 		t.Fatal("期望前端定义状态轮询间隔")
 	}
+	assetVersion := extractSingleFrontendAssetVersion(t, string(indexHTML))
+	rawRevision := extractJavaScriptStringConstant(t, coreJS, "RAW_APP_REVISION")
+	if assetVersion == rawRevision {
+		t.Fatalf("期望前端资源版本号独立于 Git revision，避免浏览器继续复用旧缓存；当前两者都为 %q", assetVersion)
+	}
 	if !strings.Contains(scriptBundle, `overviewEtags`) {
 		t.Fatal("期望前端维护总览 ETag 状态")
 	}
@@ -159,6 +165,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(scriptBundle, `provider-workbench-grid`) || !strings.Contains(scriptBundle, `key-workspace-panel`) || !strings.Contains(scriptBundle, `provider-config-sidebar`) {
 		t.Fatal("期望前端脚本包含新的 provider 工作台布局结构")
 	}
+	if !strings.Contains(scriptBundle, `provider-selector-item`) || !strings.Contains(scriptBundle, `data-role="provider-selector"`) {
+		t.Fatal("期望前端脚本包含左侧提供商选择区")
+	}
 	if !strings.Contains(scriptBundle, `data-action="select-page-keys"`) ||
 		!strings.Contains(scriptBundle, `data-action="invert-page-keys"`) ||
 		!strings.Contains(scriptBundle, `data-action="enable-selected-keys"`) ||
@@ -168,6 +177,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(scriptBundle, `data-role="key-search-input"`) {
 		t.Fatal("期望搜索 Key 输入框位于动态 key 工作区内")
+	}
+	if !strings.Contains(scriptBundle, `data-action="toggle-import-keys"`) {
+		t.Fatal("期望导入 Key 入口贴近搜索区并支持展开收起")
 	}
 	if !strings.Contains(scriptBundle, `const API_BASE = "/api"`) {
 		t.Fatal("期望前端脚本包含 API_BASE 常量")
@@ -250,8 +262,8 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(stylesCSS), `terminal-log-entry`) {
 		t.Fatal("期望前端使用终端风格日志样式")
 	}
-	if !strings.Contains(scriptBundle, `function renderProviderPager(`) {
-		t.Fatal("期望前端具备提供商分页渲染逻辑")
+	if !strings.Contains(scriptBundle, `function renderProviderSelector(`) {
+		t.Fatal("期望前端具备左侧提供商选择区渲染逻辑")
 	}
 	if !strings.Contains(scriptBundle, `function filterProviderKeys(`) {
 		t.Fatal("期望前端具备密钥搜索过滤逻辑")
@@ -265,8 +277,8 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(stylesCSS), `.admin-sidebar`) {
 		t.Fatal("期望管理页保留侧栏样式")
 	}
-	if !strings.Contains(string(stylesCSS), `.provider-toolbar-grid`) || !strings.Contains(string(stylesCSS), `justify-content: flex-start`) {
-		t.Fatal("期望管理页工具条在宽屏下给主编辑区留出更多横向空间")
+	if !strings.Contains(string(stylesCSS), `.provider-selector-list`) || !strings.Contains(string(stylesCSS), `.provider-selector-item.active`) {
+		t.Fatal("期望管理页在左侧提供提供商选择列表，并高亮当前项")
 	}
 	if !strings.Contains(scriptBundle, `function updateProviderKeysInState(`) {
 		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
@@ -333,4 +345,30 @@ func mustContain(t *testing.T, body, needle string) {
 	if !strings.Contains(body, needle) {
 		t.Fatalf("期望页面内容包含 %q", needle)
 	}
+}
+
+func extractSingleFrontendAssetVersion(t *testing.T, indexHTML string) string {
+	t.Helper()
+	pattern := regexp.MustCompile(`(?:href|src)="[^"]+\?v=([^"]+)"`)
+	matches := pattern.FindAllStringSubmatch(indexHTML, -1)
+	if len(matches) == 0 {
+		t.Fatal("期望前端入口页为静态资源附带版本号")
+	}
+	version := matches[0][1]
+	for _, match := range matches[1:] {
+		if match[1] != version {
+			t.Fatalf("期望同一份前端入口页中的静态资源版本号保持一致，实际发现 %q 和 %q", version, match[1])
+		}
+	}
+	return version
+}
+
+func extractJavaScriptStringConstant(t *testing.T, scriptBody string, constantName string) string {
+	t.Helper()
+	pattern := regexp.MustCompile(`const ` + regexp.QuoteMeta(constantName) + ` = "([^"]+)";`)
+	match := pattern.FindStringSubmatch(scriptBody)
+	if len(match) != 2 {
+		t.Fatalf("期望前端脚本包含字符串常量 %s", constantName)
+	}
+	return match[1]
 }

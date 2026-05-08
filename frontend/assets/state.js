@@ -28,6 +28,8 @@
       recentLogs: [],
       hidePanelLogs: true,
       providerPageIndex: 0,
+      providerSearchQuery: "",
+      providerSearchDebounceTimer: null,
       keySearchQuery: "",
       keySearchDebounceTimer: null,
       keyPageIndexByProvider: {},
@@ -42,6 +44,7 @@
       providerDraftDirtyByName: {},
       providerImportDraftsByName: {},
       providerImportDirtyByName: {},
+      providerImportExpandedByName: {},
       overviewEtags: {
         status: "",
         admin: ""
@@ -225,6 +228,8 @@
 
     function renderAdminWorkspaceProviders() {
       const focusSnapshot = rememberWorkspaceFocus();
+      const visibleProviders = ensureProviderSelectionMatchesFilter();
+      renderProviderSelector(visibleProviders);
       renderProviders(state.providers || []);
       restoreWorkspaceFocus(focusSnapshot);
     }
@@ -233,6 +238,7 @@
       const providers = Array.isArray(state.providers) ? state.providers : [];
       if (!providers.length) {
         state.providerPageIndex = 0;
+        state.providerSearchQuery = "";
         state.keySearchQuery = "";
         state.keyPageIndexByProvider = {};
         state.selectedKeysByProvider = {};
@@ -263,6 +269,7 @@
           delete state.providerDraftDirtyByName[providerName];
           delete state.providerImportDraftsByName[providerName];
           delete state.providerImportDirtyByName[providerName];
+          delete state.providerImportExpandedByName[providerName];
         }
       });
 
@@ -276,6 +283,9 @@
         if (!(provider.name in state.providerImportDraftsByName)) {
           state.providerImportDraftsByName[provider.name] = "";
           state.providerImportDirtyByName[provider.name] = false;
+        }
+        if (!(provider.name in state.providerImportExpandedByName)) {
+          state.providerImportExpandedByName[provider.name] = false;
         }
       }
     }
@@ -302,8 +312,52 @@
       renderAdminWorkspaceProviders();
     }
 
+    function setProviderByName(providerName, shouldRender) {
+      const nextIndex = (state.providers || []).findIndex((provider) => provider.name === providerName);
+      if (nextIndex === -1) {
+        return;
+      }
+      state.providerPageIndex = nextIndex;
+      state.keySearchQuery = "";
+      if (shouldRender === false) {
+        return;
+      }
+      renderAdminWorkspaceProviders();
+    }
+
+    function filterProviders(searchQuery) {
+      const providers = Array.isArray(state.providers) ? state.providers : [];
+      const normalizedQuery = String(searchQuery || "").trim().toLowerCase();
+      if (!normalizedQuery) {
+        return providers;
+      }
+      const queryParts = normalizedQuery.split(/\s+/).filter(Boolean);
+      return providers.filter((provider) => {
+        const providerName = String(provider.name || "").toLowerCase();
+        const providerType = String(provider.type || "").toLowerCase();
+        return queryParts.every((queryPart) => providerName.includes(queryPart) || providerType.includes(queryPart));
+      });
+    }
+
+    function ensureProviderSelectionMatchesFilter() {
+      const filteredProviders = filterProviders(state.providerSearchQuery);
+      if (!filteredProviders.length) {
+        return filteredProviders;
+      }
+      const currentProvider = getCurrentProvider();
+      if (currentProvider && filteredProviders.some((provider) => provider.name === currentProvider.name)) {
+        return filteredProviders;
+      }
+      setProviderByName(filteredProviders[0].name, false);
+      return filteredProviders;
+    }
+
     function getKeySearchInputElement() {
       return document.getElementById("key-search");
+    }
+
+    function getProviderSearchInputElement() {
+      return refs.providerSelectorSearch;
     }
 
     function syncKeySearchInput() {
@@ -312,6 +366,14 @@
         return;
       }
       keySearchInput.value = state.keySearchQuery;
+    }
+
+    function syncProviderSearchInput() {
+      const providerSearchInput = getProviderSearchInputElement();
+      if (!providerSearchInput) {
+        return;
+      }
+      providerSearchInput.value = state.providerSearchQuery;
     }
 
     function getSelectedKeys(providerName) {

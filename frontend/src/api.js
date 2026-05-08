@@ -119,6 +119,7 @@
 
     async function saveProvider(form, statusElement) {
       const payload = readProviderPayload(form);
+      const shouldFocusProvider = form === refs.createForm ? payload.name : "";
       const response = await request("/admin/providers", {
         method: "POST",
         body: JSON.stringify(payload)
@@ -139,6 +140,9 @@
       setMessage(statusElement, t("admin.savedTip"), "ok");
       setMessage(refs.adminActionStatus, t("admin.savedProvider", { name: payload.name }), "ok");
       await loadAdminOverview();
+      if (shouldFocusProvider) {
+        setProviderByName(shouldFocusProvider);
+      }
     }
 
     async function saveGlobalConfig() {
@@ -198,6 +202,7 @@
       const nextKeys = await response.json();
       state.providerImportDraftsByName[provider] = "";
       state.providerImportDirtyByName[provider] = false;
+      state.providerImportExpandedByName[provider] = false;
       updateProviderKeysInState(provider, nextKeys);
       setMessage(statusElement, t("admin.importDone"), "ok");
       setMessage(refs.adminActionStatus, t("admin.importDoneTip", { provider: provider }), "ok");
