@@ -188,6 +188,12 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(string(indexHTML), `.content-grid.single-column-grid`) {
 		t.Fatal("期望状态页单列布局在宽屏下保持满宽展示")
 	}
+	if !strings.Contains(string(indexHTML), `.admin-sidebar`) || !strings.Contains(string(indexHTML), `max-height: calc(100vh - 40px)`) {
+		t.Fatal("期望管理页侧栏在桌面端限制高度并独立滚动")
+	}
+	if !strings.Contains(string(indexHTML), `.provider-toolbar-grid`) || !strings.Contains(string(indexHTML), `justify-content: flex-start`) {
+		t.Fatal("期望管理页工具条在宽屏下给主编辑区留出更多横向空间")
+	}
 	if !strings.Contains(string(indexHTML), `function updateProviderKeysInState(`) {
 		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
 	}

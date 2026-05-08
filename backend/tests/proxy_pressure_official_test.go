@@ -8,10 +8,14 @@ import (
 func TestDeterministicRandomOfficialTrafficThroughProxy(t *testing.T) {
 	const (
 		seed      = int64(20260508)
-		scenarios = 48
+		scenarios = 128
 	)
 
 	traffic := buildDeterministicRandomTrafficCases(seed, scenarios)
+	concurrentRequests := len(traffic) - randomTrafficWarmupCount(len(traffic))
+	if concurrentRequests < 100 {
+		t.Fatalf("期望至少发起 100 个并发请求，实际只有 %d", concurrentRequests)
+	}
 	harness := newRandomTrafficHarness(t, traffic)
 	defer harness.Close()
 
@@ -44,7 +48,7 @@ func TestDeterministicRandomOfficialTrafficThroughProxy(t *testing.T) {
 		t.Fatalf("期望固定 seed=%d 的重复缓存流量至少产生一次缓存命中", seed)
 	}
 
-	t.Logf("seed=%d scenarios=%d upstream_calls=%d cache_entries=%d cache_hits=%d", seed, len(traffic), harness.TotalUpstreamCalls(), harness.TotalCacheEntries(t), harness.TotalCacheHitCount())
+	t.Logf("seed=%d scenarios=%d concurrent_requests=%d upstream_calls=%d cache_entries=%d cache_hits=%d", seed, len(traffic), concurrentRequests, harness.TotalUpstreamCalls(), harness.TotalCacheEntries(t), harness.TotalCacheHitCount())
 }
 
 func assertProxySuccess(t *testing.T, recorder proxyScenarioResult) {

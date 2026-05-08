@@ -180,7 +180,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if requestBodyComplete {
 				analysis.requestBytes = len(analysis.requestBody)
 				logFields.RequestBytes = analysis.requestBytes
-				analysis = analyzeRequestBody(p.Type, analysis.requestBody, isStream)
+				analysis = analyzeRequestBody(p.Type, parts.suffix, analysis.requestBody, isStream)
 				if !logFields.Stream {
 					logFields.Stream = analysis.stream
 				}
@@ -291,7 +291,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	streamResponse := isStream || isStreamingResponse(resp.Header)
 	logFields.Stream = streamResponse
 	if streamResponse {
-		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, analysis, recordedRequestBody, cacheEligible, parts.useCache, int64(p.CacheMaxEntries), &logFields)
+		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, parts.suffix, analysis, recordedRequestBody, cacheEligible, parts.useCache, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
@@ -330,7 +330,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.keyring.RecordSuccess(parts.provider, upstreamKey)
 
 	if cacheEligible {
-		analysis = ensureCacheAnalysis(analysis, p.Type, recordedRequestBody)
+		analysis = ensureCacheAnalysis(analysis, p.Type, parts.suffix, recordedRequestBody)
 		if analysis.cacheKeyReady {
 			stored := h.cache.SetForRequestByKey(parts.provider, p.Type, analysis.cacheKey, respBody, resp.StatusCode, cacheableHeaders(resp.Header, false), usage.InputTokens, usage.OutputTokens, int64(p.CacheMaxEntries), false)
 			if stored {

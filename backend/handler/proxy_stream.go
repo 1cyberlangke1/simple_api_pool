@@ -10,7 +10,7 @@ import (
 	"simple-api-pool/token"
 )
 
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
+func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
@@ -69,7 +69,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	h.keyring.RecordSuccess(provider, upstreamKey)
 
 	if cacheEnabled {
-		analysis = ensureCacheAnalysis(analysis, providerType, recordedRequestBody)
+		analysis = ensureCacheAnalysis(analysis, providerType, suffix, recordedRequestBody)
 		if analysis.cacheKeyReady {
 			stored := h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
 			if stored {

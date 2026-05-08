@@ -22,7 +22,7 @@ type requestAnalysis struct {
 	requestBytes  int
 }
 
-func analyzeRequestBody(providerType config.ProviderType, body []byte, streamHint bool) requestAnalysis {
+func analyzeRequestBody(providerType config.ProviderType, suffix string, body []byte, streamHint bool) requestAnalysis {
 	analysis := requestAnalysis{
 		stream:       streamHint,
 		requestBody:  body,
@@ -35,7 +35,7 @@ func analyzeRequestBody(providerType config.ProviderType, body []byte, streamHin
 		return analysis
 	}
 
-	analysis.model = gjson.GetBytes(body, "model").String()
+	analysis.model = extractRequestModel(providerType, suffix, body)
 	if !analysis.stream {
 		streamValue := gjson.GetBytes(body, "stream")
 		if streamValue.Exists() {
@@ -280,7 +280,7 @@ func readResponseBodyWithinLimit(body io.Reader, limitBytes int64) ([]byte, bool
 	return responseBody, true, nil
 }
 
-func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderType, recordedRequestBody *recordedRequestBody) requestAnalysis {
+func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderType, suffix string, recordedRequestBody *recordedRequestBody) requestAnalysis {
 	if analysis.cacheKeyReady {
 		return analysis
 	}
@@ -288,5 +288,41 @@ func ensureCacheAnalysis(analysis requestAnalysis, providerType config.ProviderT
 	if !ok {
 		return analysis
 	}
-	return analyzeRequestBody(providerType, recordedBody, analysis.stream)
+	return analyzeRequestBody(providerType, suffix, recordedBody, analysis.stream)
+}
+
+func extractRequestModel(providerType config.ProviderType, suffix string, body []byte) string {
+	model := gjson.GetBytes(body, "model").String()
+	if model != "" {
+		return model
+	}
+
+	switch providerType {
+	case config.Gemini:
+		return extractGeminiModelFromSuffix(suffix)
+	default:
+		return ""
+	}
+}
+
+func extractGeminiModelFromSuffix(suffix string) string {
+	const marker = "/models/"
+
+	index := strings.Index(suffix, marker)
+	if index == -1 {
+		return ""
+	}
+
+	modelPath := suffix[index+len(marker):]
+	if modelPath == "" {
+		return ""
+	}
+
+	if slashIndex := strings.Index(modelPath, "/"); slashIndex >= 0 {
+		modelPath = modelPath[:slashIndex]
+	}
+	if colonIndex := strings.Index(modelPath, ":"); colonIndex >= 0 {
+		modelPath = modelPath[:colonIndex]
+	}
+	return strings.TrimSpace(modelPath)
 }
