@@ -289,3 +289,54 @@ func TestDecorateCachedStreamBodyUsesOfficialCachedTokenFields(t *testing.T) {
 		t.Fatalf("期望 Gemini 流式缓存命中带 cachedContentTokenCount，实际是 %s", geminiStream)
 	}
 }
+
+func TestDecorateCachedStreamBodyPreservesGeminiEventsAcrossLineEndings(t *testing.T) {
+	testCases := []struct {
+		name       string
+		streamBody string
+	}{
+		{
+			name:       "lf",
+			streamBody: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\ndata: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
+		},
+		{
+			name:       "crlf",
+			streamBody: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\r\n\r\ndata: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\r\n\r\n",
+		},
+		{
+			name:       "cr",
+			streamBody: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\r\rdata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\r\rdata: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\r\r",
+		},
+		{
+			name:       "mixed",
+			streamBody: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\ndata: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\r\r",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			geminiStream := cache.DecorateCachedStreamBody(
+				config.Gemini,
+				[]byte(tc.streamBody),
+				6,
+				5,
+			)
+			streamText := string(geminiStream)
+			if strings.Count(streamText, "data: ") != 3 {
+				t.Fatalf("期望保留 3 个 Gemini SSE 事件，实际是 %d，内容是 %s", strings.Count(streamText, "data: "), streamText)
+			}
+			if !strings.Contains(streamText, `"text":"Hello"`) || !strings.Contains(streamText, `"text":" Gemini"`) {
+				t.Fatalf("期望保留 Gemini 的完整多事件文本，实际是 %s", streamText)
+			}
+			if !strings.Contains(streamText, `"cachedContentTokenCount":11`) {
+				t.Fatalf("期望 Gemini 流式缓存命中带 cachedContentTokenCount，实际是 %s", streamText)
+			}
+			if strings.Contains(streamText, "\r") {
+				t.Fatalf("期望输出统一规范化为 LF 分隔，实际是 %q", streamText)
+			}
+			if !strings.Contains(streamText, "\n\ndata: ") {
+				t.Fatalf("期望输出使用 LF 空行分隔事件，实际是 %q", streamText)
+			}
+		})
+	}
+}

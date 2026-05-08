@@ -215,15 +215,20 @@ func decorateGeminiStreamUsage(streamBody []byte, totalTokens int64) []byte {
 }
 
 func splitSSEChunks(streamBody []byte) []string {
-	rawChunks := strings.SplitAfter(string(streamBody), "\n\n")
+	normalized := normalizeSSELineEndings(string(streamBody))
+	rawChunks := strings.Split(normalized, "\n\n")
 	chunks := make([]string, 0, len(rawChunks))
 	for _, chunk := range rawChunks {
 		if chunk == "" {
 			continue
 		}
-		chunks = append(chunks, chunk)
+		chunks = append(chunks, chunk+"\n\n")
 	}
 	return chunks
+}
+
+func normalizeSSELineEndings(body string) string {
+	return strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(body)
 }
 
 func sseChunkPayload(chunk string) (map[string]any, bool) {

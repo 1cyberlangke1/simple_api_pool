@@ -908,9 +908,9 @@ func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			events := []string{
-				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n",
-				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\n",
-				"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
+				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\r\n\r\n",
+				"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\r\n\r\n",
+				"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\r\n\r\n",
 			}
 			for _, event := range events {
 				if _, err := w.Write([]byte(event)); err != nil {
@@ -1016,9 +1016,9 @@ func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		events := []string{
-			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\n\n",
-			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\n",
-			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\n\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]}}]}\r\n\r\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" Gemini\"}]}}]}\r\n\r\n",
+			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":5,\"totalTokenCount\":11}}\r\n\r\n",
 		}
 		for _, event := range events {
 			if _, err := w.Write([]byte(event)); err != nil {
@@ -1074,6 +1074,12 @@ func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("期望 Gemini alt=sse 第二次请求命中缓存，不再访问上游，实际上游调用次数是 %d", upstreamCalls)
+	}
+	if !strings.Contains(secondRec.Body.String(), `"text":"Hello"`) || !strings.Contains(secondRec.Body.String(), `"text":" Gemini"`) {
+		t.Fatalf("期望 Gemini alt=sse 缓存命中保留完整多事件正文，实际是 %s", secondRec.Body.String())
+	}
+	if strings.Count(secondRec.Body.String(), "data: ") != 3 {
+		t.Fatalf("期望 Gemini alt=sse 缓存命中保留 3 个事件，实际是 %d，内容是 %s", strings.Count(secondRec.Body.String(), "data: "), secondRec.Body.String())
 	}
 
 	snapshot := statsMgr.Snapshot()
