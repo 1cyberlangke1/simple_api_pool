@@ -14,13 +14,15 @@ import (
 
 	"github.com/dustin/go-humanize"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
 	"simple-api-pool/middleware"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
+	"simple-api-pool/statusapi"
 	"simple-api-pool/store"
 	"simple-api-pool/webui"
 )
@@ -38,9 +40,9 @@ func main() {
 	cacheStore := cache.NewStore("data/cache")
 	defer cacheStore.Close()
 
-	proxyHandler := handler.NewProxyHandler(cfg, statsMgr, kr, cacheStore, 50)
-	adminHandler := handler.NewAdminHandler(cfg, statsMgr, cacheStore)
-	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsMgr, kr, cacheStore, 50)
+	adminHandler := adminapi.NewHandler(cfg, statsMgr, cacheStore)
+	statusHandler := statusapi.NewHandler(cfg, statsMgr)
 	frontendRoot := webui.ResolveRoot()
 	contentSecurityPolicyProvider, err := webui.NewContentSecurityPolicyProvider(frontendRoot)
 	if err != nil {
@@ -65,7 +67,7 @@ func main() {
 			return
 		}
 		if path == "/favicon.ico" {
-			http.Redirect(w, r, "/favicon.svg", http.StatusMovedPermanently)
+			http.Redirect(w, r, "/favicon.svg", http.StatusTemporaryRedirect)
 			return
 		}
 		if webui.ServeAssetByRequestPath(w, r, frontendRoot, path) {

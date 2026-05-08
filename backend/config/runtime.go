@@ -8,7 +8,7 @@ import (
 )
 
 const DefaultListenPort = "18080"
-const DefaultUpstreamResponseLimitBytes int64 = 8 << 20
+const DefaultUpstreamResponseLimitBytes int64 = 128 << 10
 
 func ListenAddr() string {
 	port := strings.TrimSpace(os.Getenv("PORT"))

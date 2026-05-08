@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -22,7 +22,7 @@ func TestAdminEndpointsReturnExpectedErrorsForUnauthorizedAndInvalidRequests(t *
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/admin/providers", nil)
 	unauthorizedRec := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func TestAdminEndpointsReturnExpectedErrorsForUnauthorizedAndInvalidRequests(t *
 func TestAdminEndpointsReturnMethodNotAllowedForUnsupportedMethods(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/admin/config", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")

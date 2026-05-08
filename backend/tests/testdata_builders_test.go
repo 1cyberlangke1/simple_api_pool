@@ -18,8 +18,8 @@ import (
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -64,7 +64,7 @@ type officialRoundTripCase struct {
 }
 
 type officialProviderHarness struct {
-	proxy         *handler.ProxyHandler
+	proxy         *proxyapi.ProxyHandler
 	stats         *stats.Manager
 	cacheStore    *cache.Store
 	upstream      *httptest.Server
@@ -74,7 +74,7 @@ type officialProviderHarness struct {
 }
 
 type openAICacheEvictionHarness struct {
-	proxy      *handler.ProxyHandler
+	proxy      *proxyapi.ProxyHandler
 	stats      *stats.Manager
 	cacheStore *cache.Store
 	upstream   *httptest.Server
@@ -94,7 +94,7 @@ type randomTrafficCase struct {
 }
 
 type randomTrafficHarness struct {
-	proxy           *handler.ProxyHandler
+	proxy           *proxyapi.ProxyHandler
 	stats           *stats.Manager
 	cacheStore      *cache.Store
 	cacheDir        string
@@ -305,7 +305,7 @@ func newOfficialProviderHarness(t *testing.T, tc officialRoundTripCase) *officia
 	harness.stats = stats.NewManager(store.New(t.TempDir()))
 	cacheDir := t.TempDir()
 	harness.cacheStore = cache.NewStore(cacheDir)
-	harness.proxy = handler.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 8)
+	harness.proxy = proxyapi.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 8)
 	return harness
 }
 
@@ -381,7 +381,7 @@ func newOpenAICacheEvictionHarness(t *testing.T, maxEntries int) *openAICacheEvi
 	harness.stats = stats.NewManager(store.New(t.TempDir()))
 	harness.cacheDir = t.TempDir()
 	harness.cacheStore = cache.NewStore(harness.cacheDir)
-	harness.proxy = handler.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 8)
+	harness.proxy = proxyapi.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 8)
 	return harness
 }
 
@@ -538,7 +538,7 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 
 	harness.stats = stats.NewManager(store.New(t.TempDir()))
 	harness.cacheStore = cache.NewStore(harness.cacheDir)
-	harness.proxy = handler.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 128)
+	harness.proxy = proxyapi.NewProxyHandler(cfg, harness.stats, keyring.New(cfg), harness.cacheStore, 128)
 	return harness
 }
 
@@ -650,13 +650,13 @@ func buildRandomOpenAIChatCase(marker string, stream bool, cacheRoute bool) rand
 		expectedMarkers = append(expectedMarkers, "chat.completion")
 	}
 	return randomTrafficCase{
-		Request:            request,
-		ExpectedStatusCode: http.StatusOK,
+		Request:             request,
+		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
-		ProviderName:       "openai",
-		ResponseStatusCode: http.StatusOK,
-		ResponseHeaders:    responseHeaders,
-		ResponseBody:       responseBody,
+		ProviderName:        "openai",
+		ResponseStatusCode:  http.StatusOK,
+		ResponseHeaders:     responseHeaders,
+		ResponseBody:        responseBody,
 	}
 }
 
@@ -673,13 +673,13 @@ func buildRandomOpenAIResponsesCase(marker string, stream bool, cacheRoute bool)
 		expectedMarkers = append(expectedMarkers, `"object":"response"`)
 	}
 	return randomTrafficCase{
-		Request:            request,
-		ExpectedStatusCode: http.StatusOK,
+		Request:             request,
+		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
-		ProviderName:       "responses",
-		ResponseStatusCode: http.StatusOK,
-		ResponseHeaders:    responseHeaders,
-		ResponseBody:       responseBody,
+		ProviderName:        "responses",
+		ResponseStatusCode:  http.StatusOK,
+		ResponseHeaders:     responseHeaders,
+		ResponseBody:        responseBody,
 	}
 }
 
@@ -696,13 +696,13 @@ func buildRandomClaudeCase(marker string, stream bool, cacheRoute bool) randomTr
 		expectedMarkers = append(expectedMarkers, `"type":"message"`)
 	}
 	return randomTrafficCase{
-		Request:            request,
-		ExpectedStatusCode: http.StatusOK,
+		Request:             request,
+		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
-		ProviderName:       "claude",
-		ResponseStatusCode: http.StatusOK,
-		ResponseHeaders:    responseHeaders,
-		ResponseBody:       responseBody,
+		ProviderName:        "claude",
+		ResponseStatusCode:  http.StatusOK,
+		ResponseHeaders:     responseHeaders,
+		ResponseBody:        responseBody,
 	}
 }
 
@@ -719,13 +719,13 @@ func buildRandomGeminiCase(marker string, stream bool, cacheRoute bool) randomTr
 		expectedMarkers = append(expectedMarkers, `"usageMetadata"`)
 	}
 	return randomTrafficCase{
-		Request:            request,
-		ExpectedStatusCode: http.StatusOK,
+		Request:             request,
+		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
-		ProviderName:       "gemini",
-		ResponseStatusCode: http.StatusOK,
-		ResponseHeaders:    responseHeaders,
-		ResponseBody:       responseBody,
+		ProviderName:        "gemini",
+		ResponseStatusCode:  http.StatusOK,
+		ResponseHeaders:     responseHeaders,
+		ResponseBody:        responseBody,
 	}
 }
 

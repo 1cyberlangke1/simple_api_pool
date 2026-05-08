@@ -1,4 +1,4 @@
-package handler
+package proxyapi
 
 import (
 	"bytes"
@@ -29,21 +29,18 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 
 	collected := streamCaptureBufferPool.Get().(*bytes.Buffer)
 	collected.Reset()
-	defer streamCaptureBufferPool.Put(collected)
+	defer putStreamCaptureBuffer(collected)
 
-	bufferPtr := streamCopyBufferPool.Get().(*[]byte)
-	buf := *bufferPtr
-	defer streamCopyBufferPool.Put(bufferPtr)
+	buf := streamCopyBufferPool.Get().([]byte)
+	defer streamCopyBufferPool.Put(buf)
 	firstByteRecorded := false
 	var streamErr error
 	allowStreamCache := cacheEnabled
 	for {
-		select {
-		case <-ctx.Done():
+		if err := ctx.Err(); err != nil {
 			_ = resp.Body.Close()
-			streamErr = ctx.Err()
+			streamErr = err
 			break
-		default:
 		}
 		if streamErr != nil {
 			break
@@ -118,6 +115,17 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 			}
 		}
 	}
+}
+
+func putStreamCaptureBuffer(buffer *bytes.Buffer) {
+	if buffer == nil {
+		return
+	}
+	if buffer.Cap() > maxRetainedStreamCaptureBodyBytes {
+		return
+	}
+	buffer.Reset()
+	streamCaptureBufferPool.Put(buffer)
 }
 
 func writeBufferedPassthroughResponse(w http.ResponseWriter, prefix []byte, tail io.Reader, upstreamStart time.Time, logFields *proxyLogFields) (int, error) {

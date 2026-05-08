@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -150,7 +151,7 @@ func TestCacheRouteBypassesCacheForOversizedRequestBody(t *testing.T) {
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
 
 	largeContent := strings.Repeat("a", (1<<20)+128)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"` + largeContent + `"}]}`)
@@ -170,6 +171,55 @@ func TestCacheRouteBypassesCacheForOversizedRequestBody(t *testing.T) {
 
 	if upstreamCalls != 2 {
 		t.Fatalf("期望超大请求绕过缓存直通上游两次，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestCacheRouteBypassesCacheForRequestBodyAboveDefaultMemoryBudget(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"mid-body","usage":{"prompt_tokens":2,"completion_tokens":1}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys:            []config.Key{{Value: "upstream-key"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
+
+	bodyContent := strings.Repeat("a", 300<<10)
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"` + bodyContent + `"}]}`)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		proxyHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次中型请求期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望超出默认内存预算的请求体不进入缓存，实际上游调用次数是 %d", upstreamCalls)
 	}
 }
 
@@ -195,7 +245,7 @@ func TestProxyStreamsLargeUpstreamErrorBody(t *testing.T) {
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1"}`))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -245,7 +295,7 @@ func TestProxyPassesThroughOversizedNonStreamUpstreamResponseWithoutCaching(t *t
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`))
@@ -268,6 +318,57 @@ func TestProxyPassesThroughOversizedNonStreamUpstreamResponseWithoutCaching(t *t
 
 	if upstreamCalls != 2 {
 		t.Fatalf("期望超大非流式响应不进入缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+}
+
+func TestProxyDefaultsToPassthroughForMediumNonStreamResponses(t *testing.T) {
+	oversizedBody := strings.Repeat("abcdefgh", 24<<10)
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(oversizedBody))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
+		t.Fatalf("保存全局配置失败: %v", err)
+	}
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys:            []config.Key{{Value: "upstream-key"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		proxyHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 次中等响应期望状态码 %d，实际是 %d，响应体: %s", i+1, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if rec.Body.String() != oversizedBody {
+			t.Fatalf("第 %d 次中等响应期望保持透传，实际是 %s", i+1, rec.Body.String())
+		}
+	}
+
+	if upstreamCalls != 2 {
+		t.Fatalf("期望默认配置下中等非流式响应走透传不走缓存，实际上游调用次数是 %d", upstreamCalls)
 	}
 }
 
@@ -313,7 +414,7 @@ func TestBrokenStreamResponseIsNotCachedAsCompleteResponse(t *testing.T) {
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	for i := 0; i < 2; i++ {
@@ -361,7 +462,7 @@ func TestDeleteProviderAlsoClearsProviderStats(t *testing.T) {
 	statsManager.RecordSuccess("openai", 3, 4)
 	statsManager.RecordError("openai", http.StatusTooManyRequests)
 
-	adminHandler := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")

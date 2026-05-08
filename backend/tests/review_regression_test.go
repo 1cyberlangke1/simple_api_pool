@@ -9,10 +9,11 @@ import (
 	"sync"
 	"testing"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/auth"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 	"simple-api-pool/token"
@@ -94,7 +95,7 @@ func TestDeleteProviderAlsoClearsProviderCache(t *testing.T) {
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	adminHandler := handler.NewAdminHandler(cfg, statsManager, cacheStore)
+	adminHandler := adminapi.NewHandler(cfg, statsManager, cacheStore)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")
@@ -191,7 +192,7 @@ func TestCacheRouteFallsBackToDirectProxyWhenProviderCacheDisabled(t *testing.T)
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	proxyHandler := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -233,5 +234,147 @@ func TestTokenEstimationUsesUTF8ByteLengthForStreams(t *testing.T) {
 	}
 	if got.InputTokens+got.OutputTokens != expectedTotal {
 		t.Fatalf("期望按字节数估算流式总 token=%d，实际是 %+v", expectedTotal, got)
+	}
+}
+
+func TestSessionAuthenticatedAdminWriteRejectsCrossOriginRequest(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
+	loginReq.TLS = &tls.ConnectionState{}
+	loginRec := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(loginRec, loginReq, cfg); err != nil {
+		t.Fatalf("签发管理员会话失败: %v", err)
+	}
+
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(cookies))
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	body := bytes.NewBufferString(`{"token_estimation_enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "https://example.com/api/admin/config", body)
+	req.TLS = &tls.ConnectionState{}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(cookies[0])
+	rec := httptest.NewRecorder()
+
+	adminHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("跨站会话写请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+func TestSessionAuthenticatedAdminWriteAllowsSameOriginRequest(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
+	loginReq.TLS = &tls.ConnectionState{}
+	loginRec := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(loginRec, loginReq, cfg); err != nil {
+		t.Fatalf("签发管理员会话失败: %v", err)
+	}
+
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(cookies))
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	body := bytes.NewBufferString(`{"token_estimation_enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "https://example.com/api/admin/config", body)
+	req.TLS = &tls.ConnectionState{}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://example.com")
+	req.AddCookie(cookies[0])
+	rec := httptest.NewRecorder()
+
+	adminHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("同源会话写请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminWriteWithAuthorizationHeaderDoesNotRequireOrigin(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	body := bytes.NewBufferString(`{"token_estimation_enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "https://example.com/api/admin/config", body)
+	req.TLS = &tls.ConnectionState{}
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	adminHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("显式管理员密钥请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+}
+
+func TestProxyDoesNotFollowUpstreamRedirect(t *testing.T) {
+	redirectTargetCalls := 0
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectTargetCalls++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"message":"unexpected target"}`))
+	}))
+	defer redirectTarget.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", redirectTarget.URL+"/final")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
+		t.Fatalf("保存全局配置失败: %v", err)
+	}
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai",
+		Type:    config.OpenAIChat,
+		BaseURL: upstream.URL,
+		Keys:    []config.Key{{Value: "upstream-key"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	proxyHandler := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxyHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("期望保留上游重定向状态码 %d，实际是 %d，响应体: %s", http.StatusTemporaryRedirect, rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Location") != redirectTarget.URL+"/final" {
+		t.Fatalf("期望透传上游 Location，实际是 %q", rec.Header().Get("Location"))
+	}
+	if redirectTargetCalls != 0 {
+		t.Fatalf("期望代理不跟随上游重定向，实际上游目标被访问了 %d 次", redirectTargetCalls)
 	}
 }

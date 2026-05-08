@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -146,6 +147,11 @@ func (c *Config) SaveProvider(p Provider) error {
 	if p.BaseURL == "" {
 		p.BaseURL = DefaultBaseURL(p.Type)
 	}
+	var err error
+	p.BaseURL, err = normalizeProviderBaseURL(p.BaseURL)
+	if err != nil {
+		return err
+	}
 	if p.KeyStrategy == "" {
 		p.KeyStrategy = "round_robin"
 	}
@@ -183,6 +189,11 @@ func (c *Config) UpdateProviderSettings(p Provider) error {
 	}
 	if p.BaseURL == "" {
 		p.BaseURL = DefaultBaseURL(p.Type)
+	}
+	var err error
+	p.BaseURL, err = normalizeProviderBaseURL(p.BaseURL)
+	if err != nil {
+		return err
 	}
 	if p.KeyStrategy == "" {
 		p.KeyStrategy = "round_robin"
@@ -423,4 +434,28 @@ func cloneProvider(p Provider) Provider {
 		cloned.Keys = append([]Key(nil), p.Keys...)
 	}
 	return cloned
+}
+
+func normalizeProviderBaseURL(rawValue string) (string, error) {
+	trimmedValue := strings.TrimSpace(rawValue)
+	if trimmedValue == "" {
+		return "", os.ErrInvalid
+	}
+
+	parsedURL, err := url.Parse(trimmedValue)
+	if err != nil {
+		return "", os.ErrInvalid
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return "", os.ErrInvalid
+	}
+	if parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		return "", os.ErrInvalid
+	}
+
+	normalizedValue := strings.TrimRight(parsedURL.String(), "/")
+	if normalizedValue == "" {
+		return "", os.ErrInvalid
+	}
+	return normalizedValue, nil
 }

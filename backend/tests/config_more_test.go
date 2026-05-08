@@ -216,3 +216,36 @@ func TestProvidersReturnsDetachedKeySlices(t *testing.T) {
 		t.Fatalf("期望 Providers 返回值与内部状态隔离，实际是 %+v", reloaded.Keys[0])
 	}
 }
+
+func TestSaveProviderRejectsInvalidBaseURL(t *testing.T) {
+	cfg := config.New(store.New(t.TempDir()))
+
+	err := cfg.SaveProvider(config.Provider{
+		Name:    "openai",
+		Type:    config.OpenAIChat,
+		BaseURL: "javascript:alert(1)",
+	})
+	if err == nil {
+		t.Fatal("期望非法 BaseURL 被拒绝")
+	}
+}
+
+func TestSaveProviderNormalizesValidBaseURL(t *testing.T) {
+	cfg := config.New(store.New(t.TempDir()))
+
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai",
+		Type:    config.OpenAIChat,
+		BaseURL: "https://api.example.com/custom/",
+	}); err != nil {
+		t.Fatalf("保存合法 BaseURL 失败: %v", err)
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if provider.BaseURL != "https://api.example.com/custom" {
+		t.Fatalf("期望 BaseURL 去掉尾部斜杠，实际是 %q", provider.BaseURL)
+	}
+}

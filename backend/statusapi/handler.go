@@ -1,18 +1,19 @@
-package handler
+package statusapi
 
 import (
 	"net/http"
 
 	"simple-api-pool/config"
+	"simple-api-pool/httpapi"
 	"simple-api-pool/stats"
 )
 
-type StatusHandler struct {
+type Handler struct {
 	cfg   *config.Config
 	stats *stats.Manager
 }
 
-type StatusSnapshot struct {
+type Snapshot struct {
 	SuccessCount  int64            `json:"success_count"`
 	ErrorCount    int64            `json:"error_count"`
 	InputTokens   int64            `json:"input_tokens"`
@@ -24,15 +25,15 @@ type StatusSnapshot struct {
 	TotalKeys     int64            `json:"total_keys"`
 }
 
-func NewStatusHandler(cfg *config.Config, sm *stats.Manager) *StatusHandler {
-	return &StatusHandler{cfg: cfg, stats: sm}
+func NewHandler(cfg *config.Config, sm *stats.Manager) *Handler {
+	return &Handler{cfg: cfg, stats: sm}
 }
 
-func (sh *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (sh *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/status/overview" {
-		writeOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
+		httpapi.WriteOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, collectProviderStatusSnapshots(sh.cfg, sh.stats))
+	httpapi.WriteJSONResponse(w, http.StatusOK, CollectProviderStatusSnapshots(sh.cfg, sh.stats))
 }

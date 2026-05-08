@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/auth"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -20,7 +20,7 @@ func TestAdminProviderCrudConfigAndLogoutFlow(t *testing.T) {
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	adminHandler := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
 
 	createBody := []byte(`{"name":"openai","type":"openai_chat","base_url":"https://example.com","cache_enabled":true}`)
 	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/providers", bytes.NewReader(createBody))
@@ -122,7 +122,7 @@ func TestAdminErrorBranchesForProviderAndConfigOperations(t *testing.T) {
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
 
-	adminHandler := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
 
 	invalidProviderRequest := httptest.NewRequest(http.MethodPost, "/api/admin/providers", bytes.NewReader([]byte(`{`)))
 	invalidProviderRequest.Header.Set("Authorization", "Bearer secret-admin")
@@ -188,7 +188,7 @@ func TestAdminErrorBranchesForProviderAndConfigOperations(t *testing.T) {
 		t.Fatalf("缓存错误方法期望状态码 %d，实际是 %d，响应体: %s", http.StatusMethodNotAllowed, cacheMethodRecorder.Code, cacheMethodRecorder.Body.String())
 	}
 
-	nilCacheHandler := handler.NewAdminHandler(cfg, statsManager, nil)
+	nilCacheHandler := adminapi.NewHandler(cfg, statsManager, nil)
 	nilCacheRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai/cache", nil)
 	nilCacheRequest.Header.Set("Authorization", "Bearer secret-admin")
 	nilCacheRecorder := httptest.NewRecorder()

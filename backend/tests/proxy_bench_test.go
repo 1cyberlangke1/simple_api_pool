@@ -8,8 +8,8 @@ import (
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -41,7 +41,7 @@ func BenchmarkProxyCacheHit(b *testing.B) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"bench-proxy"}]}`)
 	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 100)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
 
 	b.ReportAllocs()
 	b.ResetTimer()

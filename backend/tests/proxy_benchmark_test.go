@@ -11,8 +11,8 @@ import (
 
 	"simple-api-pool/applog"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -42,7 +42,7 @@ func BenchmarkCacheHitRouteParallel(b *testing.B) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"load"}]}`)
 	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 128)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 128)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -90,7 +90,7 @@ func BenchmarkDirectStreamProxy(b *testing.B) {
 
 	statsMgr := stats.NewManager(store.New(b.TempDir()))
 	b.Cleanup(func() { statsMgr.Stop() })
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newBenchmarkCacheStore(b), 64)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newBenchmarkCacheStore(b), 64)
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
 
 	b.ReportAllocs()

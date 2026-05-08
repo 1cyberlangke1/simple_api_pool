@@ -7,11 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"simple-api-pool/adminapi"
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/stats"
+	"simple-api-pool/statusapi"
 	"simple-api-pool/store"
 )
 
@@ -19,7 +20,7 @@ func TestAdminLoginAllowsRequestBodyKey(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"admin_key": "secret-admin"})
 	if err != nil {
@@ -49,7 +50,7 @@ func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"keys": " key1 \nkey2, key3 ,, \n"})
 	if err != nil {
@@ -90,7 +91,7 @@ func TestAdminBulkImportDeduplicatesExistingAndIncomingKeys(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	body, err := json.Marshal(map[string]string{"keys": "key-2\nkey-3, key-3 , key-4"})
 	if err != nil {
@@ -136,7 +137,7 @@ func TestAdminDeleteSingleKey(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai/key-1", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")
@@ -172,7 +173,7 @@ func TestAdminBulkUpdateKeyStateAndDeleteKeys(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
 	disableBody, err := json.Marshal(map[string]any{
 		"action": "disable",
@@ -272,7 +273,7 @@ func TestAdminClearProviderCache(t *testing.T) {
 		t.Fatal("预期清空前缓存已存在")
 	}
 
-	h := handler.NewAdminHandler(cfg, stats.NewManager(store.New(t.TempDir())), cacheStore)
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), cacheStore)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai/cache", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")
@@ -316,7 +317,7 @@ func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
 	defer statsManager.Stop()
 	statsManager.RecordSuccess("openai", 3, 4)
 
-	h := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	h := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
 	req.Header.Set("Authorization", "Bearer secret-admin")
 	rec := httptest.NewRecorder()
@@ -336,9 +337,9 @@ func TestAdminOverviewReturnsConfigProvidersStatsAndRecentLogs(t *testing.T) {
 			TokenEstimationEnabled bool `json:"token_estimation_enabled"`
 			ClientKeyCount         int  `json:"client_key_count"`
 		} `json:"global_config"`
-		Providers     []config.Provider                 `json:"providers"`
-		ProviderStats map[string]handler.StatusSnapshot `json:"provider_stats"`
-		RecentLogs    []applog.Entry                    `json:"recent_logs"`
+		Providers     []config.Provider             `json:"providers"`
+		ProviderStats map[string]statusapi.Snapshot `json:"provider_stats"`
+		RecentLogs    []applog.Entry                `json:"recent_logs"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析管理总览响应失败: %v", err)
@@ -375,7 +376,7 @@ func TestAdminOverviewReturnsNotModifiedWhenEntityTagMatches(t *testing.T) {
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	handlerInstance := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+	handlerInstance := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
 
 	firstRequest := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
 	firstRequest.Header.Set("Authorization", "Bearer secret-admin")

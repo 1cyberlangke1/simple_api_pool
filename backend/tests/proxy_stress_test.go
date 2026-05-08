@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -37,7 +37,7 @@ func TestCacheHitPathSupportsHighConcurrencyReads(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"load"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
 
 	const (
 		workers    = 24

@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
+	"simple-api-pool/statusapi"
 	"simple-api-pool/store"
 )
 
@@ -83,7 +84,7 @@ func TestProxyPassesThroughMethodPathQueryBodyAndAuth(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	reqBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions?stream=false&trace=abc", strings.NewReader(reqBody))
@@ -145,7 +146,7 @@ func TestDirectProxyStreamDoesNotWaitForCompleteRequestBody(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", http.NoBody)
 	req.Body = &stagedReadCloser{
@@ -212,7 +213,7 @@ func TestProxyPassesThroughUpstreamErrors(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4.1"}`))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -256,7 +257,7 @@ func TestErrorResponsesAreNotCached(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hi"}]}`
 	for i := 0; i < 2; i++ {
@@ -299,7 +300,7 @@ func TestCacheHitReturnsCachedResponseAndUpdatesStats(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -359,7 +360,7 @@ func TestCacheHitReturnsWithoutAvailableUpstreamKey(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached-without-key","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -410,7 +411,7 @@ func TestSecondStreamRequestHitsStoredStreamCache(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
@@ -505,7 +506,7 @@ func TestFirstStreamResponseRequiresNonStreamBackfillBeforeLaterNonStreamHit(t *
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
@@ -614,7 +615,7 @@ func TestOpenAIChatCrossShapeBackfillUsesRawNonStreamResponse(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"glm-4.6v-flash","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/zhipu/chat/completions", strings.NewReader(streamBody))
@@ -729,7 +730,7 @@ func TestClaudeCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/claude/v1/messages", strings.NewReader(streamBody))
@@ -835,7 +836,7 @@ func TestOpenAIResponsesCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"gpt-5","input":"hello","stream":true}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/responses/v1/responses", strings.NewReader(streamBody))
@@ -946,7 +947,7 @@ func TestGeminiCrossShapeRequestBackfillsNonStreamCache(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	streamBody := `{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}],"stream":true}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent", strings.NewReader(streamBody))
@@ -1049,7 +1050,7 @@ func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	body := `{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`
 
@@ -1136,7 +1137,7 @@ func TestGeminiAltSSECacheHitDoesNotRepeatCumulativeUsage(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	body := `{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`
 
@@ -1195,7 +1196,7 @@ func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -1246,7 +1247,7 @@ func TestGeminiModelListRequestDoesNotUseCacheRoute(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/cache/gemini/v1beta/models?pageSize=5", nil)
@@ -1295,7 +1296,7 @@ func TestOpenAIModelListRequestDoesNotUseCacheRoute(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/cache/openai/v1/models", nil)
@@ -1347,7 +1348,7 @@ func TestNonCacheRouteRefreshesExistingCacheEntry(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"stale","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 1, 1, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	nonCacheReq := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", bytes.NewReader(body))
 	nonCacheReq.Header.Set("Authorization", "Bearer client-key")
@@ -1401,7 +1402,7 @@ func TestCacheHitWritesCacheTokensIntoGeminiUsageMetadata(t *testing.T) {
 	body := []byte(`{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`)
 	cacheStore.SetForRequest("gemini", config.Gemini, "gemini-2.5-flash", body, []byte(`{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":6,"totalTokenCount":10}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:generateContent", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -1448,7 +1449,7 @@ func TestUpstreamCacheTokensAreIncludedInStats(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", bytes.NewReader(body))
@@ -1500,7 +1501,7 @@ func TestGeminiProviderInjectsGoogAPIKey(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models/gemini-2.5-flash:generateContent", strings.NewReader(`{"model":"gemini-2.5-flash"}`))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -1545,7 +1546,7 @@ func TestMultimodalOpenAIChatRequestPassesThroughUnchanged(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":[{"type":"text","text":"这是什么？"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(body))
@@ -1592,7 +1593,7 @@ func TestMultimodalGeminiRequestPassesThroughUnchanged(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := `{"model":"gemini-2.5-flash","contents":[{"role":"user","parts":[{"text":"这张图里有什么？"},{"inline_data":{"mime_type":"image/png","data":"ZmFrZQ=="}}]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models/gemini-2.5-flash:generateContent", strings.NewReader(body))
@@ -1638,7 +1639,7 @@ func TestMultimodalMessageArrayMatchesCacheCorrectly(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"system","content":"你是助手"},{"role":"user","content":[{"type":"text","text":"图里是什么？"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}},{"type":"input_audio","input_audio":{"data":"ZmFrZQ==","format":"mp3"}}]}]}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
@@ -1685,7 +1686,7 @@ func TestStatusEndpointReturnsFrontendReadyStats(t *testing.T) {
 		t.Fatalf("保存提供商失败: %v", err)
 	}
 
-	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	statusHandler := statusapi.NewHandler(cfg, statsMgr)
 	req := httptest.NewRequest(http.MethodGet, "/api/status/stats", nil)
 	rec := httptest.NewRecorder()
 
@@ -1737,7 +1738,7 @@ func TestStatusEndpointReturnsKeyOverviewWithoutRequestStats(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 
-	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	statusHandler := statusapi.NewHandler(cfg, statsMgr)
 	req := httptest.NewRequest(http.MethodGet, "/api/status/stats", nil)
 	rec := httptest.NewRecorder()
 
@@ -1782,7 +1783,7 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 	defer statsMgr.Stop()
 	statsMgr.RecordSuccess("openai", 7, 5)
 
-	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
+	statusHandler := statusapi.NewHandler(cfg, statsMgr)
 	req := httptest.NewRequest(http.MethodGet, "/api/status/overview", nil)
 	rec := httptest.NewRecorder()
 
@@ -1796,7 +1797,7 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 		Health struct {
 			Status string `json:"status"`
 		} `json:"health"`
-		ProviderStats map[string]handler.StatusSnapshot `json:"provider_stats"`
+		ProviderStats map[string]statusapi.Snapshot `json:"provider_stats"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析状态总览响应失败: %v", err)
@@ -1820,7 +1821,7 @@ func TestStatusOverviewReturnsNotModifiedWhenEntityTagMatches(t *testing.T) {
 
 	statsManager := stats.NewManager(store.New(t.TempDir()))
 	defer statsManager.Stop()
-	statusHandler := handler.NewStatusHandler(cfg, statsManager)
+	statusHandler := statusapi.NewHandler(cfg, statsManager)
 
 	firstRequest := httptest.NewRequest(http.MethodGet, "/api/status/overview", nil)
 	firstRecorder := httptest.NewRecorder()

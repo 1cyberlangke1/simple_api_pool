@@ -11,8 +11,8 @@ import (
 
 	"simple-api-pool/applog"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -51,7 +51,7 @@ func TestGeminiModelListGETPassThrough(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodGet, "/gemini/v1beta/models?pageSize=100", nil)
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -104,7 +104,7 @@ func TestProxyRequestWritesStructuredLogs(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions?trace=1", strings.NewReader(body))
@@ -166,7 +166,7 @@ func TestProxyStreamRequestWritesFirstByteLatencyLog(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
 	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(body))
@@ -223,7 +223,7 @@ func TestProxyAndAccessLogsRedactSensitiveQueryValues(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodGet, "/gemini/v1beta/models?key=client-gemini-key&pageSize=20", nil)
 	req.Header.Set("x-goog-api-key", "client-gemini-key")
@@ -283,7 +283,7 @@ func TestCacheHitWritesDedicatedCacheEventLog(t *testing.T) {
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`)
 	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 10, false)
 
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer client-key")
@@ -346,7 +346,7 @@ func TestCacheStoreWritesDedicatedCacheEventLog(t *testing.T) {
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
 	cacheStore := newTestCacheStore(t)
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
 
 	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
@@ -493,7 +493,7 @@ func TestGeminiClientAuthIsReplacedWithUpstreamKey(t *testing.T) {
 
 	statsMgr := stats.NewManager(store.New(t.TempDir()))
 	defer statsMgr.Stop()
-	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
 
 	req := httptest.NewRequest(http.MethodGet, "/gemini/v1beta/models?key=client-gemini-key&pageSize=20", nil)
 	req.Header.Set("x-goog-api-key", "client-gemini-key")

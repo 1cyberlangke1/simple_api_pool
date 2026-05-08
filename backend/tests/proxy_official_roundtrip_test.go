@@ -7,8 +7,8 @@ import (
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
-	"simple-api-pool/handler"
 	"simple-api-pool/keyring"
+	"simple-api-pool/proxyapi"
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
 )
@@ -70,7 +70,7 @@ func TestGeminiCacheKeySeparatesModelsWhenBodyOmitsTopLevelModel(t *testing.T) {
 	defer statsManager.Stop()
 	cacheStore := cache.NewStore(t.TempDir())
 	defer cacheStore.Close()
-	proxy := handler.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 8)
+	proxy := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), cacheStore, 8)
 
 	flash := buildGeminiRequestForModelPath("shared-marker", "gemini-2.5-flash", false, true)
 	flashFirst := runProxyScenario(t, proxy, flash)

@@ -1,4 +1,4 @@
-package handler
+package proxyapi
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"simple-api-pool/auth"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+	"simple-api-pool/httpapi"
 	"simple-api-pool/keyring"
 	"simple-api-pool/stats"
 	"simple-api-pool/token"
@@ -21,8 +22,7 @@ import (
 
 var streamCopyBufferPool = sync.Pool{
 	New: func() any {
-		buf := make([]byte, 32*1024)
-		return &buf
+		return make([]byte, 32*1024)
 	},
 }
 
@@ -33,8 +33,9 @@ var streamCaptureBufferPool = sync.Pool{
 }
 
 const (
-	maxCacheableRequestBodyBytes = 1 << 20
-	maxUpstreamErrorLogBytes     = 4 << 10
+	maxCacheableRequestBodyBytes      = 256 << 10
+	maxRetainedStreamCaptureBodyBytes = 128 << 10
+	maxUpstreamErrorLogBytes          = 4 << 10
 )
 
 type ProxyHandler struct {
@@ -46,6 +47,10 @@ type ProxyHandler struct {
 	sema                        chan struct{}
 	limiter                     *auth.FailureLimiter
 	nonStreamResponseLimitBytes int64
+}
+
+func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	httpapi.WriteErrorResponse(w, statusCode, message)
 }
 
 type cacheEventLogFields struct {
@@ -74,6 +79,9 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 		cache:   cs,
 		client: &http.Client{
 			Timeout: 5 * time.Minute,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 			Transport: &http.Transport{
 				Proxy:               http.ProxyFromEnvironment,
 				ForceAttemptHTTP2:   true,
@@ -153,6 +161,11 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case h.sema <- struct{}{}:
+	case <-time.After(30 * time.Second):
+		logFields.Status = http.StatusServiceUnavailable
+		logFields.Error = "等待上游槽位超时"
+		writeErrorResponse(w, http.StatusServiceUnavailable, "上游繁忙，请稍后重试")
+		return
 	case <-r.Context().Done():
 		logFields.Status = http.StatusRequestTimeout
 		logFields.Error = "请求在等待上游槽位时已取消"
@@ -219,7 +232,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set(k, v)
 					}
 					w.WriteHeader(entry.StatusCode)
-					_, _ = w.Write(entry.ResponseBody)
+					if _, err := w.Write(entry.ResponseBody); err != nil {
+						logFields.Status = http.StatusBadGateway
+						logFields.Error = fmt.Sprintf("写入缓存命中响应失败: %v", err)
+					}
 					return
 				}
 			} else {

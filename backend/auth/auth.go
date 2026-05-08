@@ -28,6 +28,13 @@ func CheckClientKey(r *http.Request, cfg *config.Config) bool {
 }
 
 func CheckAdminKey(r *http.Request, cfg *config.Config) bool {
+	if CheckAdminAuthorizationHeader(r, cfg) {
+		return true
+	}
+	return CheckAdminSession(r, cfg)
+}
+
+func CheckAdminAuthorizationHeader(r *http.Request, cfg *config.Config) bool {
 	adminKey := cfg.AdminKey()
 	if adminKey == "" {
 		return false
@@ -36,7 +43,7 @@ func CheckAdminKey(r *http.Request, cfg *config.Config) bool {
 	if key != "" && constantTimeEqual(key, adminKey) {
 		return true
 	}
-	return CheckAdminSession(r, cfg)
+	return false
 }
 
 func extractClientKey(r *http.Request, cfg *config.Config) string {
