@@ -39,21 +39,6 @@
       setProviderPage(state.providerPageIndex + 1);
     });
 
-    refs.keySearchInput.addEventListener("input", () => {
-      state.keySearchQuery = refs.keySearchInput.value.trim();
-      const provider = getCurrentProvider();
-      if (provider) {
-        state.keyPageIndexByProvider[provider.name] = 0;
-      }
-      if (state.keySearchDebounceTimer !== null) {
-        clearTimeout(state.keySearchDebounceTimer);
-      }
-      state.keySearchDebounceTimer = setTimeout(() => {
-        state.keySearchDebounceTimer = null;
-        renderAdminWorkspaceProviders();
-      }, 120);
-    });
-
     refs.logModal.addEventListener("click", (event) => {
       if (event.target === refs.logModal) {
         setLogModalOpen(false);
@@ -243,6 +228,24 @@
     refs.globalForm.addEventListener("input", syncGlobalConfigDraftFromForm);
     refs.createForm.addEventListener("input", syncCreateProviderDraftFromForm);
     refs.providerListPanelBody.addEventListener("input", syncProviderPanelDraftFromEvent);
+    refs.providerListPanelBody.addEventListener("input", (event) => {
+      const keySearchInput = event.target.closest('input[data-role="key-search-input"]');
+      if (!keySearchInput) {
+        return;
+      }
+      state.keySearchQuery = keySearchInput.value.trim();
+      const provider = getCurrentProvider();
+      if (provider) {
+        state.keyPageIndexByProvider[provider.name] = 0;
+      }
+      if (state.keySearchDebounceTimer !== null) {
+        clearTimeout(state.keySearchDebounceTimer);
+      }
+      state.keySearchDebounceTimer = setTimeout(() => {
+        state.keySearchDebounceTimer = null;
+        renderAdminWorkspaceProviders();
+      }, 120);
+    });
 
     refs.providerListPanelBody.addEventListener("change", (event) => {
       syncProviderPanelDraftFromEvent(event);

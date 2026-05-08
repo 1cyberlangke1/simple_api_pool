@@ -113,12 +113,6 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="open-log-modal"`)
 		mustContain(t, body, `id="log-modal"`)
 		mustContain(t, body, `id="hide-panel-logs"`)
-		mustContain(t, body, `id="key-search"`)
-		mustContain(t, body, `data-action="select-page-keys"`)
-		mustContain(t, body, `data-action="invert-page-keys"`)
-		mustContain(t, body, `data-action="enable-selected-keys"`)
-		mustContain(t, body, `data-action="disable-selected-keys"`)
-		mustContain(t, body, `data-action="delete-selected-keys"`)
 		mustContain(t, body, `value="43200"`)
 		mustContain(t, body, `id="build-version"`)
 		mustContain(t, body, `id="build-version-value"`)
@@ -161,6 +155,19 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	}
 	if !strings.Contains(scriptBundle, `function requestOverview(`) {
 		t.Fatal("期望前端具备总览协商缓存请求逻辑")
+	}
+	if !strings.Contains(scriptBundle, `provider-workbench-grid`) || !strings.Contains(scriptBundle, `key-workspace-panel`) || !strings.Contains(scriptBundle, `provider-config-sidebar`) {
+		t.Fatal("期望前端脚本包含新的 provider 工作台布局结构")
+	}
+	if !strings.Contains(scriptBundle, `data-action="select-page-keys"`) ||
+		!strings.Contains(scriptBundle, `data-action="invert-page-keys"`) ||
+		!strings.Contains(scriptBundle, `data-action="enable-selected-keys"`) ||
+		!strings.Contains(scriptBundle, `data-action="disable-selected-keys"`) ||
+		!strings.Contains(scriptBundle, `data-action="delete-selected-keys"`) {
+		t.Fatal("期望前端脚本保留 key 工作区批量操作")
+	}
+	if !strings.Contains(scriptBundle, `data-role="key-search-input"`) {
+		t.Fatal("期望搜索 Key 输入框位于动态 key 工作区内")
 	}
 	if !strings.Contains(scriptBundle, `const API_BASE = "/api"`) {
 		t.Fatal("期望前端脚本包含 API_BASE 常量")

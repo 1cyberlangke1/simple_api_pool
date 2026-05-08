@@ -302,11 +302,16 @@
       renderAdminWorkspaceProviders();
     }
 
+    function getKeySearchInputElement() {
+      return document.getElementById("key-search");
+    }
+
     function syncKeySearchInput() {
-      if (!refs.keySearchInput) {
+      const keySearchInput = getKeySearchInputElement();
+      if (!keySearchInput) {
         return;
       }
-      refs.keySearchInput.value = state.keySearchQuery;
+      keySearchInput.value = state.keySearchQuery;
     }
 
     function getSelectedKeys(providerName) {

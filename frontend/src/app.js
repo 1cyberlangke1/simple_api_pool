@@ -33,7 +33,6 @@
       providerPagePrev: document.getElementById("provider-page-prev"),
       providerPageNext: document.getElementById("provider-page-next"),
       providerPageIndicator: document.getElementById("provider-page-indicator"),
-      keySearchInput: document.getElementById("key-search"),
       recentLogList: document.getElementById("recent-log-list"),
       logModal: document.getElementById("log-modal"),
       openLogModalButton: document.getElementById("open-log-modal"),

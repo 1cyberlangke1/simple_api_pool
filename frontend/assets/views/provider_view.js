@@ -7,7 +7,12 @@
 
       refs.providerPagePrev.disabled = currentNumber <= 1;
       refs.providerPageNext.disabled = !totalProviders || currentNumber >= totalProviders;
-      refs.keySearchInput.disabled = totalProviders === 0;
+
+      const keySearchInput = getKeySearchInputElement();
+      if (keySearchInput) {
+        keySearchInput.disabled = totalProviders === 0;
+      }
+
       refs.providerPageIndicator.textContent = totalProviders
         ? currentNumber + " / " + totalProviders + " · " + currentProvider.name
         : "-";
@@ -20,7 +25,7 @@
         ["claude", "Claude"],
         ["gemini", "Gemini"]
       ];
-      return options.map((option) => '<option value="' + option[0] + '" ' + (selected === option[0] ? "selected" : "") + ">" + option[1] + "</option>").join("");
+      return options.map((option) => `<option value="${option[0]}" ${selected === option[0] ? "selected" : ""}>${option[1]}</option>`).join("");
     }
 
     function providerStrategyOptions(selected) {
@@ -28,7 +33,82 @@
         ["round_robin", t("strategy.roundRobin")],
         ["fill", t("strategy.fill")]
       ];
-      return options.map((option) => '<option value="' + option[0] + '" ' + (selected === option[0] ? "selected" : "") + ">" + option[1] + "</option>").join("");
+      return options.map((option) => `<option value="${option[0]}" ${selected === option[0] ? "selected" : ""}>${escapeHTML(option[1])}</option>`).join("");
+    }
+
+    function providerStrategyLabel(value) {
+      return value === "fill" ? t("strategy.fill") : t("strategy.roundRobin");
+    }
+
+    function renderProviderOverview(provider, stats, keySummary) {
+      const totalKeys = (provider.keys || []).length;
+      const upstreamLabel = provider.base_url || t("provider.defaultUpstream");
+
+      return `
+        <section class="provider-overview" data-role="provider-overview">
+          <div class="provider-overview-top">
+            <div class="provider-overview-heading">
+              <h3 class="provider-name">${escapeHTML(provider.name)}</h3>
+              <div class="provider-meta">${escapeHTML(provider.type)} · ${escapeHTML(upstreamLabel)}</div>
+            </div>
+            <div class="provider-overview-actions">
+              <span class="tag ${provider.cache_enabled ? "ok" : "muted"}">${escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff"))}</span>
+              <span class="tag muted">${escapeHTML(providerStrategyLabel(provider.key_strategy))}</span>
+              <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
+            </div>
+          </div>
+          <div class="tag-row provider-overview-tags">
+            <span class="tag ok">${escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 }))}</span>
+            <span class="tag err">${escapeHTML(t("provider.tagError", { n: stats.error_count || 0 }))}</span>
+            <span class="tag muted">${escapeHTML(t("provider.tagCacheHits", { n: stats.cache_hits || 0 }))}</span>
+            <span class="tag">${escapeHTML(t("provider.tagAvailableKeys", { available: keySummary.available, total: totalKeys }))}</span>
+            <span class="tag err">${escapeHTML(t("provider.tagDisabled", { n: keySummary.disabled }))}</span>
+          </div>
+          <div class="provider-quick-stats">
+            <div class="mini"><strong>${stats.success_count || 0}</strong><span>${escapeHTML(t("provider.statSuccess"))}</span></div>
+            <div class="mini"><strong>${stats.error_count || 0}</strong><span>${escapeHTML(t("provider.statError"))}</span></div>
+            <div class="mini"><strong>${stats.input_tokens || 0}</strong><span>${escapeHTML(t("provider.statInputTokens"))}</span></div>
+            <div class="mini"><strong>${stats.output_tokens || 0}</strong><span>${escapeHTML(t("provider.statOutputTokens"))}</span></div>
+            <div class="mini"><strong>${stats.cache_tokens || 0}</strong><span>${escapeHTML(t("provider.statCacheTokens"))}</span></div>
+            <div class="mini"><strong>${stats.cache_hits || 0}</strong><span>${escapeHTML(t("provider.statCacheHits"))}</span></div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderKeyList(provider, pageKeys, selectedKeys) {
+      if (!pageKeys.length) {
+        return `<div class="empty">${escapeHTML(t("provider.noKeys"))}</div>`;
+      }
+
+      return `
+        <div class="key-list key-workspace-list">
+          ${pageKeys.map((key) => {
+            const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
+            const keyRef = String(key.ref || key.value || "");
+            const checked = selectedKeys.has(keyRef) ? "checked" : "";
+            const stateText = isDisabled
+              ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
+              : t("provider.usable");
+
+            return `
+              <div class="key-item key-workspace-item">
+                <label class="checkbox key-selector-checkbox">
+                  <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
+                </label>
+                <div class="key-workspace-main">
+                  <code>${escapeHTML(key.value)}</code>
+                  <div class="key-workspace-meta">
+                    <span class="tag ${isDisabled ? "err" : "ok"}">${escapeHTML(stateText)}</span>
+                    <span class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))}</span>
+                  </div>
+                </div>
+                <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}">${escapeHTML(t("provider.delete"))}</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
     function renderProviderKeysSection(provider) {
@@ -43,20 +123,129 @@
         page: pageKeys.length,
         total: filteredKeys.length
       });
+      const importDraftValue = state.providerImportDraftsByName[provider.name] || "";
 
-      const keyListMarkup = pageKeys.length
-        ? '<div class="key-list">' + pageKeys.map((key) => {
-            const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
-            const stateText = isDisabled
-              ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
-              : t("provider.usable");
-            const keyRef = String(key.ref || key.value || "");
-            const checked = selectedKeys.has(keyRef) ? "checked" : "";
-            return '\n              <div class="key-item">\n                <label class="checkbox key-selector-checkbox">\n                  <input type="checkbox" data-role="key-selector" data-provider="' + escapeHTML(provider.name) + '" data-key="' + escapeHTML(keyRef) + '" ' + checked + ">\n                </label>\n                <div>\n                  <code>" + escapeHTML(key.value) + "</code>\n                  <div class=\"provider-meta\">" + escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 })) + " · " + escapeHTML(stateText) + "</div>\n                </div>\n                <button class=\"secondary\" type=\"button\" data-action=\"delete-key\" data-provider=\"" + escapeHTML(provider.name) + "\" data-key=\"" + escapeHTML(keyRef) + "\">" + escapeHTML(t("provider.delete")) + "</button>\n              </div>\n            ";
-          }).join("") + "</div>"
-        : '<div class="empty">' + escapeHTML(t("provider.noKeys")) + "</div>";
+      return `
+        <section class="provider-column-panel key-workspace-panel">
+          <div class="provider-workspace-title-row">
+            <div>
+              <div class="provider-column-title">${escapeHTML(t("provider.upstreamKeys"))}</div>
+              <div class="provider-meta">${escapeHTML(selectionSummary)}</div>
+            </div>
+            <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
+          </div>
 
-      return '\n        <div class="key-list-summary">\n          <span>' + escapeHTML(selectionSummary) + '</span>\n          <span>' + escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages })) + '</span>\n        </div>\n        ' + keyListMarkup + '\n        <div class="key-pager">\n          <button class="secondary" type="button" data-action="prev-key-page" data-provider="' + escapeHTML(provider.name) + '">' + escapeHTML(t("admin.keyPagePrev")) + '</button>\n          <span class="key-pager-indicator">' + escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages })) + '</span>\n          <button class="secondary" type="button" data-action="next-key-page" data-provider="' + escapeHTML(provider.name) + '">' + escapeHTML(t("admin.keyPageNext")) + "</button>\n        </div>\n      ";
+          <div class="key-workspace-toolbar">
+            <label class="search-label workspace-search">
+              <span>${escapeHTML(t("admin.keySearch"))}</span>
+              <input id="key-search" data-role="key-search-input" type="search" value="${escapeHTML(state.keySearchQuery)}" placeholder="${escapeHTML(t("admin.keySearchPlaceholder"))}">
+            </label>
+            <div class="workspace-action-stack">
+              <div class="key-list-summary">
+                <span>${escapeHTML(selectionSummary)}</span>
+                <span>${escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages }))}</span>
+              </div>
+              <div class="key-bulk-actions">
+                <button class="secondary" type="button" data-action="select-page-keys">${escapeHTML(t("admin.selectPageKeys"))}</button>
+                <button class="secondary" type="button" data-action="invert-page-keys">${escapeHTML(t("admin.invertPageKeys"))}</button>
+                <button class="secondary" type="button" data-action="enable-selected-keys">${escapeHTML(t("admin.enableSelectedKeys"))}</button>
+                <button class="secondary" type="button" data-action="disable-selected-keys">${escapeHTML(t("admin.disableSelectedKeys"))}</button>
+                <button class="secondary" type="button" data-action="delete-selected-keys">${escapeHTML(t("admin.deleteSelectedKeys"))}</button>
+              </div>
+            </div>
+          </div>
+
+          <form class="provider-keys-form key-import-form" data-provider="${escapeHTML(provider.name)}">
+            <label>
+              ${escapeHTML(t("provider.batchImport"))}
+              <textarea name="keys" placeholder="${escapeHTML(t("admin.keysPlaceholder"))}">${escapeHTML(importDraftValue)}</textarea>
+            </label>
+            <div class="actions key-import-actions">
+              <button class="primary" type="submit">${escapeHTML(t("provider.import"))}</button>
+            </div>
+            <div class="inline-status" data-role="keys-status"></div>
+          </form>
+
+          ${renderKeyList(provider, pageKeys, selectedKeys)}
+
+          <div class="key-pager">
+            <button class="secondary" type="button" data-action="prev-key-page" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("admin.keyPagePrev"))}</button>
+            <span class="key-pager-indicator">${escapeHTML(t("admin.keyPageIndicator", { current: currentPageIndex + 1, total: totalPages }))}</span>
+            <button class="secondary" type="button" data-action="next-key-page" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("admin.keyPageNext"))}</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderProviderConfigSection(provider, draftProvider) {
+      return `
+        <aside class="provider-column-panel provider-config-sidebar">
+          <div class="provider-column-title">${escapeHTML(t("provider.configTitle"))}</div>
+          <form class="provider-edit-form" data-provider="${escapeHTML(provider.name)}">
+            <div class="provider-form-section">
+              <h4 class="provider-form-section-title">${escapeHTML(t("provider.connectionSectionTitle"))}</h4>
+              <div class="form-grid">
+                <label>
+                  ${escapeHTML(t("provider.name"))}
+                  <input name="name" type="text" value="${escapeHTML(provider.name)}" readonly>
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.type"))}
+                  <select name="type">${providerTypeOptions(draftProvider.type)}</select>
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  ${escapeHTML(t("provider.baseUrl"))}
+                  <input name="base_url" type="text" value="${escapeHTML(draftProvider.base_url || "")}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.strategy"))}
+                  <select name="key_strategy">${providerStrategyOptions(draftProvider.key_strategy)}</select>
+                </label>
+              </div>
+            </div>
+
+            <div class="provider-form-section">
+              <h4 class="provider-form-section-title">${escapeHTML(t("provider.disablePolicyTitle"))}</h4>
+              <p class="provider-form-section-note">${escapeHTML(t("provider.disablePolicyNote"))}</p>
+              <div class="form-grid provider-compact-fields">
+                <label>
+                  ${escapeHTML(t("provider.failThreshold"))}
+                  <input name="fail_threshold" type="number" min="1" value="${Number(draftProvider.fail_threshold || 3)}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.minDisable"))}
+                  <input name="min_disable_secs" type="number" min="1" value="${Number(draftProvider.min_disable_secs || 30)}">
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.maxDisable"))}
+                  <input name="max_disable_secs" type="number" min="1" value="${draftProvider.max_disable_secs !== undefined ? draftProvider.max_disable_secs : Number(provider.max_disable_secs || 43200)}">
+                </label>
+              </div>
+            </div>
+
+            <div class="provider-form-section">
+              <h4 class="provider-form-section-title">${escapeHTML(t("provider.cacheSectionTitle"))}</h4>
+              <div class="form-grid provider-threshold-fields">
+                <label class="checkbox">
+                  <input name="cache_enabled" type="checkbox" ${draftProvider.cache_enabled ? "checked" : ""}>
+                  <span>${escapeHTML(t("provider.cacheEnabled"))}</span>
+                </label>
+                <label>
+                  ${escapeHTML(t("provider.cacheMax"))}
+                  <input name="cache_max_entries" type="number" min="1" value="${Number(draftProvider.cache_max_entries || 1000)}">
+                </label>
+              </div>
+            </div>
+
+            <div class="actions provider-config-actions">
+              <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
+            </div>
+            <div class="inline-status" data-role="provider-status"></div>
+          </form>
+        </aside>
+      `;
     }
 
     function renderProviders(providers) {
@@ -66,7 +255,7 @@
 
       if (!providers.length) {
         const emptyText = state.adminAuthenticated ? t("provider.empty") : t("admin.loginToLoad");
-        refs.providerList.innerHTML = '<div class="empty">' + escapeHTML(emptyText) + "</div>";
+        refs.providerList.innerHTML = `<div class="empty">${escapeHTML(emptyText)}</div>`;
         return;
       }
 
@@ -77,9 +266,18 @@
       syncProviderDraft(provider);
       syncProviderImportDraft(provider.name);
       const draftProvider = state.providerDraftsByName[provider.name] || createProviderDraftFromSnapshot(provider);
-      const importDraftValue = state.providerImportDraftsByName[provider.name] || "";
 
-      refs.providerList.innerHTML = '\n        <article class="provider-card provider-single-panel">\n          <div class="provider-head">\n            <div>\n              <h3 class="provider-name">' + escapeHTML(provider.name) + '</h3>\n              <div class="provider-meta">' + escapeHTML(provider.type) + " · " + escapeHTML(provider.base_url || t("provider.defaultUpstream")) + '</div>\n              <div class="tag-row">\n                <span class="tag ok">' + escapeHTML(t("provider.tagSuccess", { n: stats.success_count || 0 })) + '</span>\n                <span class="tag err">' + escapeHTML(t("provider.tagError", { n: stats.error_count || 0 })) + '</span>\n                <span class="tag muted">' + escapeHTML(t("provider.tagCacheHits", { n: stats.cache_hits || 0 })) + '</span>\n                <span class="tag">' + escapeHTML(t("provider.tagKeys", { n: keys.length })) + '</span>\n                <span class="tag ok">' + escapeHTML(t("provider.tagAvailable", { n: keySummary.available })) + '</span>\n                <span class="tag err">' + escapeHTML(t("provider.tagDisabled", { n: keySummary.disabled })) + '</span>\n                <span class="tag ' + (provider.cache_enabled ? "ok" : "muted") + '">' + escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff")) + '</span>\n              </div>\n            </div>\n            <button class="secondary" type="button" data-action="delete-provider" data-provider="' + escapeHTML(provider.name) + '">' + escapeHTML(t("provider.delete")) + "</button>\n          </div>\n\n          <div class=\"stats-grid\">\n            <div class=\"mini\"><strong>" + (stats.success_count || 0) + "</strong><span>" + escapeHTML(t("provider.statSuccess")) + "</span></div>\n            <div class=\"mini\"><strong>" + (stats.error_count || 0) + "</strong><span>" + escapeHTML(t("provider.statError")) + "</span></div>\n            <div class=\"mini\"><strong>" + (stats.input_tokens || 0) + "</strong><span>" + escapeHTML(t("provider.statInputTokens")) + "</span></div>\n            <div class=\"mini\"><strong>" + (stats.output_tokens || 0) + "</strong><span>" + escapeHTML(t("provider.statOutputTokens")) + "</span></div>\n            <div class=\"mini\"><strong>" + (stats.cache_tokens || 0) + "</strong><span>" + escapeHTML(t("provider.statCacheTokens")) + "</span></div>\n            <div class=\"mini\"><strong>" + (stats.cache_hits || 0) + "</strong><span>" + escapeHTML(t("provider.statCacheHits")) + "</span></div>\n          </div>\n\n          <hr class=\"divider\">\n\n          <div class=\"provider-body-grid\">\n            <div class=\"provider-config-column\">\n              <div class=\"provider-column-panel\">\n                <div class=\"provider-column-title\">' + escapeHTML(t("provider.configTitle")) + '</div>\n                <form class=\"provider-edit-form\" data-provider=\"" + escapeHTML(provider.name) + "\">\n                  <div class=\"provider-form-section\">\n                    <h4 class=\"provider-form-section-title\">' + escapeHTML(t("provider.connectionSectionTitle")) + '</h4>\n                    <div class=\"form-grid\">\n                      <label>\n                        " + escapeHTML(t("provider.name")) + '\n                        <input name="name" type="text" value="' + escapeHTML(provider.name) + "\" readonly>\n                      </label>\n                      <label>\n                        " + escapeHTML(t("provider.type")) + '\n                        <select name="type">' + providerTypeOptions(draftProvider.type) + "</select>\n                      </label>\n                    </div>\n                    <div class=\"form-grid\">\n                      <label>\n                        " + escapeHTML(t("provider.baseUrl")) + '\n                        <input name="base_url" type="text" value="' + escapeHTML(draftProvider.base_url || "") + "\">\n                      </label>\n                      <label>\n                        " + escapeHTML(t("provider.strategy")) + '\n                        <select name="key_strategy">' + providerStrategyOptions(draftProvider.key_strategy) + "</select>\n                      </label>\n                    </div>\n                  </div>\n\n                  <div class=\"provider-form-section\">\n                    <h4 class=\"provider-form-section-title\">' + escapeHTML(t("provider.disablePolicyTitle")) + '</h4>\n                    <p class=\"provider-form-section-note\">' + escapeHTML(t("provider.disablePolicyNote")) + '</p>\n                    <div class=\"form-grid provider-compact-fields\">\n                      <label>\n                        " + escapeHTML(t("provider.failThreshold")) + '\n                        <input name="fail_threshold" type="number" min="1" value="' + Number(draftProvider.fail_threshold || 3) + "\">\n                      </label>\n                      <label>\n                        " + escapeHTML(t("provider.minDisable")) + '\n                        <input name="min_disable_secs" type="number" min="1" value="' + Number(draftProvider.min_disable_secs || 30) + "\">\n                      </label>\n                      <label>\n                        " + escapeHTML(t("provider.maxDisable")) + '\n                        <input name="max_disable_secs" type="number" min="1" value="' + (draftProvider.max_disable_secs !== undefined ? draftProvider.max_disable_secs : Number(provider.max_disable_secs || 43200)) + "\">\n                      </label>\n                    </div>\n                  </div>\n\n                  <div class=\"provider-form-section\">\n                    <h4 class=\"provider-form-section-title\">' + escapeHTML(t("provider.cacheSectionTitle")) + '</h4>\n                    <div class=\"form-grid provider-threshold-fields\">\n                      <label class=\"checkbox\">\n                        <input name=\"cache_enabled\" type=\"checkbox\" " + (draftProvider.cache_enabled ? "checked" : "") + ">\n                        <span>" + escapeHTML(t("provider.cacheEnabled")) + "</span>\n                      </label>\n                      <label>\n                        " + escapeHTML(t("provider.cacheMax")) + '\n                        <input name="cache_max_entries" type="number" min="1" value="' + Number(draftProvider.cache_max_entries || 1000) + "\">\n                      </label>\n                    </div>\n                  </div>\n\n                  <div class=\"actions\">\n                    <button class=\"primary\" type=\"submit\">" + escapeHTML(t("provider.save")) + '</button>\n                    <button class="secondary" type="button" data-action="clear-cache" data-provider="' + escapeHTML(provider.name) + '">' + escapeHTML(t("provider.clearCache")) + "</button>\n                  </div>\n                  <div class=\"inline-status\" data-role=\"provider-status\"></div>\n                </form>\n              </div>\n            </div>\n\n            <div class=\"provider-key-column\">\n              <div class=\"provider-column-panel\">\n                <div class=\"provider-column-title\">" + escapeHTML(t("provider.upstreamKeys")) + "</div>\n                <form class=\"provider-keys-form\" data-provider=\"" + escapeHTML(provider.name) + "\">\n                  <label>\n                    " + escapeHTML(t("provider.batchImport")) + '\n                    <textarea name="keys" placeholder="' + escapeHTML(t("admin.keysPlaceholder")) + '">' + escapeHTML(importDraftValue) + "</textarea>\n                  </label>\n                  <div class=\"actions\">\n                    <button class=\"primary\" type=\"submit\">" + escapeHTML(t("provider.import")) + "</button>\n                  </div>\n                  <div class=\"inline-status\" data-role=\"keys-status\"></div>\n                </form>\n              </div>\n              <div class=\"provider-column-panel\">\n                " + renderProviderKeysSection(provider) + "\n              </div>\n            </div>\n          </div>\n        </article>\n      ";
+      refs.providerList.innerHTML = `
+        <article class="provider-card provider-workbench-card provider-single-panel">
+          ${renderProviderOverview(provider, stats, keySummary)}
+          <div class="provider-workbench-grid">
+            <section class="provider-primary-column">
+              ${renderProviderKeysSection(provider)}
+            </section>
+            ${renderProviderConfigSection(provider, draftProvider)}
+          </div>
+        </article>
+      `;
     }
 
     function readProviderPayload(form) {
