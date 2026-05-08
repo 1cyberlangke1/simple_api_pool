@@ -38,6 +38,17 @@
       --err-line: rgba(138, 47, 34, 0.22);
       --grid-line: rgba(53, 40, 22, 0.025);
       --grid-mask-end: rgba(0, 0, 0, 0.55);
+      --terminal-surface: #f7f3ea;
+      --terminal-surface-strong: #fbf8f1;
+      --terminal-line: rgba(52, 44, 31, 0.1);
+      --terminal-overlay: rgba(24, 18, 11, 0.34);
+      --terminal-text: #2a241a;
+      --terminal-muted: #6a5f4d;
+      --terminal-accent: #346a57;
+      --terminal-info: #2a628a;
+      --terminal-warn: #9a6626;
+      --terminal-error: #8a2f22;
+      --terminal-debug: #7e2a84;
       --shadow-lg: 0 18px 44px rgba(80, 53, 18, 0.12);
       --shadow-sm: 0 6px 16px rgba(80, 53, 18, 0.08);
       --shadow-card-hover: 0 10px 24px rgba(80, 53, 18, 0.08);
@@ -83,6 +94,17 @@
       --err-line: rgba(224, 124, 108, 0.28);
       --grid-line: rgba(232, 215, 184, 0.04);
       --grid-mask-end: rgba(0, 0, 0, 0.7);
+      --terminal-surface: #0b0f14;
+      --terminal-surface-strong: #111418;
+      --terminal-line: rgba(214, 221, 231, 0.12);
+      --terminal-overlay: rgba(17, 13, 9, 0.48);
+      --terminal-text: #dce7f3;
+      --terminal-muted: #8fa0b6;
+      --terminal-accent: #f6efe3;
+      --terminal-info: #7dd3fc;
+      --terminal-warn: #fbbf24;
+      --terminal-error: #f87171;
+      --terminal-debug: #c084fc;
       --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.4);
       --shadow-sm: 0 6px 16px rgba(0, 0, 0, 0.28);
       --shadow-card-hover: 0 10px 24px rgba(0, 0, 0, 0.32);
@@ -110,7 +132,7 @@
       font-family: var(--font-sans-en);
     }
 
-    body::before {
+    body::after {
       content: "";
       position: fixed;
       inset: 0;
@@ -123,7 +145,7 @@
     }
 
     .shell {
-      width: min(1200px, calc(100vw - 32px));
+      width: min(1380px, calc(100vw - 32px));
       margin: 28px auto 56px;
       position: relative;
       z-index: 1;
@@ -282,7 +304,8 @@
     }
 
     .hero-meta span {
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
 
     /* Buttons */
@@ -342,7 +365,7 @@
     }
 
     .admin-dashboard-grid {
-      grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
       align-items: stretch;
       margin-top: 20px;
       min-height: clamp(700px, 78vh, 1080px);
@@ -371,7 +394,6 @@
 
     .scroll-panel-body {
       min-height: 0;
-      height: 100%;
       overflow-y: auto;
       padding-right: 6px;
     }
@@ -520,7 +542,8 @@
       text-align: center;
       font-size: 12.5px;
       color: var(--muted-strong);
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
 
     .provider-toolbar-grid {
@@ -719,7 +742,14 @@
     }
 
     /* Forms */
-    form { display: grid; gap: 14px; }
+    #login-form,
+    #global-config-form,
+    #provider-create-form,
+    .provider-edit-form,
+    .provider-keys-form {
+      display: grid;
+      gap: 14px;
+    }
 
     .form-grid {
       display: grid;
@@ -757,9 +787,15 @@
     }
 
     input:focus, select:focus, textarea:focus {
-      outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent-deep);
+      outline-offset: 2px;
     }
 
     input[readonly] {
@@ -848,6 +884,19 @@
       background: transparent;
     }
 
+    .key-selector-checkbox {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      min-width: 32px;
+      min-height: 32px;
+      padding: 0;
+      border-radius: 10px;
+      border: 1px solid var(--line-soft);
+      background: var(--panel);
+    }
+
     .key-item > div {
       min-width: 0;
       flex: 1;
@@ -855,7 +904,8 @@
 
     .key-item code {
       display: block;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      word-break: break-word;
       color: var(--accent-deep);
       font-size: 13px;
       font-family: "JetBrains Mono", "Consolas", monospace;
@@ -891,8 +941,8 @@
       max-height: min(68vh, 720px);
       overflow-y: auto;
       padding: 12px 0 8px;
-      background: #0b0f14;
-      border: 1px solid rgba(214, 221, 231, 0.08);
+      background: var(--terminal-surface);
+      border: 1px solid var(--terminal-line);
     }
 
     .log-modal {
@@ -903,7 +953,7 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      background: rgba(24, 18, 11, 0.42);
+      background: var(--terminal-overlay);
       backdrop-filter: blur(8px);
     }
 
@@ -913,11 +963,11 @@
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
       padding: 20px;
-      border-radius: 6px;
-      background: #111418;
-      border: 1px solid rgba(214, 221, 231, 0.12);
+      border-radius: 18px;
+      background: var(--terminal-surface-strong);
+      border: 1px solid var(--terminal-line);
       box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
-      color: #dce7f3;
+      color: var(--terminal-text);
     }
 
     .log-modal-header {
@@ -932,12 +982,12 @@
       margin: 0;
       font-family: "JetBrains Mono", "Consolas", monospace;
       font-size: 18px;
-      color: #f6efe3;
+      color: var(--terminal-accent);
     }
 
     .log-modal-subtitle {
       margin: 0 0 14px;
-      color: #8fa0b6;
+      color: var(--terminal-muted);
       font-size: 12.5px;
       line-height: 1.6;
       font-family: "JetBrains Mono", "Consolas", monospace;
@@ -960,7 +1010,7 @@
       border-radius: 0;
       background: transparent;
       border: 0;
-      color: #dce7f3;
+      color: var(--terminal-text);
       font-family: "JetBrains Mono", "Consolas", monospace;
       font-size: 12px;
       line-height: 1.5;
@@ -972,7 +1022,7 @@
       height: 16px;
       min-height: 16px;
       margin: 0;
-      accent-color: #7dd3fc;
+      accent-color: var(--terminal-info);
     }
 
     .terminal-log-entry {
@@ -980,7 +1030,7 @@
       border-radius: 0;
       background: transparent;
       border: 0;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      border-bottom: 1px solid var(--terminal-line);
       display: grid;
       gap: 4px;
       font-family: "JetBrains Mono", "Consolas", monospace;
@@ -1002,37 +1052,55 @@
     }
 
     .terminal-log-time {
-      color: #94a3b8;
+      color: var(--terminal-muted);
       white-space: nowrap;
       font-size: 12px;
     }
 
     .terminal-log-title {
-      color: #f8fafc;
+      color: var(--terminal-accent);
       font-weight: 600;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
 
     .terminal-log-summary {
-      color: #cbd5e1;
-      overflow-wrap: anywhere;
+      color: var(--terminal-text);
+      overflow-wrap: break-word;
+      word-break: break-word;
       white-space: pre-wrap;
     }
 
-    .terminal-log-entry.level-info .terminal-log-level { color: #7dd3fc; }
-    .terminal-log-entry.level-warn .terminal-log-level { color: #fbbf24; }
-    .terminal-log-entry.level-error .terminal-log-level { color: #f87171; }
-    .terminal-log-entry.level-debug .terminal-log-level { color: #a78bfa; }
+    .terminal-log-entry.level-info .terminal-log-level { color: var(--terminal-info); }
+    .terminal-log-entry.level-warn .terminal-log-level { color: var(--terminal-warn); }
+    .terminal-log-entry.level-error .terminal-log-level { color: var(--terminal-error); }
+    .terminal-log-entry.level-debug .terminal-log-level { color: var(--terminal-debug); }
 
     /* Empty state */
     .empty {
+      display: grid;
+      justify-items: center;
+      gap: 10px;
       padding: 18px;
       border-radius: var(--radius-md);
-      background: var(--panel-soft);
+      background: linear-gradient(180deg, var(--panel-soft), rgba(255, 255, 255, 0.02));
       color: var(--muted);
       border: 1px dashed var(--line);
       text-align: center;
       font-size: 13px;
+    }
+
+    .empty::before {
+      content: "∅";
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-weight: 700;
+      font-size: 18px;
     }
 
     /* Legend */
@@ -1086,6 +1154,20 @@
     .hidden { display: none !important; }
 
     /* Responsive */
+    @media (min-width: 1280px) {
+      .content-grid {
+        grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+      }
+
+      .admin-dashboard-grid {
+        grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+      }
+
+      .provider-body-grid {
+        grid-template-columns: minmax(0, 1.2fr) minmax(380px, 0.9fr);
+      }
+    }
+
     @media (max-width: 960px) {
       .content-grid { grid-template-columns: 1fr; }
       .admin-dashboard-grid { grid-template-columns: 1fr; }
@@ -1117,7 +1199,49 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
 
       .provider-head { flex-direction: column; align-items: stretch; }
-      .key-item { grid-template-columns: 1fr; }
+      .key-item {
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+      }
+
+      .key-item > button {
+        grid-column: 2;
+        justify-self: start;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .shell {
+        width: min(100vw - 12px, 100%);
+        margin-top: 8px;
+      }
+
+      .hero, .panel {
+        padding: 14px;
+        border-radius: 18px;
+      }
+
+      .provider-toolbar,
+      .provider-column-panel,
+      .key-item,
+      .log-modal-panel {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .provider-pager {
+        grid-template-columns: 1fr;
+      }
+
+      .provider-pager > button,
+      .key-pager > button,
+      .key-item > button {
+        width: 100%;
+      }
+
+      .key-item > button {
+        grid-column: 1 / -1;
+      }
     }
   </style>
 </head>
@@ -1361,7 +1485,9 @@
     <script>
 const API_BASE = "/api";
     const STATUS_POLL_INTERVAL_MS = 5000;
-    const KEY_PAGE_SIZE = 8;
+    const STATUS_IDLE_POLL_INTERVAL_MS = 30000;
+    const STATUS_POLL_ACTIVITY_WINDOW_MS = 45000;
+    const KEY_PAGE_SIZE = 10;
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
     const RAW_APP_VERSION = "__APP_VERSION__";
@@ -1702,6 +1828,7 @@ const API_BASE = "/api";
         status: "",
         admin: ""
       },
+      lastUiActivityAt: Date.now(),
       lang: detectInitialLang(),
       theme: detectInitialTheme(),
       themeManual: localStorage.getItem(THEME_KEY) !== null
@@ -1860,8 +1987,10 @@ const API_BASE = "/api";
       if (location.pathname !== path) {
         history.pushState({}, "", path);
       }
+      markUiActivity();
       route = nextRoute;
       setRouteView();
+      startOverviewPolling();
       if (route === "admin") {
         void loadAdminOverview();
         return;
@@ -1900,12 +2029,19 @@ const API_BASE = "/api";
       refs.buildVersionValue.textContent = createBuildVersionText();
     }
 
+    function markUiActivity() {
+      state.lastUiActivityAt = Date.now();
+    }
+
     function setMessage(element, text, kind = "") {
-      element.textContent = text || "";
-      element.className = "inline-status";
-      if (kind) {
-        element.classList.add(kind);
+      if (!element) {
+        return;
       }
+      element.textContent = text || "";
+      element.classList.add("inline-status");
+      element.classList.remove("ok", "error");
+      element.classList.toggle("ok", kind === "ok");
+      element.classList.toggle("error", kind === "error");
     }
 
     function setAdminAuthenticated(authenticated) {
@@ -1913,12 +2049,13 @@ const API_BASE = "/api";
     }
 
     function formatTimestamp(value) {
-      if (!value) {
+      const numericValue = Number(value || 0);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) {
         return t("provider.notDisabled");
       }
-      const date = new Date(Number(value) * 1000);
+      const date = new Date(numericValue * 1000);
       if (Number.isNaN(date.getTime())) {
-        return String(value);
+        return t("provider.notDisabled");
       }
       const locale = state.lang === "en" ? "en-US" : "zh-CN";
       return date.toLocaleString(locale, { hour12: false });
@@ -2469,20 +2606,43 @@ const API_BASE = "/api";
       }
     }
 
-    function startOverviewPolling() {
-      if (statusPollTimer !== null) {
-        clearInterval(statusPollTimer);
+    function getOverviewPollDelay() {
+      if (document.visibilityState === "hidden") {
+        return STATUS_IDLE_POLL_INTERVAL_MS;
       }
-      statusPollTimer = setInterval(() => {
-        if (document.visibilityState === "hidden") {
-          return;
+
+      const idleMs = Date.now() - Number(state.lastUiActivityAt || 0);
+      if (route === "admin" || idleMs < STATUS_POLL_ACTIVITY_WINDOW_MS) {
+        return STATUS_POLL_INTERVAL_MS;
+      }
+      return STATUS_IDLE_POLL_INTERVAL_MS;
+    }
+
+    async function pollCurrentOverview() {
+      if (route === "admin") {
+        await loadAdminOverview();
+        return;
+      }
+      await loadStatusOverview();
+    }
+
+    function scheduleOverviewPolling() {
+      if (statusPollTimer !== null) {
+        clearTimeout(statusPollTimer);
+      }
+
+      statusPollTimer = setTimeout(async () => {
+        statusPollTimer = null;
+        try {
+          await pollCurrentOverview();
+        } finally {
+          scheduleOverviewPolling();
         }
-        if (route === "admin") {
-          void loadAdminOverview();
-          return;
-        }
-        void loadStatusOverview();
-      }, STATUS_POLL_INTERVAL_MS);
+      }, getOverviewPollDelay());
+    }
+
+    function startOverviewPolling() {
+      scheduleOverviewPolling();
     }
 
     async function loginAdmin(adminKey) {
@@ -2591,7 +2751,7 @@ const API_BASE = "/api";
             const checked = selectedKeys.has(keyRef) ? "checked" : "";
             return `
               <div class="key-item">
-                <label class="checkbox">
+                <label class="checkbox key-selector-checkbox">
                   <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
                 </label>
                 <div>
@@ -2936,6 +3096,10 @@ const API_BASE = "/api";
     refs.navStatus.addEventListener("click", () => goTo("/status"));
     refs.navAdmin.addEventListener("click", () => goTo("/admin"));
 
+    document.addEventListener("mousedown", markUiActivity);
+    document.addEventListener("keydown", markUiActivity);
+    document.addEventListener("input", markUiActivity);
+
     refs.themeToggle.addEventListener("click", () => {
       setTheme(state.theme === "dark" ? "light" : "dark");
     });
@@ -2953,6 +3117,7 @@ const API_BASE = "/api";
     });
 
     refs.hidePanelLogsToggle.addEventListener("change", () => {
+      markUiActivity();
       state.hidePanelLogs = refs.hidePanelLogsToggle.checked;
       renderRecentLogs(state.recentLogs || []);
     });
@@ -2988,22 +3153,18 @@ const API_BASE = "/api";
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        if (route === "admin") {
-          void loadAdminOverview();
-          return;
-        }
-        void loadStatusOverview();
+        markUiActivity();
+        startOverviewPolling();
+        void pollCurrentOverview();
       }
     });
 
     window.addEventListener("popstate", () => {
       route = getRouteFromPath(location.pathname);
       setRouteView();
-      if (route === "admin") {
-        void loadAdminOverview();
-        return;
-      }
-      void loadStatusOverview();
+      markUiActivity();
+      startOverviewPolling();
+      void pollCurrentOverview();
     });
 
     // Follow system theme until user manually overrides
@@ -3095,7 +3256,7 @@ const API_BASE = "/api";
       }
     });
 
-    refs.globalForm.addEventListener("input", (event) => {
+    function syncGlobalConfigDraftFromForm(event) {
       state.globalConfigDraft = {
         admin_key: refs.globalAdminKey.value,
         token_estimation_enabled: refs.globalTokenEstimation.checked,
@@ -3108,34 +3269,14 @@ const API_BASE = "/api";
       if (event.target === refs.globalClientKeys) {
         state.globalClientKeysDirty = true;
       }
-    });
+    }
 
-    refs.globalForm.addEventListener("change", (event) => {
-      state.globalConfigDraft = {
-        admin_key: refs.globalAdminKey.value,
-        token_estimation_enabled: refs.globalTokenEstimation.checked,
-        client_keys: refs.globalClientKeys.value
-      };
-      state.globalConfigDirty = true;
-      if (event.target === refs.globalAdminKey) {
-        state.globalAdminKeyDirty = true;
-      }
-      if (event.target === refs.globalClientKeys) {
-        state.globalClientKeysDirty = true;
-      }
-    });
-
-    refs.createForm.addEventListener("input", () => {
+    function syncCreateProviderDraftFromForm() {
       state.createProviderDraft = readProviderPayload(refs.createForm);
       state.createProviderDirty = true;
-    });
+    }
 
-    refs.createForm.addEventListener("change", () => {
-      state.createProviderDraft = readProviderPayload(refs.createForm);
-      state.createProviderDirty = true;
-    });
-
-    refs.providerListPanelBody.addEventListener("input", (event) => {
+    function syncProviderPanelDraftFromEvent(event) {
       const form = event.target.closest("form");
       if (!(form instanceof HTMLFormElement)) {
         return;
@@ -3150,23 +3291,14 @@ const API_BASE = "/api";
         state.providerImportDraftsByName[providerName] = String(new FormData(form).get("keys") || "");
         state.providerImportDirtyByName[providerName] = true;
       }
-    });
+    }
+
+    refs.globalForm.addEventListener("input", syncGlobalConfigDraftFromForm);
+    refs.createForm.addEventListener("input", syncCreateProviderDraftFromForm);
+    refs.providerListPanelBody.addEventListener("input", syncProviderPanelDraftFromEvent);
 
     refs.providerListPanelBody.addEventListener("change", (event) => {
-      const form = event.target.closest("form");
-      if (form instanceof HTMLFormElement && form.classList.contains("provider-edit-form")) {
-        const providerName = form.dataset.provider;
-        state.providerDraftsByName[providerName] = readProviderPayload(form);
-        state.providerDraftDirtyByName[providerName] = true;
-      }
-      if (form instanceof HTMLFormElement && form.classList.contains("provider-keys-form")) {
-        const providerName = form.dataset.provider;
-        state.providerImportDraftsByName[providerName] = String(new FormData(form).get("keys") || "");
-        state.providerImportDirtyByName[providerName] = true;
-      }
-    });
-
-    refs.providerListPanelBody.addEventListener("change", (event) => {
+      syncProviderPanelDraftFromEvent(event);
       const checkbox = event.target.closest('input[data-role="key-selector"]');
       if (!checkbox) {
         return;
@@ -3257,16 +3389,19 @@ const API_BASE = "/api";
       setRouteView();
       startOverviewPolling();
 
-      if (route === "admin") {
-        try {
-          await loadAdminOverview();
-        } catch (error) {
+      try {
+        await pollCurrentOverview();
+      } catch (error) {
+        if (route === "admin") {
           setMessage(refs.loginStatus, error.message || t("error.read"), "error");
+          return;
         }
-        return;
+        refs.serviceHealth.textContent = t("metric.healthError");
+        refs.serviceHealthNote.textContent = error.message || t("metric.healthUnavailable");
+        refs.statusList.innerHTML = `<div class="empty">${escapeHTML(error.message || t("error.readStatus"))}</div>`;
+        refs.statusBadge.textContent = t("status.failed");
+        refs.statusBadge.className = "status-badge err";
       }
-
-      await loadStatusOverview();
     }
 
     init();

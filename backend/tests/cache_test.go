@@ -52,7 +52,7 @@ func TestCacheEvictsOldEntriesWhenLimitExceeded(t *testing.T) {
 	if _, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", body1); ok {
 		t.Fatal("期望旧条目被淘汰，但仍然命中")
 	}
-	if entry, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", body2); !ok || entry.ResponseBody != `{"id":"2"}` {
+	if entry, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", body2); !ok || string(entry.ResponseBody) != `{"id":"2"}` {
 		t.Fatalf("期望新条目保留，实际 entry=%+v ok=%v", entry, ok)
 	}
 }
@@ -71,7 +71,7 @@ func TestOpenAIChatCacheKeyUsesOnlyModelAndMessagesWithoutRouteKey(t *testing.T)
 	if !ok {
 		t.Fatal("期望相同 model + messages 的请求可以命中缓存")
 	}
-	if entry.ResponseBody != `{"id":"same-cache"}` {
+	if string(entry.ResponseBody) != `{"id":"same-cache"}` {
 		t.Fatalf("期望命中已有缓存响应，实际是 %s", entry.ResponseBody)
 	}
 }
@@ -105,7 +105,7 @@ func TestOpenAIChatCacheKeyTreatsEquivalentImageObjectsAsSameRequest(t *testing.
 	if !ok {
 		t.Fatal("期望字段顺序不同但语义等价的多模态请求命中同一缓存")
 	}
-	if entry.ResponseBody != `{"id":"same-image-cache"}` {
+	if string(entry.ResponseBody) != `{"id":"same-image-cache"}` {
 		t.Fatalf("期望命中已有缓存响应，实际是 %s", entry.ResponseBody)
 	}
 }
@@ -123,10 +123,10 @@ func TestCacheKeyUsesProviderSpecificCoreMessageFields(t *testing.T) {
 	store.Set("responses", config.OpenAIResponses, "gpt-5", responsesBody, []byte(`{"id":"responses-cache"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
 	store.Set("gemini", config.Gemini, "gemini-2.5-flash", geminiBody, []byte(`{"id":"gemini-cache"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10)
 
-	if entry, ok := store.Get("responses", config.OpenAIResponses, "gpt-5", responsesBodyWithDifferentNoise); !ok || entry.ResponseBody != `{"id":"responses-cache"}` {
+	if entry, ok := store.Get("responses", config.OpenAIResponses, "gpt-5", responsesBodyWithDifferentNoise); !ok || string(entry.ResponseBody) != `{"id":"responses-cache"}` {
 		t.Fatalf("期望 Responses 按 model + input 命中缓存，实际 entry=%+v ok=%v", entry, ok)
 	}
-	if entry, ok := store.Get("gemini", config.Gemini, "gemini-2.5-flash", geminiBodyWithDifferentNoise); !ok || entry.ResponseBody != `{"id":"gemini-cache"}` {
+	if entry, ok := store.Get("gemini", config.Gemini, "gemini-2.5-flash", geminiBodyWithDifferentNoise); !ok || string(entry.ResponseBody) != `{"id":"gemini-cache"}` {
 		t.Fatalf("期望 Gemini 按 model + contents 命中缓存，实际 entry=%+v ok=%v", entry, ok)
 	}
 }
@@ -145,10 +145,10 @@ func TestGetForRequestReturnsPreDecoratedCachedBody(t *testing.T) {
 	if !ok {
 		t.Fatal("期望命中非流式缓存")
 	}
-	if !strings.Contains(entry.ResponseBody, `"prompt_tokens_details":{"cached_tokens":10}`) {
+	if !strings.Contains(string(entry.ResponseBody), `"prompt_tokens_details":{"cached_tokens":10}`) {
 		t.Fatalf("期望直接返回已注入 prompt_tokens_details.cached_tokens 的缓存体，实际是 %s", entry.ResponseBody)
 	}
-	if !strings.Contains(entry.ResponseBody, `"total_tokens":10`) {
+	if !strings.Contains(string(entry.ResponseBody), `"total_tokens":10`) {
 		t.Fatalf("期望直接返回已注入 total_tokens 的缓存体，实际是 %s", entry.ResponseBody)
 	}
 }
@@ -176,7 +176,7 @@ func TestStreamAndNonStreamRequestCachesUseSeparateEntries(t *testing.T) {
 	if !ok {
 		t.Fatal("期望保留最新写入的流式缓存")
 	}
-	if !strings.Contains(entry.ResponseBody, `"id":"stream-1"`) {
+	if !strings.Contains(string(entry.ResponseBody), `"id":"stream-1"`) {
 		t.Fatalf("期望命中流式缓存内容，实际是 %s", entry.ResponseBody)
 	}
 }

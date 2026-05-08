@@ -326,6 +326,7 @@
         status: "",
         admin: ""
       },
+      lastUiActivityAt: Date.now(),
       lang: detectInitialLang(),
       theme: detectInitialTheme(),
       themeManual: localStorage.getItem(THEME_KEY) !== null

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"simple-api-pool/config"
+	"simple-api-pool/internal/proxyroute"
 )
 
 type pathParts struct {
@@ -15,26 +16,12 @@ type pathParts struct {
 }
 
 func parsePath(path string) pathParts {
-	var p pathParts
-	path = strings.TrimPrefix(path, "/")
-	if path == "" {
-		return p
+	parts := proxyroute.ParsePath(path)
+	return pathParts{
+		useCache: parts.UseCache,
+		provider: parts.Provider,
+		suffix:   parts.Suffix,
 	}
-	segments := strings.Split(path, "/")
-
-	idx := 0
-	if len(segments) > idx && segments[idx] == "cache" {
-		p.useCache = true
-		idx++
-	}
-	if len(segments) > idx {
-		p.provider = segments[idx]
-		idx++
-	}
-	if len(segments) > idx {
-		p.suffix = "/" + strings.Join(segments[idx:], "/")
-	}
-	return p
 }
 
 func buildTargetURL(providerType config.ProviderType, baseURL, suffix, rawQuery string) string {
@@ -110,16 +97,7 @@ func isStreamingResponse(headers http.Header) bool {
 }
 
 func cacheFieldForProviderType(providerType config.ProviderType) string {
-	switch providerType {
-	case config.OpenAIChat, config.Claude:
-		return "messages"
-	case config.OpenAIResponses:
-		return "input"
-	case config.Gemini:
-		return "contents"
-	default:
-		return ""
-	}
+	return proxyroute.CacheFieldForProviderType(providerType)
 }
 
 func isModelDiscoveryRequest(method, suffix string) bool {

@@ -3,10 +3,11 @@ package auth
 import (
 	"crypto/subtle"
 	"net/http"
-	"net/url"
 	"strings"
+	"unsafe"
 
 	"simple-api-pool/config"
+	"simple-api-pool/internal/proxyroute"
 )
 
 func CheckClientKey(r *http.Request, cfg *config.Config) bool {
@@ -18,8 +19,8 @@ func CheckClientKey(r *http.Request, cfg *config.Config) bool {
 	if key == "" {
 		return false
 	}
-	for _, k := range keys {
-		if constantTimeEqual(k, key) {
+	for _, configuredKey := range keys {
+		if constantTimeEqual(configuredKey, key) {
 			return true
 		}
 	}
@@ -31,7 +32,7 @@ func CheckAdminKey(r *http.Request, cfg *config.Config) bool {
 	if adminKey == "" {
 		return false
 	}
-	key := extractBearer(r)
+	key := extractAuthorizationCredential(r)
 	if key != "" && constantTimeEqual(key, adminKey) {
 		return true
 	}
@@ -44,36 +45,38 @@ func extractClientKey(r *http.Request, cfg *config.Config) string {
 			return key
 		}
 	}
-	return extractBearer(r)
+	return extractAuthorizationCredential(r)
 }
 
-func extractBearer(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
+func extractAuthorizationCredential(r *http.Request) string {
+	if r == nil {
 		return ""
 	}
-	if strings.HasPrefix(auth, "Bearer ") {
-		return auth[7:]
+
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authorization == "" {
+		return ""
 	}
-	return auth
+	if strings.HasPrefix(authorization, "Bearer ") {
+		return strings.TrimSpace(authorization[len("Bearer "):])
+	}
+	if strings.Contains(authorization, " ") {
+		return ""
+	}
+	return authorization
 }
 
 func providerTypeFromRequest(r *http.Request, cfg *config.Config) (config.ProviderType, bool) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
-	if path == "" {
+	if r == nil {
 		return "", false
 	}
 
-	segments := strings.Split(path, "/")
-	idx := 0
-	if len(segments) > 0 && segments[0] == "cache" {
-		idx++
-	}
-	if len(segments) <= idx {
+	parts := proxyroute.ParsePath(r.URL.Path)
+	if parts.Provider == "" {
 		return "", false
 	}
 
-	provider, _ := cfg.Provider(segments[idx])
+	provider, _ := cfg.Provider(parts.Provider)
 	if provider == nil {
 		return "", false
 	}
@@ -90,23 +93,24 @@ func extractProviderKey(r *http.Request, providerType config.ProviderType) strin
 		if key := strings.TrimSpace(r.Header.Get("x-goog-api-key")); key != "" {
 			return key
 		}
-		if key := queryKey(r.URL.Query(), "key"); key != "" {
+		if key := strings.TrimSpace(r.URL.Query().Get("key")); key != "" {
 			return key
 		}
 	}
-	return extractBearer(r)
-}
-
-func queryKey(values url.Values, key string) string {
-	if values == nil {
-		return ""
-	}
-	return strings.TrimSpace(values.Get(key))
+	return extractAuthorizationCredential(r)
 }
 
 func constantTimeEqual(left, right string) bool {
+	// subtle.ConstantTimeCompare requires equal lengths; the explicit check avoids
+	// panics and keeps the actual byte comparison allocation-free.
 	if len(left) != len(right) {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+	if len(left) == 0 {
+		return true
+	}
+	return subtle.ConstantTimeCompare(
+		unsafe.Slice(unsafe.StringData(left), len(left)),
+		unsafe.Slice(unsafe.StringData(right), len(right)),
+	) == 1
 }

@@ -205,6 +205,33 @@ func TestAdminSessionCookiePassesAdminAuth(t *testing.T) {
 	}
 }
 
+func TestRevokedAdminSessionCookieFailsAdminAuth(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/login", nil)
+	loginRecorder := httptest.NewRecorder()
+	if err := auth.SetAdminSessionCookie(loginRecorder, loginRequest, cfg); err != nil {
+		t.Fatalf("签发管理员会话 Cookie 失败: %v", err)
+	}
+
+	response := loginRecorder.Result()
+	cookies := response.Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("期望签发管理员会话 Cookie")
+	}
+
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/admin/logout", nil)
+	logoutRequest.AddCookie(cookies[0])
+	auth.RevokeAdminSession(logoutRequest, cfg)
+
+	adminRequest := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	adminRequest.AddCookie(cookies[0])
+	if auth.CheckAdminKey(adminRequest, cfg) {
+		t.Fatal("已撤销的管理员会话 Cookie 不应继续通过鉴权")
+	}
+}
+
 func TestConfigLoadsAdminAndClientKeysFromEnvironment(t *testing.T) {
 	t.Setenv("ADMIN_KEY", "env-admin")
 	t.Setenv("CLIENT_KEYS", "a, b ,c")

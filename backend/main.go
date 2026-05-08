@@ -39,7 +39,7 @@ func main() {
 	adminHandler := handler.NewAdminHandler(cfg, statsMgr, cacheStore)
 	statusHandler := handler.NewStatusHandler(cfg, statsMgr)
 	frontendRoot := webui.ResolveRoot()
-	contentSecurityPolicy, err := webui.BuildContentSecurityPolicy(frontendRoot)
+	contentSecurityPolicyProvider, err := webui.NewContentSecurityPolicyProvider(frontendRoot)
 	if err != nil {
 		log.Fatalf("build content security policy failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func main() {
 	}))
 
 	addr := config.ListenAddr()
-	muxWithLogs := middleware.ApplySecurityHeaders(applog.LoggingMiddleware(mux), contentSecurityPolicy)
+	muxWithLogs := middleware.ApplySecurityHeaders(applog.LoggingMiddleware(mux), contentSecurityPolicyProvider.Policy)
 	server := &http.Server{
 		Addr:    addr,
 		Handler: muxWithLogs,

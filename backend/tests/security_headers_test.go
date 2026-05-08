@@ -3,9 +3,13 @@ package tests
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"simple-api-pool/middleware"
+	"simple-api-pool/webui"
 )
 
 func TestApplySecurityHeadersSetsAdditionalSecurityPolicies(t *testing.T) {
@@ -13,7 +17,7 @@ func TestApplySecurityHeadersSetsAdditionalSecurityPolicies(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	handler := middleware.ApplySecurityHeaders(next, "")
+	handler := middleware.ApplySecurityHeaders(next, nil)
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
 	rec := httptest.NewRecorder()
 
@@ -27,5 +31,35 @@ func TestApplySecurityHeadersSetsAdditionalSecurityPolicies(t *testing.T) {
 	}
 	if got := rec.Header().Get("Permissions-Policy"); got == "" {
 		t.Fatal("期望设置 Permissions-Policy")
+	}
+}
+
+func TestContentSecurityPolicyProviderRefreshesAfterIndexChange(t *testing.T) {
+	frontendRoot := t.TempDir()
+	indexPath := filepath.Join(frontendRoot, "index.html")
+
+	initialIndex := "<!doctype html><html><head><script>console.log('a')</script></head><body></body></html>"
+	if err := os.WriteFile(indexPath, []byte(initialIndex), 0600); err != nil {
+		t.Fatalf("写入初始 index.html 失败: %v", err)
+	}
+
+	provider, err := webui.NewContentSecurityPolicyProvider(frontendRoot)
+	if err != nil {
+		t.Fatalf("创建 CSP provider 失败: %v", err)
+	}
+
+	initialPolicy := provider.Policy()
+	if !strings.Contains(initialPolicy, "sha256-") {
+		t.Fatalf("期望初始 CSP 包含内联脚本 hash，实际是 %q", initialPolicy)
+	}
+
+	updatedIndex := "<!doctype html><html><head><script>console.log('updated script body')</script></head><body></body></html>"
+	if err := os.WriteFile(indexPath, []byte(updatedIndex), 0600); err != nil {
+		t.Fatalf("写入更新后的 index.html 失败: %v", err)
+	}
+
+	updatedPolicy := provider.Policy()
+	if updatedPolicy == initialPolicy {
+		t.Fatal("期望 index.html 变化后 CSP 随之刷新")
 	}
 }

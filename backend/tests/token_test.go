@@ -46,6 +46,16 @@ func TestExtractGeminiCacheTokenCounts(t *testing.T) {
 	}
 }
 
+func TestExtractGeminiUsesTotalTokensWithoutInventingSplit(t *testing.T) {
+	body := []byte(`{"usageMetadata":{"totalTokenCount":19,"cachedContentTokenCount":7}}`)
+
+	got := token.Extract("gemini", body, false)
+
+	if got.InputTokens != 19 || got.OutputTokens != 0 || got.CacheTokens != 7 {
+		t.Fatalf("期望 Gemini 只有总 token 时不虚构 input/output 拆分，实际是 %+v", got)
+	}
+}
+
 func TestMissingTokenUsageFallsBackToEstimation(t *testing.T) {
 	body := []byte(`{"message":"missing usage block"}`)
 

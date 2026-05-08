@@ -345,3 +345,34 @@ func TestBrokenStreamResponseIsNotCachedAsCompleteResponse(t *testing.T) {
 		t.Fatalf("期望损坏流响应计入错误两次，实际 error_count 是 %d", providerStats.ErrorCount)
 	}
 }
+
+func TestDeleteProviderAlsoClearsProviderStats(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	statsManager.RecordSuccess("openai", 3, 4)
+	statsManager.RecordError("openai", http.StatusTooManyRequests)
+
+	adminHandler := handler.NewAdminHandler(cfg, statsManager, newTestCacheStore(t))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai", nil)
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	adminHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if _, ok := statsManager.Snapshot()["openai"]; ok {
+		t.Fatal("期望删除提供商后同步清理统计项")
+	}
+}

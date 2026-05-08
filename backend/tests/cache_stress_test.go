@@ -41,7 +41,7 @@ func TestSQLiteCacheSupportsConcurrentReadWriteWithinProvider(t *testing.T) {
 					errCh <- fmt.Errorf("worker %d iteration %d 未命中新写入缓存", workerID, i)
 					return
 				}
-				if entry.ResponseBody != string(response) {
+				if string(entry.ResponseBody) != string(response) {
 					errCh <- fmt.Errorf("worker %d iteration %d 响应体不匹配: %s", workerID, i, entry.ResponseBody)
 					return
 				}
@@ -122,7 +122,7 @@ func TestSQLiteCacheSupportsConcurrentIsolationAcrossProviders(t *testing.T) {
 					errCh <- fmt.Errorf("%s 第 %d 次写入后未命中缓存", provider.name, i)
 					return
 				}
-				if entry.ResponseBody != string(response) {
+				if string(entry.ResponseBody) != string(response) {
 					errCh <- fmt.Errorf("%s 第 %d 次命中返回了错误响应体 %s", provider.name, i, entry.ResponseBody)
 					return
 				}
@@ -163,7 +163,7 @@ func TestSQLiteCachePersistsAcrossReopen(t *testing.T) {
 	if !ok {
 		t.Fatal("期望重新打开后仍能命中缓存")
 	}
-	if entry.ResponseBody != string(response) || entry.InputTokens != 2 || entry.OutputTokens != 3 {
+	if string(entry.ResponseBody) != string(response) || entry.InputTokens != 2 || entry.OutputTokens != 3 {
 		t.Fatalf("期望重新打开后读到原始缓存，实际是 %+v", entry)
 	}
 }

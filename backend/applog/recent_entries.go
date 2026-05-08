@@ -2,18 +2,19 @@ package applog
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dustin/go-humanize"
 )
 
 const defaultRecentEntryLimit = 200
-const defaultRecentEntryMaxBytes = 10 * 1024 * 1024
+const defaultRecentEntryMaxBytes = 2 * 1024 * 1024
 
 type Entry struct {
 	Time  string         `json:"time"`
@@ -26,43 +27,36 @@ type entryRingBuffer struct {
 	mu         sync.RWMutex
 	entries    []Entry
 	entrySizes []int
+	start      int
+	count      int
 	limit      int
 	maxBytes   int
 	totalBytes int
 }
 
-var (
-	entryBufferGuard sync.RWMutex
-	entryBuffer      = newEntryRingBuffer(loadRecentEntryLimitFromEnv(), loadRecentEntryMaxBytesFromEnv())
-)
+var entryBuffer atomic.Pointer[entryRingBuffer]
+
+func init() {
+	entryBuffer.Store(newEntryRingBuffer(loadRecentEntryLimitFromEnv(), loadRecentEntryMaxBytesFromEnv()))
+}
 
 func RecentEntries(limit int) []Entry {
 	return currentEntryBuffer().snapshot(limit)
 }
 
 func ReplaceRecentEntriesForTesting(limit int) func() {
-	entryBufferGuard.Lock()
-	previous := entryBuffer
-	entryBuffer = newEntryRingBuffer(limit, defaultRecentEntryMaxBytes)
-	entryBufferGuard.Unlock()
-
+	previous := currentEntryBuffer()
+	entryBuffer.Store(newEntryRingBuffer(limit, defaultRecentEntryMaxBytes))
 	return func() {
-		entryBufferGuard.Lock()
-		entryBuffer = previous
-		entryBufferGuard.Unlock()
+		entryBuffer.Store(previous)
 	}
 }
 
 func ReplaceRecentEntriesForTestingWithBytes(limit, maxBytes int) func() {
-	entryBufferGuard.Lock()
-	previous := entryBuffer
-	entryBuffer = newEntryRingBuffer(limit, maxBytes)
-	entryBufferGuard.Unlock()
-
+	previous := currentEntryBuffer()
+	entryBuffer.Store(newEntryRingBuffer(limit, maxBytes))
 	return func() {
-		entryBufferGuard.Lock()
-		entryBuffer = previous
-		entryBufferGuard.Unlock()
+		entryBuffer.Store(previous)
 	}
 }
 
@@ -78,6 +72,7 @@ func loadRecentEntryLimitFromEnv() int {
 
 	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed <= 0 {
+		slog.Warn("invalid LOG_BUFFER_LIMIT, falling back to default", "value", raw, "default", defaultRecentEntryLimit)
 		return defaultRecentEntryLimit
 	}
 	return parsed
@@ -95,15 +90,19 @@ func loadRecentEntryMaxBytesFromEnv() int {
 
 	parsed, err := humanize.ParseBytes(raw)
 	if err != nil || parsed == 0 {
+		slog.Warn("invalid LOG_BUFFER_MAX_BYTES, falling back to default", "value", raw, "default", defaultRecentEntryMaxBytes)
 		return defaultRecentEntryMaxBytes
 	}
 	return int(parsed)
 }
 
 func currentEntryBuffer() *entryRingBuffer {
-	entryBufferGuard.RLock()
-	defer entryBufferGuard.RUnlock()
-	return entryBuffer
+	buffer := entryBuffer.Load()
+	if buffer == nil {
+		buffer = newEntryRingBuffer(defaultRecentEntryLimit, defaultRecentEntryMaxBytes)
+		entryBuffer.Store(buffer)
+	}
+	return buffer
 }
 
 func newEntryRingBuffer(limit, maxBytes int) *entryRingBuffer {
@@ -114,8 +113,8 @@ func newEntryRingBuffer(limit, maxBytes int) *entryRingBuffer {
 		maxBytes = defaultRecentEntryMaxBytes
 	}
 	return &entryRingBuffer{
-		entries:    make([]Entry, 0, limit),
-		entrySizes: make([]int, 0, limit),
+		entries:    make([]Entry, limit),
+		entrySizes: make([]int, limit),
 		limit:      limit,
 		maxBytes:   maxBytes,
 	}
@@ -126,51 +125,90 @@ func (buffer *entryRingBuffer) append(entry Entry) {
 	defer buffer.mu.Unlock()
 
 	entrySize := estimateEntrySize(entry)
-	buffer.entries = append(buffer.entries, entry)
-	buffer.entrySizes = append(buffer.entrySizes, entrySize)
+	if buffer.count == buffer.limit {
+		buffer.evictOldestLocked()
+	}
+
+	insertIndex := (buffer.start + buffer.count) % buffer.limit
+	buffer.entries[insertIndex] = entry
+	buffer.entrySizes[insertIndex] = entrySize
+	buffer.count++
 	buffer.totalBytes += entrySize
 
-	for len(buffer.entries) > buffer.limit {
-		buffer.evictOldest()
-	}
-	for len(buffer.entries) > 1 && buffer.totalBytes > buffer.maxBytes {
-		buffer.evictOldest()
+	for buffer.count > 1 && buffer.totalBytes > buffer.maxBytes {
+		buffer.evictOldestLocked()
 	}
 }
 
-func (buffer *entryRingBuffer) evictOldest() {
-	if len(buffer.entries) == 0 {
+func (buffer *entryRingBuffer) evictOldestLocked() {
+	if buffer.count == 0 {
 		return
 	}
 
-	buffer.totalBytes -= buffer.entrySizes[0]
-	buffer.entries = append(buffer.entries[:0], buffer.entries[1:]...)
-	buffer.entrySizes = append(buffer.entrySizes[:0], buffer.entrySizes[1:]...)
+	buffer.totalBytes -= buffer.entrySizes[buffer.start]
+	buffer.entries[buffer.start] = Entry{}
+	buffer.entrySizes[buffer.start] = 0
+	buffer.start = (buffer.start + 1) % buffer.limit
+	buffer.count--
 }
 
 func estimateEntrySize(entry Entry) int {
 	estimatedSize := len(entry.Time) + len(entry.Level) + len(entry.Msg)
-	if len(entry.Attrs) == 0 {
-		return estimatedSize
+	for key, value := range entry.Attrs {
+		estimatedSize += len(key) + estimateAnySize(value) + 8
 	}
+	return estimatedSize
+}
 
-	attrBytes, err := json.Marshal(entry.Attrs)
-	if err != nil {
-		return estimatedSize
+func estimateAnySize(value any) int {
+	switch typed := value.(type) {
+	case nil:
+		return 4
+	case string:
+		return len(typed)
+	case bool:
+		if typed {
+			return 4
+		}
+		return 5
+	case int:
+		return len(strconv.Itoa(typed))
+	case int8, int16, int32, int64:
+		return len(fmt.Sprint(typed))
+	case uint, uint8, uint16, uint32, uint64:
+		return len(fmt.Sprint(typed))
+	case float32, float64:
+		return len(fmt.Sprint(typed))
+	case []any:
+		size := 2
+		for _, item := range typed {
+			size += estimateAnySize(item) + 1
+		}
+		return size
+	case map[string]any:
+		size := 2
+		for key, item := range typed {
+			size += len(key) + estimateAnySize(item) + 4
+		}
+		return size
+	default:
+		return len(fmt.Sprint(typed))
 	}
-	return estimatedSize + len(attrBytes)
 }
 
 func (buffer *entryRingBuffer) snapshot(limit int) []Entry {
 	buffer.mu.RLock()
 	defer buffer.mu.RUnlock()
 
-	if limit <= 0 || limit > len(buffer.entries) {
-		limit = len(buffer.entries)
+	if limit <= 0 || limit > buffer.count {
+		limit = buffer.count
 	}
-	start := len(buffer.entries) - limit
-	result := make([]Entry, limit)
-	copy(result, buffer.entries[start:])
+	result := make([]Entry, 0, limit)
+	startOffset := buffer.count - limit
+	for offset := startOffset; offset < buffer.count; offset++ {
+		index := (buffer.start + offset) % buffer.limit
+		result = append(result, buffer.entries[index])
+	}
 	return result
 }
 

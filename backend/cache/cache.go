@@ -14,10 +14,11 @@ import (
 	_ "modernc.org/sqlite"
 
 	"simple-api-pool/config"
+	"simple-api-pool/internal/proxyroute"
 )
 
 type Entry struct {
-	ResponseBody string            `json:"response_body"`
+	ResponseBody []byte            `json:"response_body"`
 	StatusCode   int               `json:"status_code"`
 	Headers      map[string]string `json:"headers"`
 	InputTokens  int64             `json:"input_tokens"`
@@ -28,6 +29,7 @@ type Store struct {
 	basePath string
 	mu       sync.Mutex
 	dbs      map[string]*sql.DB
+	writers  map[string]*sync.Mutex
 }
 
 func NewStore(basePath string) *Store {
@@ -35,6 +37,7 @@ func NewStore(basePath string) *Store {
 	return &Store{
 		basePath: basePath,
 		dbs:      make(map[string]*sql.DB),
+		writers:  make(map[string]*sync.Mutex),
 	}
 }
 
@@ -103,7 +106,7 @@ func (s *Store) GetByKeyContext(ctx context.Context, providerName, cacheKey stri
 	`, cacheKey)
 
 	var (
-		responseBody string
+		responseBody []byte
 		statusCode   int
 		headersJSON  string
 		inputTokens  int64
@@ -117,7 +120,7 @@ func (s *Store) GetByKeyContext(ctx context.Context, providerName, cacheKey stri
 	if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
 		return nil, false
 	}
-	if responseBody == "" {
+	if len(responseBody) == 0 {
 		return nil, false
 	}
 
@@ -171,7 +174,7 @@ func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName stri
 		}
 
 		return &Entry{
-			ResponseBody: string(streamBody),
+			ResponseBody: append([]byte(nil), streamBody...),
 			StatusCode:   statusCode,
 			Headers:      headers,
 			InputTokens:  inputTokens,
@@ -187,7 +190,7 @@ func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName stri
 
 	var (
 		cachedBody   []byte
-		responseBody string
+		responseBody []byte
 		statusCode   int
 		headersJSON  string
 		inputTokens  int64
@@ -197,10 +200,10 @@ func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName stri
 		return nil, false
 	}
 	if len(cachedBody) == 0 {
-		if responseBody == "" {
+		if len(responseBody) == 0 {
 			return nil, false
 		}
-		cachedBody = decorateCachedResponse(providerType, []byte(responseBody), inputTokens, outputTokens)
+		cachedBody = decorateCachedResponse(providerType, responseBody, inputTokens, outputTokens)
 	}
 
 	headers := make(map[string]string)
@@ -209,7 +212,7 @@ func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName stri
 	}
 
 	return &Entry{
-		ResponseBody: string(cachedBody),
+		ResponseBody: append([]byte(nil), cachedBody...),
 		StatusCode:   statusCode,
 		Headers:      headers,
 		InputTokens:  inputTokens,
@@ -234,6 +237,10 @@ func (s *Store) SetForRequestByKey(providerName string, providerType config.Prov
 }
 
 func (s *Store) setCacheEntryByKey(providerName string, providerType config.ProviderType, storageKey string, responseBody []byte, statusCode int, headers map[string]string, inputTokens, outputTokens, maxEntries int64, isStream bool) bool {
+	writeLock := s.writerForProvider(providerName)
+	writeLock.Lock()
+	defer writeLock.Unlock()
+
 	db, err := s.dbFor(providerName)
 	if err != nil {
 		return false
@@ -245,10 +252,6 @@ func (s *Store) setCacheEntryByKey(providerName string, providerType config.Prov
 	}
 	defer tx.Rollback()
 	now := time.Now().UnixNano()
-	existingEntry, err := cacheEntryExists(tx, storageKey)
-	if err != nil {
-		return false
-	}
 
 	if isStream {
 		headersJSON, err := formatHeadersJSON(cloneHeaders(headers), true)
@@ -259,7 +262,7 @@ func (s *Store) setCacheEntryByKey(providerName string, providerType config.Prov
 		if _, err := tx.Exec(`
 			INSERT INTO cache_entries (
 				cache_key, response_body, status_code, headers_json, stream_headers_json, cached_body, cached_stream_body, input_tokens, output_tokens, updated_at
-			) VALUES (?, '', ?, '{}', ?, X'', ?, ?, ?, ?)
+			) VALUES (?, X'', ?, '{}', ?, X'', ?, ?, ?, ?)
 			ON CONFLICT(cache_key) DO UPDATE SET
 				status_code = excluded.status_code,
 				stream_headers_json = excluded.stream_headers_json,
@@ -287,52 +290,27 @@ func (s *Store) setCacheEntryByKey(providerName string, providerType config.Prov
 				input_tokens = excluded.input_tokens,
 				output_tokens = excluded.output_tokens,
 				updated_at = excluded.updated_at
-		`, storageKey, string(responseBody), statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
+		`, storageKey, responseBody, statusCode, string(headersJSON), decoratedBody, inputTokens, outputTokens, now); err != nil {
 			return false
 		}
-	}
-
-	entryCount, err := readCacheEntryCount(tx)
-	if err != nil {
-		return false
-	}
-	if !existingEntry {
-		entryCount++
-	}
-
-	if maxEntries > 0 {
-		if entryCount > maxEntries {
-			deleteCount := entryCount - maxEntries
-			result, err := tx.Exec(`
-				DELETE FROM cache_entries
-				WHERE cache_key IN (
-					SELECT cache_key
-					FROM cache_entries
-					ORDER BY updated_at ASC
-					LIMIT ?
-				)
-			`, deleteCount)
-			if err != nil {
-				return false
-			}
-			deletedRows, err := result.RowsAffected()
-			if err != nil {
-				return false
-			}
-			entryCount -= deletedRows
-		}
-	}
-	if err := writeCacheEntryCount(tx, entryCount); err != nil {
-		return false
 	}
 
 	if err := tx.Commit(); err != nil {
 		return false
 	}
+	if maxEntries > 0 {
+		if err := trimProviderCacheEntries(db, maxEntries); err != nil {
+			return false
+		}
+	}
 	return true
 }
 
 func (s *Store) ClearProvider(provider string) error {
+	writeLock := s.writerForProvider(provider)
+	writeLock.Lock()
+	defer writeLock.Unlock()
+
 	s.mu.Lock()
 	db, ok := s.dbs[provider]
 	s.mu.Unlock()
@@ -377,8 +355,8 @@ func (s *Store) dbFor(provider string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 
 	if err := initializeDB(db); err != nil {
 		db.Close()
@@ -389,16 +367,43 @@ func (s *Store) dbFor(provider string) (*sql.DB, error) {
 	return db, nil
 }
 
+func (s *Store) writerForProvider(provider string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	writeLock, ok := s.writers[provider]
+	if ok {
+		return writeLock
+	}
+	writeLock = &sync.Mutex{}
+	s.writers[provider] = writeLock
+	return writeLock
+}
+
 func initializeDB(db *sql.DB) error {
-	statements := []string{
+	pragmaStatements := []string{
 		`PRAGMA journal_mode=WAL;`,
 		`PRAGMA synchronous=NORMAL;`,
 		`PRAGMA busy_timeout=5000;`,
 		`PRAGMA mmap_size=0;`,
 		`PRAGMA cache_size=-1024;`,
+	}
+	for _, statement := range pragmaStatements {
+		if _, err := db.Exec(statement); err != nil {
+			return err
+		}
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	schemaStatements := []string{
 		`CREATE TABLE IF NOT EXISTS cache_entries (
 			cache_key TEXT PRIMARY KEY,
-			response_body TEXT NOT NULL,
+			response_body BLOB NOT NULL,
 			status_code INTEGER NOT NULL,
 			headers_json TEXT NOT NULL,
 			stream_headers_json TEXT NOT NULL DEFAULT '{}',
@@ -419,9 +424,8 @@ func initializeDB(db *sql.DB) error {
 			SET entry_count = (SELECT COUNT(*) FROM cache_entries)
 			WHERE id = 1;`,
 	}
-
-	for _, statement := range statements {
-		if _, err := db.Exec(statement); err != nil {
+	for _, statement := range schemaStatements {
+		if _, err := tx.Exec(statement); err != nil {
 			return err
 		}
 	}
@@ -434,15 +438,15 @@ func initializeDB(db *sql.DB) error {
 		{name: "cached_stream_body", sql: `ALTER TABLE cache_entries ADD COLUMN cached_stream_body BLOB NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
-		if err := ensureColumn(db, migration.name, migration.sql); err != nil {
+		if err := ensureColumn(tx, migration.name, migration.sql); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
-func ensureColumn(db *sql.DB, columnName, migrationSQL string) error {
-	rows, err := db.Query(`PRAGMA table_info(cache_entries)`)
+func ensureColumn(tx *sql.Tx, columnName, migrationSQL string) error {
+	rows, err := tx.Query(`PRAGMA table_info(cache_entries)`)
 	if err != nil {
 		return err
 	}
@@ -468,34 +472,7 @@ func ensureColumn(db *sql.DB, columnName, migrationSQL string) error {
 		return err
 	}
 
-	_, err = db.Exec(migrationSQL)
-	return err
-}
-
-func cacheEntryExists(tx *sql.Tx, cacheKey string) (bool, error) {
-	var exists int
-	if err := tx.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1
-			FROM cache_entries
-			WHERE cache_key = ?
-		)
-	`, cacheKey).Scan(&exists); err != nil {
-		return false, err
-	}
-	return exists == 1, nil
-}
-
-func readCacheEntryCount(tx *sql.Tx) (int64, error) {
-	var count int64
-	if err := tx.QueryRow(`SELECT entry_count FROM cache_meta WHERE id = 1`).Scan(&count); err != nil {
-		return 0, err
-	}
-	return count, nil
-}
-
-func writeCacheEntryCount(tx *sql.Tx, count int64) error {
-	_, err := tx.Exec(`UPDATE cache_meta SET entry_count = ? WHERE id = 1`, count)
+	_, err = tx.Exec(migrationSQL)
 	return err
 }
 
@@ -508,7 +485,7 @@ func normalizeBodyForCache(providerType config.ProviderType, body []byte) []byte
 	delete(payload, "stream")
 	delete(payload, "stream_options")
 
-	key := cacheFieldForProviderType(providerType)
+	key := proxyroute.CacheFieldForProviderType(providerType)
 	if key == "" {
 		normalized, err := json.Marshal(payload)
 		if err != nil {
@@ -526,15 +503,39 @@ func normalizeBodyForCache(providerType config.ProviderType, body []byte) []byte
 	return normalized
 }
 
-func cacheFieldForProviderType(providerType config.ProviderType) string {
-	switch providerType {
-	case config.OpenAIChat, config.Claude:
-		return "messages"
-	case config.OpenAIResponses:
-		return "input"
-	case config.Gemini:
-		return "contents"
-	default:
-		return ""
+func trimProviderCacheEntries(db *sql.DB, maxEntries int64) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
 	}
+	defer tx.Rollback()
+
+	var entryCount int64
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM cache_entries`).Scan(&entryCount); err != nil {
+		return err
+	}
+	if entryCount <= maxEntries {
+		return tx.Commit()
+	}
+
+	deleteCount := entryCount - maxEntries
+	if _, err := tx.Exec(`
+		DELETE FROM cache_entries
+		WHERE cache_key IN (
+			SELECT cache_key
+			FROM cache_entries
+			ORDER BY updated_at ASC
+			LIMIT ?
+		)
+	`, deleteCount); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		UPDATE cache_meta
+		SET entry_count = (SELECT COUNT(*) FROM cache_entries)
+		WHERE id = 1
+	`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

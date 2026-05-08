@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 var inlineScriptPattern = regexp.MustCompile(`(?is)<script(?:\s[^>]*)?>(.*?)</script>`)
@@ -18,8 +20,72 @@ const cloudflareInsightsScriptSource = "https://static.cloudflareinsights.com"
 const cloudflareInsightsConnectSource = "https://cloudflareinsights.com"
 const defaultContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' " + cloudflareInsightsScriptSource + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
+type ContentSecurityPolicyProvider struct {
+	mu           sync.RWMutex
+	frontendRoot string
+	indexPath    string
+	policy       string
+	modTime      time.Time
+	size         int64
+}
+
 func DefaultContentSecurityPolicy() string {
 	return defaultContentSecurityPolicy
+}
+
+func NewContentSecurityPolicyProvider(frontendRoot string) (*ContentSecurityPolicyProvider, error) {
+	provider := &ContentSecurityPolicyProvider{
+		frontendRoot: frontendRoot,
+		indexPath:    filepath.Join(frontendRoot, "index.html"),
+		policy:       DefaultContentSecurityPolicy(),
+	}
+	if frontendRoot == "" {
+		return provider, nil
+	}
+	if err := provider.refresh(); err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
+func (p *ContentSecurityPolicyProvider) Policy() string {
+	if p == nil {
+		return DefaultContentSecurityPolicy()
+	}
+	if p.frontendRoot == "" {
+		return DefaultContentSecurityPolicy()
+	}
+
+	info, err := os.Stat(p.indexPath)
+	if err != nil {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+		if p.policy != "" {
+			return p.policy
+		}
+		return DefaultContentSecurityPolicy()
+	}
+
+	p.mu.RLock()
+	if p.policy != "" && p.modTime.Equal(info.ModTime()) && p.size == info.Size() {
+		policy := p.policy
+		p.mu.RUnlock()
+		return policy
+	}
+	p.mu.RUnlock()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.policy != "" && p.modTime.Equal(info.ModTime()) && p.size == info.Size() {
+		return p.policy
+	}
+	if err := p.refreshLocked(); err != nil {
+		if p.policy != "" {
+			return p.policy
+		}
+		return DefaultContentSecurityPolicy()
+	}
+	return p.policy
 }
 
 func ResolveRoot() string {
@@ -73,6 +139,27 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 	}
 
 	return "default-src 'self'; img-src 'self' data:; style-src " + strings.Join(styleSources, " ") + "; script-src " + strings.Join(scriptSources, " ") + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", nil
+}
+
+func (p *ContentSecurityPolicyProvider) refresh() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.refreshLocked()
+}
+
+func (p *ContentSecurityPolicyProvider) refreshLocked() error {
+	policy, err := BuildContentSecurityPolicy(p.frontendRoot)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(p.indexPath)
+	if err != nil {
+		return err
+	}
+	p.policy = policy
+	p.modTime = info.ModTime()
+	p.size = info.Size()
+	return nil
 }
 
 func ServeIndex(w http.ResponseWriter, r *http.Request, frontendRoot string) {

@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"log/slog"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -74,23 +76,28 @@ func NewManager(st *store.Store) *Manager {
 
 func (m *Manager) load() {
 	var data map[string]Snapshot
-	if err := m.st.Load("stats/all.json", &data); err == nil {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		for name, snap := range data {
-			ps := &ProviderStats{}
-			ps.SuccessCount.Store(snap.SuccessCount)
-			ps.ErrorCount.Store(snap.ErrorCount)
-			ps.InputTokens.Store(snap.InputTokens)
-			ps.OutputTokens.Store(snap.OutputTokens)
-			ps.CacheTokens.Store(snap.CacheTokens)
-			ps.CacheHits.Store(snap.CacheHits)
-			ps.ErrorTypes = make(map[string]int64, len(snap.ErrorTypes))
-			for code, count := range snap.ErrorTypes {
-				ps.ErrorTypes[code] = count
-			}
-			m.stats[name] = ps
+	if err := m.st.Load("stats/all.json", &data); err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("load stats snapshot failed", "error", err)
 		}
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, snap := range data {
+		ps := &ProviderStats{}
+		ps.SuccessCount.Store(snap.SuccessCount)
+		ps.ErrorCount.Store(snap.ErrorCount)
+		ps.InputTokens.Store(snap.InputTokens)
+		ps.OutputTokens.Store(snap.OutputTokens)
+		ps.CacheTokens.Store(snap.CacheTokens)
+		ps.CacheHits.Store(snap.CacheHits)
+		ps.ErrorTypes = make(map[string]int64, len(snap.ErrorTypes))
+		for code, count := range snap.ErrorTypes {
+			ps.ErrorTypes[code] = count
+		}
+		m.stats[name] = ps
 	}
 }
 
@@ -99,37 +106,23 @@ func (m *Manager) flusher() {
 	periodicTicker := time.NewTicker(30 * time.Second)
 	defer periodicTicker.Stop()
 
-	var (
-		debounceTimer *time.Timer
-		debounceC     <-chan time.Time
-	)
+	debounceTimer := time.NewTimer(time.Hour)
+	if !debounceTimer.Stop() {
+		<-debounceTimer.C
+	}
+	var debounceC <-chan time.Time
 	for {
 		select {
 		case <-periodicTicker.C:
 			m.flush()
 		case <-m.flushSignal:
-			if debounceTimer == nil {
-				debounceTimer = time.NewTimer(time.Second)
-			} else {
-				if !debounceTimer.Stop() {
-					select {
-					case <-debounceTimer.C:
-					default:
-					}
-				}
-				debounceTimer.Reset(time.Second)
-			}
+			resetTimer(debounceTimer, time.Second)
 			debounceC = debounceTimer.C
 		case <-debounceC:
 			m.flush()
 			debounceC = nil
 		case <-m.stopCh:
-			if debounceTimer != nil && !debounceTimer.Stop() {
-				select {
-				case <-debounceTimer.C:
-				default:
-				}
-			}
+			stopTimer(debounceTimer)
 			m.flush()
 			return
 		}
@@ -206,6 +199,16 @@ func (m *Manager) RecordCacheHit(provider string, tokens int64) {
 	m.markDirty()
 }
 
+func (m *Manager) RemoveProvider(provider string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.stats[provider]; !exists {
+		return
+	}
+	delete(m.stats, provider)
+	m.markDirty()
+}
+
 func (m *Manager) Snapshot() map[string]Snapshot {
 	m.mu.RLock()
 	providers := make(map[string]*ProviderStats, len(m.stats))
@@ -222,8 +225,24 @@ func (m *Manager) Snapshot() map[string]Snapshot {
 }
 
 func (m *Manager) markDirty() {
+	// Non-blocking send keeps hot paths lock-free enough for bursty counter
+	// updates; the flusher coalesces pending writes into one debounced flush.
 	select {
 	case m.flushSignal <- struct{}{}:
 	default:
+	}
+}
+
+func resetTimer(timer *time.Timer, duration time.Duration) {
+	stopTimer(timer)
+	timer.Reset(duration)
+}
+
+func stopTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
 	}
 }

@@ -211,7 +211,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set(k, v)
 					}
 					w.WriteHeader(entry.StatusCode)
-					_, _ = w.Write([]byte(entry.ResponseBody))
+					_, _ = w.Write(entry.ResponseBody)
 					return
 				}
 			} else {

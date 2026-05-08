@@ -139,6 +139,7 @@ func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ah *AdminHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	auth.RevokeAdminSession(r, ah.cfg)
 	auth.ClearAdminSessionCookie(w, r)
 	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -186,6 +187,9 @@ func (ah *AdminHandler) handleSingleProvider(w http.ResponseWriter, r *http.Requ
 		if err := ah.cfg.DeleteProvider(name); err != nil {
 			writeErrorResponse(w, http.StatusInternalServerError, "删除提供商失败")
 			return
+		}
+		if ah.stats != nil {
+			ah.stats.RemoveProvider(name)
 		}
 		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:

@@ -58,8 +58,10 @@
       if (location.pathname !== path) {
         history.pushState({}, "", path);
       }
+      markUiActivity();
       route = nextRoute;
       setRouteView();
+      startOverviewPolling();
       if (route === "admin") {
         void loadAdminOverview();
         return;
@@ -98,12 +100,19 @@
       refs.buildVersionValue.textContent = createBuildVersionText();
     }
 
+    function markUiActivity() {
+      state.lastUiActivityAt = Date.now();
+    }
+
     function setMessage(element, text, kind = "") {
-      element.textContent = text || "";
-      element.className = "inline-status";
-      if (kind) {
-        element.classList.add(kind);
+      if (!element) {
+        return;
       }
+      element.textContent = text || "";
+      element.classList.add("inline-status");
+      element.classList.remove("ok", "error");
+      element.classList.toggle("ok", kind === "ok");
+      element.classList.toggle("error", kind === "error");
     }
 
     function setAdminAuthenticated(authenticated) {
@@ -111,12 +120,13 @@
     }
 
     function formatTimestamp(value) {
-      if (!value) {
+      const numericValue = Number(value || 0);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) {
         return t("provider.notDisabled");
       }
-      const date = new Date(Number(value) * 1000);
+      const date = new Date(numericValue * 1000);
       if (Number.isNaN(date.getTime())) {
-        return String(value);
+        return t("provider.notDisabled");
       }
       const locale = state.lang === "en" ? "en-US" : "zh-CN";
       return date.toLocaleString(locale, { hour12: false });
@@ -667,20 +677,43 @@
       }
     }
 
-    function startOverviewPolling() {
-      if (statusPollTimer !== null) {
-        clearInterval(statusPollTimer);
+    function getOverviewPollDelay() {
+      if (document.visibilityState === "hidden") {
+        return STATUS_IDLE_POLL_INTERVAL_MS;
       }
-      statusPollTimer = setInterval(() => {
-        if (document.visibilityState === "hidden") {
-          return;
+
+      const idleMs = Date.now() - Number(state.lastUiActivityAt || 0);
+      if (route === "admin" || idleMs < STATUS_POLL_ACTIVITY_WINDOW_MS) {
+        return STATUS_POLL_INTERVAL_MS;
+      }
+      return STATUS_IDLE_POLL_INTERVAL_MS;
+    }
+
+    async function pollCurrentOverview() {
+      if (route === "admin") {
+        await loadAdminOverview();
+        return;
+      }
+      await loadStatusOverview();
+    }
+
+    function scheduleOverviewPolling() {
+      if (statusPollTimer !== null) {
+        clearTimeout(statusPollTimer);
+      }
+
+      statusPollTimer = setTimeout(async () => {
+        statusPollTimer = null;
+        try {
+          await pollCurrentOverview();
+        } finally {
+          scheduleOverviewPolling();
         }
-        if (route === "admin") {
-          void loadAdminOverview();
-          return;
-        }
-        void loadStatusOverview();
-      }, STATUS_POLL_INTERVAL_MS);
+      }, getOverviewPollDelay());
+    }
+
+    function startOverviewPolling() {
+      scheduleOverviewPolling();
     }
 
     async function loginAdmin(adminKey) {
@@ -789,7 +822,7 @@
             const checked = selectedKeys.has(keyRef) ? "checked" : "";
             return `
               <div class="key-item">
-                <label class="checkbox">
+                <label class="checkbox key-selector-checkbox">
                   <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
                 </label>
                 <div>
@@ -1134,6 +1167,10 @@
     refs.navStatus.addEventListener("click", () => goTo("/status"));
     refs.navAdmin.addEventListener("click", () => goTo("/admin"));
 
+    document.addEventListener("mousedown", markUiActivity);
+    document.addEventListener("keydown", markUiActivity);
+    document.addEventListener("input", markUiActivity);
+
     refs.themeToggle.addEventListener("click", () => {
       setTheme(state.theme === "dark" ? "light" : "dark");
     });
@@ -1151,6 +1188,7 @@
     });
 
     refs.hidePanelLogsToggle.addEventListener("change", () => {
+      markUiActivity();
       state.hidePanelLogs = refs.hidePanelLogsToggle.checked;
       renderRecentLogs(state.recentLogs || []);
     });
@@ -1186,22 +1224,18 @@
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        if (route === "admin") {
-          void loadAdminOverview();
-          return;
-        }
-        void loadStatusOverview();
+        markUiActivity();
+        startOverviewPolling();
+        void pollCurrentOverview();
       }
     });
 
     window.addEventListener("popstate", () => {
       route = getRouteFromPath(location.pathname);
       setRouteView();
-      if (route === "admin") {
-        void loadAdminOverview();
-        return;
-      }
-      void loadStatusOverview();
+      markUiActivity();
+      startOverviewPolling();
+      void pollCurrentOverview();
     });
 
     // Follow system theme until user manually overrides
@@ -1293,7 +1327,7 @@
       }
     });
 
-    refs.globalForm.addEventListener("input", (event) => {
+    function syncGlobalConfigDraftFromForm(event) {
       state.globalConfigDraft = {
         admin_key: refs.globalAdminKey.value,
         token_estimation_enabled: refs.globalTokenEstimation.checked,
@@ -1306,34 +1340,14 @@
       if (event.target === refs.globalClientKeys) {
         state.globalClientKeysDirty = true;
       }
-    });
+    }
 
-    refs.globalForm.addEventListener("change", (event) => {
-      state.globalConfigDraft = {
-        admin_key: refs.globalAdminKey.value,
-        token_estimation_enabled: refs.globalTokenEstimation.checked,
-        client_keys: refs.globalClientKeys.value
-      };
-      state.globalConfigDirty = true;
-      if (event.target === refs.globalAdminKey) {
-        state.globalAdminKeyDirty = true;
-      }
-      if (event.target === refs.globalClientKeys) {
-        state.globalClientKeysDirty = true;
-      }
-    });
-
-    refs.createForm.addEventListener("input", () => {
+    function syncCreateProviderDraftFromForm() {
       state.createProviderDraft = readProviderPayload(refs.createForm);
       state.createProviderDirty = true;
-    });
+    }
 
-    refs.createForm.addEventListener("change", () => {
-      state.createProviderDraft = readProviderPayload(refs.createForm);
-      state.createProviderDirty = true;
-    });
-
-    refs.providerListPanelBody.addEventListener("input", (event) => {
+    function syncProviderPanelDraftFromEvent(event) {
       const form = event.target.closest("form");
       if (!(form instanceof HTMLFormElement)) {
         return;
@@ -1348,23 +1362,14 @@
         state.providerImportDraftsByName[providerName] = String(new FormData(form).get("keys") || "");
         state.providerImportDirtyByName[providerName] = true;
       }
-    });
+    }
+
+    refs.globalForm.addEventListener("input", syncGlobalConfigDraftFromForm);
+    refs.createForm.addEventListener("input", syncCreateProviderDraftFromForm);
+    refs.providerListPanelBody.addEventListener("input", syncProviderPanelDraftFromEvent);
 
     refs.providerListPanelBody.addEventListener("change", (event) => {
-      const form = event.target.closest("form");
-      if (form instanceof HTMLFormElement && form.classList.contains("provider-edit-form")) {
-        const providerName = form.dataset.provider;
-        state.providerDraftsByName[providerName] = readProviderPayload(form);
-        state.providerDraftDirtyByName[providerName] = true;
-      }
-      if (form instanceof HTMLFormElement && form.classList.contains("provider-keys-form")) {
-        const providerName = form.dataset.provider;
-        state.providerImportDraftsByName[providerName] = String(new FormData(form).get("keys") || "");
-        state.providerImportDirtyByName[providerName] = true;
-      }
-    });
-
-    refs.providerListPanelBody.addEventListener("change", (event) => {
+      syncProviderPanelDraftFromEvent(event);
       const checkbox = event.target.closest('input[data-role="key-selector"]');
       if (!checkbox) {
         return;
@@ -1455,16 +1460,19 @@
       setRouteView();
       startOverviewPolling();
 
-      if (route === "admin") {
-        try {
-          await loadAdminOverview();
-        } catch (error) {
+      try {
+        await pollCurrentOverview();
+      } catch (error) {
+        if (route === "admin") {
           setMessage(refs.loginStatus, error.message || t("error.read"), "error");
+          return;
         }
-        return;
+        refs.serviceHealth.textContent = t("metric.healthError");
+        refs.serviceHealthNote.textContent = error.message || t("metric.healthUnavailable");
+        refs.statusList.innerHTML = `<div class="empty">${escapeHTML(error.message || t("error.readStatus"))}</div>`;
+        refs.statusBadge.textContent = t("status.failed");
+        refs.statusBadge.className = "status-badge err";
       }
-
-      await loadStatusOverview();
     }
 
     init();

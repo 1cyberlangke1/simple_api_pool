@@ -39,7 +39,7 @@ func BenchmarkCacheSQLiteGet(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		entry, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", body)
-		if !ok || entry.ResponseBody != `{"id":"bench-get"}` {
+		if !ok || string(entry.ResponseBody) != `{"id":"bench-get"}` {
 			b.Fatalf("基准读取未命中或响应错误: ok=%v entry=%+v", ok, entry)
 		}
 	}
