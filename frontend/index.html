@@ -18,7 +18,7 @@
           <p id="hero-copy" data-i18n="hero.statusCopy">实时查看各提供商的请求与 Token 用量。</p>
           <div id="build-version" class="hero-meta">
             <strong data-i18n="meta.version">版本</strong>
-            <span id="build-version-value">v0.1.24-dirty / e5ac84c / 2026-05-08T13:25:02Z</span>
+            <span id="build-version-value">v0.1.25-dirty / 01159be / 2026-05-08T13:39:21Z</span>
           </div>
         </div>
         <div class="hero-actions">
@@ -80,8 +80,8 @@
           <h3 data-i18n="admin.loginTitle">登录</h3>
           <div class="panel-subtitle" data-i18n="admin.loginSub">登录状态保存在当前浏览器。</div>
           <form id="login-form">
-            <label data-i18n="admin.adminKey">
-              管理员密钥
+            <label>
+              <span data-role="label-text" data-i18n="admin.adminKey">管理员密钥</span>
               <input id="login-admin-key" name="admin_key" type="password" data-i18n-placeholder="admin.adminKeyPlaceholder" placeholder="请输入管理员密钥" autocomplete="current-password">
             </label>
             <div class="actions">
@@ -103,8 +103,8 @@
             <h3 data-i18n="admin.globalTitle">全局配置</h3>
             <form id="global-config-form">
               <div class="form-grid">
-                <label data-i18n="admin.adminKey">
-                  管理员密钥
+                <label>
+                  <span data-role="label-text" data-i18n="admin.adminKey">管理员密钥</span>
                   <input id="global-admin-key" name="admin_key" type="password" data-i18n-placeholder="admin.adminKeyPlaceholderHint" placeholder="用于管理接口鉴权" autocomplete="new-password">
                 </label>
                 <label class="checkbox">
@@ -112,8 +112,8 @@
                   <span data-i18n="admin.tokenEst">上游缺统计时启用 Token 估算</span>
                 </label>
               </div>
-              <label data-i18n="admin.clientKeys">
-                客户端访问密钥
+              <label>
+                <span data-role="label-text" data-i18n="admin.clientKeys">客户端访问密钥</span>
                 <textarea id="global-client-keys" name="client_keys" data-i18n-placeholder="admin.keysPlaceholder" placeholder="每行一个，或用半角逗号分隔"></textarea>
               </label>
               <div class="actions">
@@ -127,12 +127,12 @@
             <h3 data-i18n="admin.newProvider">新增提供商</h3>
             <form id="provider-create-form">
               <div class="form-grid">
-                <label data-i18n="provider.name">
-                  名称
+                <label>
+                  <span data-role="label-text" data-i18n="provider.name">名称</span>
                   <input name="name" type="text" data-i18n-placeholder="provider.namePlaceholder" placeholder="例如 openai" required>
                 </label>
-                <label data-i18n="provider.type">
-                  接口格式
+                <label>
+                  <span data-role="label-text" data-i18n="provider.type">接口格式</span>
                   <select name="type">
                     <option value="openai_chat">OpenAI Chat</option>
                     <option value="openai_responses">OpenAI Responses</option>
@@ -142,12 +142,12 @@
                 </label>
               </div>
               <div class="form-grid">
-                <label data-i18n="provider.baseUrl">
-                  上游地址
+                <label>
+                  <span data-role="label-text" data-i18n="provider.baseUrl">上游地址</span>
                   <input name="base_url" type="text" data-i18n-placeholder="provider.baseUrlPlaceholder" placeholder="留空则使用对应类型的默认地址">
                 </label>
-                <label data-i18n="provider.strategy">
-                  密钥策略
+                <label>
+                  <span data-role="label-text" data-i18n="provider.strategy">密钥策略</span>
                   <select name="key_strategy">
                     <option value="round_robin" data-i18n="strategy.roundRobin">轮询</option>
                     <option value="fill" data-i18n="strategy.fill">填充</option>
@@ -155,16 +155,16 @@
                 </label>
               </div>
               <div class="form-grid three">
-                <label data-i18n="provider.failThreshold">
-                  失败阈值
+                <label>
+                  <span data-role="label-text" data-i18n="provider.failThreshold">失败阈值</span>
                   <input name="fail_threshold" type="number" min="1" value="3">
                 </label>
-                <label data-i18n="provider.minDisable">
-                  最小禁用秒数
+                <label>
+                  <span data-role="label-text" data-i18n="provider.minDisable">最小禁用秒数</span>
                   <input name="min_disable_secs" type="number" min="1" value="30">
                 </label>
-                <label data-i18n="provider.maxDisable">
-                  最大禁用秒数
+                <label>
+                  <span data-role="label-text" data-i18n="provider.maxDisable">最大禁用秒数</span>
                   <input name="max_disable_secs" type="number" min="1" value="43200">
                 </label>
               </div>
@@ -173,8 +173,8 @@
                   <input name="cache_enabled" type="checkbox">
                   <span data-i18n="provider.cacheEnabled">启用硬盘缓存</span>
                 </label>
-                <label data-i18n="provider.cacheMax">
-                  最大缓存条目
+                <label>
+                  <span data-role="label-text" data-i18n="provider.cacheMax">最大缓存条目</span>
                   <input name="cache_max_entries" type="number" min="1" value="1000">
                 </label>
               </div>

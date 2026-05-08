@@ -338,6 +338,11 @@
         const key = el.getAttribute("data-i18n");
         const text = t(key);
         if (el.tagName === "LABEL") {
+          Array.from(el.childNodes).forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim() !== "") {
+              el.removeChild(node);
+            }
+          });
           let labelTextNode = el.querySelector("[data-role='label-text']");
           if (!labelTextNode) {
             labelTextNode = document.createElement("span");

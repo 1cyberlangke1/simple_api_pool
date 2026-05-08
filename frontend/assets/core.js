@@ -5,9 +5,9 @@ const API_BASE = "/api";
     const KEY_PAGE_SIZE = 10;
     const THEME_KEY = "simple-api-pool-theme";
     const LANG_KEY = "simple-api-pool-lang";
-    const RAW_APP_VERSION = "v0.1.24-dirty";
-    const RAW_APP_REVISION = "e5ac84c";
-    const RAW_APP_BUILD_TIME = "2026-05-08T13:25:02Z";
+    const RAW_APP_VERSION = "v0.1.25-dirty";
+    const RAW_APP_REVISION = "01159be";
+    const RAW_APP_BUILD_TIME = "2026-05-08T13:39:21Z";
     function getRouteFromPath(pathname) {
       return pathname === "/admin" ? "admin" : "status";
     }

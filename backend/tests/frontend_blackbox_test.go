@@ -165,6 +165,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(scriptBundle, `const API_BASE = "/api"`) {
 		t.Fatal("期望前端脚本包含 API_BASE 常量")
 	}
+	if strings.Contains(string(indexHTML), `<label data-i18n=`) {
+		t.Fatal("期望静态首页不要直接把 data-i18n 绑在整个 label 上，避免重复标签文本")
+	}
 	if strings.Contains(scriptBundle, `__APP_VERSION__`) || strings.Contains(scriptBundle, `__APP_REVISION__`) || strings.Contains(scriptBundle, `__APP_BUILD_TIME__`) {
 		t.Fatal("期望前端脚本在构建后注入真实构建元信息，而不是保留占位符")
 	}
