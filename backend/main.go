@@ -7,8 +7,12 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dustin/go-humanize"
 
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
@@ -22,13 +26,12 @@ import (
 )
 
 func main() {
-	if v := os.Getenv("GOMEMLIMIT"); v == "" {
-		debug.SetMemoryLimit(32 << 20) // 32 MiB
-	}
+	applyProcessMemoryLimit()
 	applog.InitFromEnv()
 
 	store := store.New("data")
 	cfg := config.New(store)
+	cfg.ApplyEnvOverrides()
 	statsMgr := stats.NewManager(store)
 	defer statsMgr.Stop()
 	kr := keyring.New(cfg)
@@ -41,13 +44,14 @@ func main() {
 	frontendRoot := webui.ResolveRoot()
 	contentSecurityPolicyProvider, err := webui.NewContentSecurityPolicyProvider(frontendRoot)
 	if err != nil {
-		log.Fatalf("build content security policy failed: %v", err)
+		log.Printf("build content security policy failed, fallback to default policy: %v", err)
+		contentSecurityPolicyProvider = nil
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.Handle("/api/status/stats", statusHandler)
 	mux.Handle("/api/status/overview", statusHandler)
@@ -60,12 +64,11 @@ func main() {
 			webui.ServeIndex(w, r, frontendRoot)
 			return
 		}
-		if path == "/favicon.svg" {
-			webui.ServeAsset(w, r, frontendRoot, "favicon.svg")
-			return
-		}
 		if path == "/favicon.ico" {
 			http.Redirect(w, r, "/favicon.svg", http.StatusMovedPermanently)
+			return
+		}
+		if webui.ServeAssetByRequestPath(w, r, frontendRoot, path) {
 			return
 		}
 		proxyHandler.ServeHTTP(w, r)
@@ -82,7 +85,6 @@ func main() {
 
 	go func() {
 		<-shutdownCtx.Done()
-		stopSignals()
 		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(drainCtx); err != nil {
@@ -94,4 +96,38 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func applyProcessMemoryLimit() {
+	const defaultMemoryLimit = int64(32 << 20)
+
+	rawValue := strings.TrimSpace(os.Getenv("GOMEMLIMIT"))
+	if rawValue == "" {
+		debug.SetMemoryLimit(defaultMemoryLimit)
+		return
+	}
+
+	if bytesValue, ok := parseMemoryLimitBytes(rawValue); ok {
+		debug.SetMemoryLimit(bytesValue)
+		return
+	}
+
+	log.Printf("invalid GOMEMLIMIT=%q, fallback to 32MiB", rawValue)
+	debug.SetMemoryLimit(defaultMemoryLimit)
+}
+
+func parseMemoryLimitBytes(rawValue string) (int64, bool) {
+	if rawValue == "" {
+		return 0, false
+	}
+
+	if numericValue, err := strconv.ParseInt(rawValue, 10, 64); err == nil && numericValue > 0 {
+		return numericValue, true
+	}
+
+	bytesValue, err := humanize.ParseBytes(rawValue)
+	if err != nil || bytesValue == 0 || bytesValue > uint64(^uint(0)>>1) {
+		return 0, false
+	}
+	return int64(bytesValue), true
 }

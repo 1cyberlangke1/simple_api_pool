@@ -1,6 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"log"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -17,7 +21,9 @@ const (
 	Gemini          ProviderType = "gemini"
 )
 
-var ReservedNames = map[string]bool{"api": true, "cache": true, "status": true, "admin": true}
+var ReservedNames = map[string]bool{"api": true, "cache": true, "status": true, "admin": true, "assets": true}
+
+const KeyPermanentlyDisabled int64 = math.MaxInt64
 
 type Key struct {
 	Value            string `json:"value"`
@@ -67,22 +73,32 @@ func DefaultBaseURL(t ProviderType) string {
 }
 
 func New(st *store.Store) *Config {
-	c := &Config{st: st}
-	if err := st.Load("config.json", &c.state); err != nil {
-		c.state = FileConfig{
+	c := &Config{
+		st: st,
+		state: FileConfig{
 			Providers:  make([]Provider, 0),
 			ClientKeys: make([]string, 0),
+		},
+	}
+	if err := st.Load("config.json", &c.state); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("load config.json failed: %v", err)
 		}
 	}
 
-	if v := os.Getenv("ADMIN_KEY"); v != "" {
+	return c
+}
+
+func (c *Config) ApplyEnvOverrides() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if v := strings.TrimSpace(os.Getenv("ADMIN_KEY")); v != "" {
 		c.state.AdminKey = v
 	}
 	if v := os.Getenv("CLIENT_KEYS"); v != "" {
 		c.state.ClientKeys = parseCommaSep(v)
 	}
-
-	return c
 }
 
 func parseCommaSep(s string) []string {
@@ -124,7 +140,6 @@ func (c *Config) Provider(name string) (*Provider, int) {
 }
 
 func (c *Config) SaveProvider(p Provider) error {
-	preserveExistingKeys := p.Keys == nil
 	if ReservedNames[p.Name] {
 		return os.ErrInvalid
 	}
@@ -154,12 +169,48 @@ func (c *Config) SaveProvider(p Provider) error {
 	defer c.mu.Unlock()
 	for i, existing := range c.state.Providers {
 		if existing.Name == p.Name {
-			if preserveExistingKeys {
-				p.Keys = existing.Keys
-			}
 			c.state.Providers[i] = p
 			return c.save()
 		}
+	}
+	c.state.Providers = append(c.state.Providers, p)
+	return c.save()
+}
+
+func (c *Config) UpdateProviderSettings(p Provider) error {
+	if ReservedNames[p.Name] {
+		return os.ErrInvalid
+	}
+	if p.BaseURL == "" {
+		p.BaseURL = DefaultBaseURL(p.Type)
+	}
+	if p.KeyStrategy == "" {
+		p.KeyStrategy = "round_robin"
+	}
+	if p.FailThreshold == 0 {
+		p.FailThreshold = 3
+	}
+	if p.MinDisableSecs == 0 {
+		p.MinDisableSecs = 30
+	}
+	if p.MaxDisableSecs == 0 {
+		p.MaxDisableSecs = 43200
+	}
+	if p.CacheMaxEntries == 0 {
+		p.CacheMaxEntries = 1000
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, existing := range c.state.Providers {
+		if existing.Name == p.Name {
+			p.Keys = append([]Key(nil), existing.Keys...)
+			c.state.Providers[i] = p
+			return c.save()
+		}
+	}
+	if p.Keys == nil {
+		p.Keys = make([]Key, 0)
 	}
 	c.state.Providers = append(c.state.Providers, p)
 	return c.save()
@@ -174,7 +225,7 @@ func (c *Config) DeleteProvider(name string) error {
 			return c.save()
 		}
 	}
-	return nil
+	return fmt.Errorf("provider %q: %w", name, os.ErrNotExist)
 }
 
 func (c *Config) AddKeys(providerName string, keys []string) error {
@@ -261,13 +312,11 @@ func (c *Config) ApplyKeyAction(providerName, action string, keys []string) erro
 			}
 			c.state.Providers[providerIndex].Keys = filteredKeys
 		case "disable":
-			const permanentlyDisabledUntil = int64(1<<63 - 1)
-			disabledUntil := permanentlyDisabledUntil
 			for keyIndex, existingKey := range provider.Keys {
 				if _, shouldDisable := targetKeys[existingKey.Value]; !shouldDisable {
 					continue
 				}
-				c.state.Providers[providerIndex].Keys[keyIndex].DisabledUntil = disabledUntil
+				c.state.Providers[providerIndex].Keys[keyIndex].DisabledUntil = KeyPermanentlyDisabled
 			}
 		case "enable":
 			for keyIndex, existingKey := range provider.Keys {
@@ -304,12 +353,18 @@ func (c *Config) UpdateKeyState(providerName, keyValue string, disabledUntil int
 	return os.ErrNotExist
 }
 
-func (c *Config) GlobalConfig() FileConfig {
+func (c *Config) AdminSettings() FileConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	cfg := c.state
-	cfg.Providers = nil
-	return cfg
+	return FileConfig{
+		AdminKey:               c.state.AdminKey,
+		TokenEstimationEnabled: c.state.TokenEstimationEnabled,
+		ClientKeys:             append([]string(nil), c.state.ClientKeys...),
+	}
+}
+
+func (c *Config) GlobalConfig() FileConfig {
+	return c.AdminSettings()
 }
 
 func (c *Config) UpdateGlobalConfig(adminKey string, tokenEst bool, clientKeys []string) error {

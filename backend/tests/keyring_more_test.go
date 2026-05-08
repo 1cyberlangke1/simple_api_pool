@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -38,11 +39,25 @@ func TestGetKeyReturnsEmptyForMissingProviderOrUnavailableKeys(t *testing.T) {
 	kr := keyring.New(cfg)
 
 	got, err := kr.GetKey("missing")
-	if err != nil {
-		t.Fatalf("读取不存在提供商时不应报错，实际是 %v", err)
+	if !errors.Is(err, keyring.ErrProviderNotFound) {
+		t.Fatalf("读取不存在提供商时期望返回 ErrProviderNotFound，实际是 %v", err)
 	}
 	if got != "" {
 		t.Fatalf("期望不存在提供商返回空字符串，实际是 %q", got)
+	}
+
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "empty",
+		Type: config.OpenAIChat,
+	}); err != nil {
+		t.Fatalf("保存空密钥提供商失败: %v", err)
+	}
+	got, err = kr.GetKey("empty")
+	if !errors.Is(err, keyring.ErrNoKeysConfigured) {
+		t.Fatalf("未配置密钥时期望返回 ErrNoKeysConfigured，实际是 %v", err)
+	}
+	if got != "" {
+		t.Fatalf("期望未配置密钥时返回空字符串，实际是 %q", got)
 	}
 
 	if err := cfg.SaveProvider(config.Provider{
@@ -56,8 +71,8 @@ func TestGetKeyReturnsEmptyForMissingProviderOrUnavailableKeys(t *testing.T) {
 	}
 
 	got, err = kr.GetKey("claude")
-	if err != nil {
-		t.Fatalf("没有可用密钥时不应报错，实际是 %v", err)
+	if !errors.Is(err, keyring.ErrAllKeysExhausted) {
+		t.Fatalf("没有可用密钥时期望返回 ErrAllKeysExhausted，实际是 %v", err)
 	}
 	if got != "" {
 		t.Fatalf("期望没有可用密钥时返回空字符串，实际是 %q", got)

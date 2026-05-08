@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"simple-api-pool/config"
+	"simple-api-pool/internal/cachekeyjson"
 	"simple-api-pool/internal/proxyroute"
 )
 
@@ -477,30 +478,15 @@ func ensureColumn(tx *sql.Tx, columnName, migrationSQL string) error {
 }
 
 func normalizeBodyForCache(providerType config.ProviderType, body []byte) []byte {
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return body
-	}
-
-	delete(payload, "stream")
-	delete(payload, "stream_options")
-
 	key := proxyroute.CacheFieldForProviderType(providerType)
-	if key == "" {
-		normalized, err := json.Marshal(payload)
-		if err != nil {
-			return body
-		}
-		return normalized
+	if key != "" {
+		return cachekeyjson.CanonicalizeField(body, key)
 	}
 
-	normalized, err := json.Marshal(map[string]any{
-		key: payload[key],
+	return cachekeyjson.CanonicalizeTopLevelWithoutFields(body, map[string]struct{}{
+		"stream":         {},
+		"stream_options": {},
 	})
-	if err != nil {
-		return body
-	}
-	return normalized
 }
 
 func trimProviderCacheEntries(db *sql.DB, maxEntries int64) error {

@@ -189,6 +189,20 @@ func ServeAsset(w http.ResponseWriter, r *http.Request, frontendRoot, assetName 
 	http.ServeFile(w, r, assetPath)
 }
 
+func ServeAssetByRequestPath(w http.ResponseWriter, r *http.Request, frontendRoot, requestPath string) bool {
+	requestPath = strings.TrimPrefix(requestPath, "/")
+	if requestPath == "" || requestPath == "index.html" {
+		return false
+	}
+	assetPath, ok := safeAssetPath(frontendRoot, requestPath)
+	if !ok {
+		return false
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, assetPath)
+	return true
+}
+
 func safeAssetPath(frontendRoot, assetName string) (string, bool) {
 	rootPath, err := filepath.Abs(frontendRoot)
 	if err != nil {

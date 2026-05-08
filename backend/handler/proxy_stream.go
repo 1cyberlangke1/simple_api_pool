@@ -2,6 +2,8 @@ package handler
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -10,7 +12,9 @@ import (
 	"simple-api-pool/token"
 )
 
-func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
+const maxCacheableStreamResponseBytes = 1 << 20
+
+func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
@@ -32,7 +36,19 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	defer streamCopyBufferPool.Put(bufferPtr)
 	firstByteRecorded := false
 	var streamErr error
+	allowStreamCache := cacheEnabled
 	for {
+		select {
+		case <-ctx.Done():
+			_ = resp.Body.Close()
+			streamErr = ctx.Err()
+			break
+		default:
+		}
+		if streamErr != nil {
+			break
+		}
+
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			if !firstByteRecorded {
@@ -40,7 +56,11 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 				logFields.FirstByteMeasured = true
 				firstByteRecorded = true
 			}
-			collected.Write(buf[:n])
+			if allowStreamCache && collected.Len()+n <= maxCacheableStreamResponseBytes {
+				_, _ = collected.Write(buf[:n])
+			} else {
+				allowStreamCache = false
+			}
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				streamErr = writeErr
 				break
@@ -62,7 +82,11 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 		logFields.Model = analysis.model
 	}
 	if streamErr != nil {
-		logFields.Error = "流式透传中断: " + streamErr.Error()
+		if errors.Is(streamErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			logFields.Error = "客户端已断开流式连接"
+		} else {
+			logFields.Error = "上游流式透传中断: " + streamErr.Error()
+		}
 		h.stats.RecordError(provider, http.StatusBadGateway)
 		return
 	}
@@ -72,7 +96,7 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 	h.stats.RecordCacheTokens(provider, usage.CacheTokens)
 	h.keyring.RecordSuccess(provider, upstreamKey)
 
-	if cacheEnabled {
+	if allowStreamCache {
 		analysis = ensureCacheAnalysis(analysis, providerType, suffix, recordedRequestBody)
 		if analysis.cacheKeyReady {
 			stored := h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)

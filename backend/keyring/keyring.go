@@ -1,6 +1,7 @@
 package keyring
 
 import (
+	"errors"
 	"hash/fnv"
 	"log/slog"
 	"math"
@@ -15,6 +16,12 @@ type roundRobinState struct {
 	counter     uint64
 	fingerprint uint64
 }
+
+var (
+	ErrProviderNotFound = errors.New("provider not found")
+	ErrNoKeysConfigured = errors.New("no keys configured")
+	ErrAllKeysExhausted = errors.New("all keys exhausted")
+)
 
 type KeyRing struct {
 	cfg    *config.Config
@@ -32,21 +39,24 @@ func New(cfg *config.Config) *KeyRing {
 func (k *KeyRing) GetKey(providerName string) (string, error) {
 	p, _ := k.cfg.Provider(providerName)
 	if p == nil {
-		return "", nil
+		return "", ErrProviderNotFound
+	}
+	if len(p.Keys) == 0 {
+		return "", ErrNoKeysConfigured
 	}
 
 	now := time.Now().Unix()
-	var available []int
+	available := make([]int, 0, len(p.Keys))
 
 	for i := range p.Keys {
-		if p.Keys[i].DisabledUntil > 0 && p.Keys[i].DisabledUntil > now {
+		if p.Keys[i].DisabledUntil >= now && p.Keys[i].DisabledUntil > 0 {
 			continue
 		}
 		available = append(available, i)
 	}
 
 	if len(available) == 0 {
-		return "", nil
+		return "", ErrAllKeysExhausted
 	}
 
 	switch p.KeyStrategy {
@@ -74,7 +84,11 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 		if kk.Value == keyValue {
 			fails := kk.ConsecutiveFails + 1
 			if fails >= p.FailThreshold {
-				delay := float64(p.MinDisableSecs) * math.Pow(2, float64(fails-p.FailThreshold))
+				disableStartFails := p.FailThreshold
+				if disableStartFails < 1 {
+					disableStartFails = 1
+				}
+				delay := float64(p.MinDisableSecs) * math.Pow(2, float64(fails-disableStartFails))
 				if delay > float64(p.MaxDisableSecs) {
 					delay = float64(p.MaxDisableSecs)
 				}
@@ -112,11 +126,10 @@ func (k *KeyRing) nextRoundRobinIndex(providerName string, keys []config.Key, av
 	return idx
 }
 
-func buildAvailabilityFingerprint(keys []config.Key, available []int) uint64 {
+func buildAvailabilityFingerprint(_ []config.Key, available []int) uint64 {
 	hasher := fnv.New64a()
 	for _, index := range available {
-		_, _ = hasher.Write([]byte(keys[index].Value))
-		_, _ = hasher.Write([]byte{'\n'})
+		_, _ = hasher.Write([]byte{byte(index >> 24), byte(index >> 16), byte(index >> 8), byte(index)})
 	}
 	return hasher.Sum64()
 }

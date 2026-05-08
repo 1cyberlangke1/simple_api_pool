@@ -41,7 +41,7 @@ func newStatusOverviewResponse(cfg *config.Config, statsManager *stats.Manager) 
 }
 
 func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) AdminOverviewResponse {
-	globalConfig := cfg.GlobalConfig()
+	globalConfig := cfg.AdminSettings()
 	return AdminOverviewResponse{
 		Health: newServiceHealthSnapshot(),
 		GlobalConfig: GlobalConfigSnapshot{

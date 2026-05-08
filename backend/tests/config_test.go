@@ -63,3 +63,13 @@ func TestPortEnvOverridesDefaultListenAddr(t *testing.T) {
 		t.Fatalf("期望监听地址为 :19090，实际是 %q", got)
 	}
 }
+
+func TestListenAddrTrimsWhitespace(t *testing.T) {
+	t.Setenv("PORT", " 19091 ")
+
+	got := config.ListenAddr()
+
+	if got != ":19091" {
+		t.Fatalf("期望监听地址为 :19091，实际是 %q", got)
+	}
+}

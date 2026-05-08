@@ -32,6 +32,34 @@ func TestApplySecurityHeadersSetsAdditionalSecurityPolicies(t *testing.T) {
 	if got := rec.Header().Get("Permissions-Policy"); got == "" {
 		t.Fatal("期望设置 Permissions-Policy")
 	}
+	if got := rec.Header().Get("Permissions-Policy"); got != "()" {
+		t.Fatalf("期望 Permissions-Policy=()，实际是 %q", got)
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("期望设置 HSTS，实际是 %q", got)
+	}
+}
+
+func TestApplySecurityHeadersOnlyMarksRealAdminPathsAsNoStore(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := middleware.ApplySecurityHeaders(next, nil)
+
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/admin/overview", nil)
+	adminRec := httptest.NewRecorder()
+	handler.ServeHTTP(adminRec, adminReq)
+	if got := adminRec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("期望真实管理路径命中 no-store，实际是 %q", got)
+	}
+
+	fakeAdminReq := httptest.NewRequest(http.MethodGet, "/api/administration", nil)
+	fakeAdminRec := httptest.NewRecorder()
+	handler.ServeHTTP(fakeAdminRec, fakeAdminReq)
+	if got := fakeAdminRec.Header().Get("Cache-Control"); got != "" {
+		t.Fatalf("期望伪前缀路径不命中 no-store，实际是 %q", got)
+	}
 }
 
 func TestContentSecurityPolicyProviderRefreshesAfterIndexChange(t *testing.T) {

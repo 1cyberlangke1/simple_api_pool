@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"simple-api-pool/webui"
 )
@@ -18,13 +17,21 @@ func ApplySecurityHeaders(next http.Handler, contentSecurityPolicy func() string
 		w.Header().Set("Content-Security-Policy", contentSecurityPolicy())
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-		w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
+		w.Header().Set("Permissions-Policy", "()")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
-		if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/api/admin") {
+		if r.URL.Path == "/admin" || r.URL.Path == "/api/admin" || hasPathPrefix(r.URL.Path, "/api/admin/") {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Pragma", "no-cache")
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func hasPathPrefix(path, prefix string) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	return path[:len(prefix)] == prefix
 }

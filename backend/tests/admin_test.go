@@ -412,7 +412,9 @@ func newTestConfig(t *testing.T) *config.Config {
 
 func newTestConfigWithStore(t *testing.T, st *store.Store) *config.Config {
 	t.Helper()
-	return config.New(st)
+	cfg := config.New(st)
+	cfg.ApplyEnvOverrides()
+	return cfg
 }
 
 func newTestCacheStore(t *testing.T) *cache.Store {

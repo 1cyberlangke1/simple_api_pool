@@ -14,6 +14,7 @@
         "metric.healthCheckingNote": "正在检测后端健康接口",
         "metric.healthOnline": "在线",
         "metric.healthError": "异常",
+        "metric.healthUnknown": "未知",
         "metric.healthNote": "健康接口：{status}",
         "metric.healthUnavailable": "健康接口不可用",
         "metric.providers": "提供商",
@@ -86,6 +87,11 @@
         "admin.deletedProvider": "已删除提供商 {name}。",
         "admin.deletedKey": "已删除 {provider} 的一个密钥。",
         "admin.clearedCache": "已清空 {provider} 的缓存。",
+        "admin.sessionExpiredKeepDrafts": "登录已过期，请重新登录，当前草稿已保留。",
+        "admin.confirmDeleteProvider": "确定删除提供商 {name}？此操作不可撤销。",
+        "admin.confirmDeleteKey": "确定删除 {provider} 的这个 Key？",
+        "admin.confirmDeleteSelectedKeys": "确定删除已选中的 {count} 个 Key？此操作不可撤销。",
+        "admin.confirmClearCache": "确定清空 {provider} 的缓存？",
         "admin.pleaseInputKey": "请输入管理员密钥。",
         "provider.name": "名称",
         "provider.namePlaceholder": "例如 openai",
@@ -157,6 +163,7 @@
         "metric.healthCheckingNote": "Probing backend health endpoint",
         "metric.healthOnline": "Online",
         "metric.healthError": "Down",
+        "metric.healthUnknown": "Unknown",
         "metric.healthNote": "Health: {status}",
         "metric.healthUnavailable": "Health endpoint unavailable",
         "metric.providers": "Providers",
@@ -229,6 +236,11 @@
         "admin.deletedProvider": "Provider {name} deleted.",
         "admin.deletedKey": "A key was deleted from {provider}.",
         "admin.clearedCache": "Cleared cache for {provider}.",
+        "admin.sessionExpiredKeepDrafts": "Session expired. Please sign in again. Drafts were kept.",
+        "admin.confirmDeleteProvider": "Delete provider {name}? This cannot be undone.",
+        "admin.confirmDeleteKey": "Delete this key from {provider}?",
+        "admin.confirmDeleteSelectedKeys": "Delete the selected {count} keys? This cannot be undone.",
+        "admin.confirmClearCache": "Clear cache for {provider}?",
         "admin.pleaseInputKey": "Please enter the admin key.",
         "provider.name": "Name",
         "provider.namePlaceholder": "e.g. openai",
@@ -353,16 +365,18 @@
         const key = el.getAttribute("data-i18n");
         const text = t(key);
         if (el.tagName === "LABEL") {
-          // Replace the first non-empty text node so nested <input> stays intact
-          for (const node of el.childNodes) {
-            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
-              node.nodeValue = "\n              " + text + "\n              ";
-              return;
+          let labelTextNode = el.querySelector("[data-role='label-text']");
+          if (!labelTextNode) {
+            labelTextNode = document.createElement("span");
+            labelTextNode.dataset.role = "label-text";
+            const firstField = el.querySelector("input, textarea, select, span");
+            if (firstField) {
+              el.insertBefore(labelTextNode, firstField);
+            } else {
+              el.appendChild(labelTextNode);
             }
           }
-          // No existing text node — prepend one before the first input
-          const txt = document.createTextNode("\n              " + text + "\n              ");
-          el.insertBefore(txt, el.firstChild);
+          labelTextNode.textContent = text;
         } else if (el.children.length === 0) {
           el.textContent = text;
         }

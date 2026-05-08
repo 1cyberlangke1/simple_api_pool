@@ -2,15 +2,17 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tidwall/gjson"
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+	"simple-api-pool/internal/cachekeyjson"
 )
 
 type requestAnalysis struct {
@@ -59,37 +61,14 @@ func normalizeRequestBodyForCache(providerType config.ProviderType, fallbackBody
 }
 
 func normalizeCoreCacheField(cacheField string, fallbackBody []byte) []byte {
-	var normalizedValue any
-	rawValue := gjson.GetBytes(fallbackBody, cacheField)
-	rawJSON := "null"
-	if rawValue.Exists() {
-		rawJSON = rawValue.Raw
-	}
-	if err := json.Unmarshal([]byte(rawJSON), &normalizedValue); err != nil {
-		return fallbackBody
-	}
-
-	normalizedBody, err := json.Marshal(map[string]any{
-		cacheField: normalizedValue,
-	})
-	if err != nil {
-		return fallbackBody
-	}
-	return normalizedBody
+	return cachekeyjson.CanonicalizeField(fallbackBody, cacheField)
 }
 
 func normalizeTopLevelPayload(fallbackBody []byte) []byte {
-	var payload map[string]any
-	if err := json.Unmarshal(fallbackBody, &payload); err != nil {
-		return fallbackBody
-	}
-	delete(payload, "stream")
-	delete(payload, "stream_options")
-	normalizedBody, err := json.Marshal(payload)
-	if err != nil {
-		return fallbackBody
-	}
-	return normalizedBody
+	return cachekeyjson.CanonicalizeTopLevelWithoutFields(fallbackBody, map[string]struct{}{
+		"stream":         {},
+		"stream_options": {},
+	})
 }
 
 type recordedRequestBody struct {
@@ -98,8 +77,8 @@ type recordedRequestBody struct {
 	copyBody     *bytes.Buffer
 	copyLimit    int
 	copyExceeded bool
-	bytesRead    int
-	finished     bool
+	bytesRead    atomic.Int64
+	finished     atomic.Bool
 }
 
 func newRecordedRequestBody(source io.ReadCloser, copyLimit int) *recordedRequestBody {
@@ -117,8 +96,8 @@ func newRecordedRequestBody(source io.ReadCloser, copyLimit int) *recordedReques
 func (r *recordedRequestBody) Read(p []byte) (int, error) {
 	readBytes, err := r.source.Read(p)
 	if readBytes > 0 {
+		r.bytesRead.Add(int64(readBytes))
 		r.mu.Lock()
-		r.bytesRead += readBytes
 		if r.copyBody != nil {
 			remaining := r.copyLimit - r.copyBody.Len()
 			if remaining > 0 {
@@ -136,9 +115,7 @@ func (r *recordedRequestBody) Read(p []byte) (int, error) {
 		r.mu.Unlock()
 	}
 	if err == io.EOF {
-		r.mu.Lock()
-		r.finished = true
-		r.mu.Unlock()
+		r.finished.Store(true)
 	}
 	return readBytes, err
 }
@@ -151,9 +128,7 @@ func (r *recordedRequestBody) BytesRead() int {
 	if r == nil {
 		return 0
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.bytesRead
+	return int(r.bytesRead.Load())
 }
 
 func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
@@ -162,7 +137,7 @@ func (r *recordedRequestBody) Snapshot() ([]byte, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.finished || r.copyBody == nil || r.copyExceeded {
+	if !r.finished.Load() || r.copyBody == nil || r.copyExceeded {
 		return nil, false
 	}
 	return append([]byte(nil), r.copyBody.Bytes()...), true
@@ -265,8 +240,7 @@ func readRequestBodyForCache(body io.ReadCloser, limit int) ([]byte, bool, error
 
 func readResponseBodyWithinLimit(body io.Reader, limitBytes int64) ([]byte, bool, error) {
 	if limitBytes <= 0 {
-		responseBody, err := io.ReadAll(body)
-		return responseBody, true, err
+		return nil, false, errors.New("non-stream response limit must be positive")
 	}
 
 	limitedReader := io.LimitReader(body, limitBytes+1)

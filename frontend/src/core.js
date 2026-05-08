@@ -10,6 +10,7 @@ const API_BASE = "/api";
     const RAW_APP_BUILD_TIME = "__APP_BUILD_TIME__";
     let route = getRouteFromPath(location.pathname);
     let statusPollTimer = null;
+    let activityMarkScheduled = false;
 
     function getRouteFromPath(pathname) {
       return pathname === "/admin" ? "admin" : "status";

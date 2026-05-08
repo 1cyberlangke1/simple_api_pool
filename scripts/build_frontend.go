@@ -2,15 +2,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-)
-
-const (
-	stylePlaceholder  = "  <!-- FRONTEND_INLINE_STYLE -->"
-	scriptPlaceholder = "  <!-- FRONTEND_INLINE_SCRIPT -->"
 )
 
 func main() {
@@ -30,23 +24,19 @@ func main() {
 	appJS, err := os.ReadFile(filepath.Join(sourceDir, "app.js"))
 	must(err)
 
-	inlineStyle := joinInlineBlock("style", string(styleCSS))
-	inlineScript := joinInlineBlock("script", strings.Join([]string{
+	outputDir := filepath.Join(*rootDir, "frontend", "assets")
+	must(os.MkdirAll(outputDir, 0700))
+
+	bundledJS := strings.Join([]string{
 		strings.TrimSpace(string(coreJS)),
 		strings.TrimSpace(string(i18nJS)),
 		strings.TrimSpace(string(appJS)),
-	}, "\n\n"))
-
-	outputHTML := strings.Replace(string(templateHTML), stylePlaceholder, inlineStyle, 1)
-	outputHTML = strings.Replace(outputHTML, scriptPlaceholder, inlineScript, 1)
+	}, "\n\n")
+	must(os.WriteFile(filepath.Join(outputDir, "app.js"), []byte(bundledJS), 0600))
+	must(os.WriteFile(filepath.Join(outputDir, "styles.css"), styleCSS, 0600))
 
 	outputPath := filepath.Join(*rootDir, "frontend", "index.html")
-	must(os.WriteFile(outputPath, []byte(outputHTML), 0600))
-}
-
-func joinInlineBlock(tagName, body string) string {
-	body = strings.Trim(body, "\r\n")
-	return fmt.Sprintf("  <%s>\n%s\n  </%s>", tagName, body, tagName)
+	must(os.WriteFile(outputPath, templateHTML, 0600))
 }
 
 func must(err error) {

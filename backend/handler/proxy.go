@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -150,7 +151,14 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(targetURL)
 
-	h.sema <- struct{}{}
+	select {
+	case h.sema <- struct{}{}:
+	case <-r.Context().Done():
+		logFields.Status = http.StatusRequestTimeout
+		logFields.Error = "请求在等待上游槽位时已取消"
+		writeErrorResponse(w, http.StatusRequestTimeout, "请求已取消")
+		return
+	}
 	defer func() { <-h.sema }()
 
 	isStream := isStreamingRequestHint(r)
@@ -230,7 +238,25 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	upstreamKey, err := h.keyring.GetKey(parts.provider)
-	if err != nil || upstreamKey == "" {
+	if err != nil {
+		statusCode := http.StatusServiceUnavailable
+		errMessage := "没有可用的上游密钥"
+		switch {
+		case errors.Is(err, keyring.ErrProviderNotFound):
+			statusCode = http.StatusNotFound
+			errMessage = "提供商不存在"
+		case errors.Is(err, keyring.ErrNoKeysConfigured):
+			errMessage = "提供商未配置上游密钥"
+		case errors.Is(err, keyring.ErrAllKeysExhausted):
+			errMessage = "所有上游密钥当前不可用"
+		}
+		h.stats.RecordError(parts.provider, statusCode)
+		logFields.Status = statusCode
+		logFields.Error = errMessage
+		writeErrorResponse(w, statusCode, errMessage)
+		return
+	}
+	if upstreamKey == "" {
 		h.stats.RecordError(parts.provider, http.StatusServiceUnavailable)
 		logFields.Status = http.StatusServiceUnavailable
 		logFields.Error = "没有可用的上游密钥"
@@ -286,7 +312,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if copyErr != nil && logFields.Error == "" {
 			logFields.Error = fmt.Sprintf("读取上游错误响应失败: %v", copyErr)
 		}
-		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		if shouldRecordUpstreamFailure(resp.StatusCode) {
 			h.keyring.RecordFailure(parts.provider, upstreamKey)
 		}
 		return
@@ -295,7 +321,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	streamResponse := isStream || isStreamingResponse(resp.Header)
 	logFields.Stream = streamResponse
 	if streamResponse {
-		h.handleStream(w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, parts.suffix, analysis, recordedRequestBody, cacheEligible, parts.useCache, int64(p.CacheMaxEntries), &logFields)
+		h.handleStream(r.Context(), w, resp, upstreamStart, parts.provider, upstreamKey, p.Type, parts.suffix, analysis, recordedRequestBody, cacheEligible, parts.useCache, int64(p.CacheMaxEntries), &logFields)
 		return
 	}
 
@@ -334,7 +360,12 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	w.Write(respBody)
+	if _, err := w.Write(respBody); err != nil {
+		h.stats.RecordError(parts.provider, http.StatusBadGateway)
+		logFields.Status = http.StatusBadGateway
+		logFields.Error = fmt.Sprintf("写入客户端响应失败: %v", err)
+		return
+	}
 
 	usage := token.Extract(string(p.Type), respBody, h.cfg.TokenEstimationEnabled())
 	h.stats.RecordSuccess(parts.provider, usage.InputTokens, usage.OutputTokens)
@@ -362,6 +393,21 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+	}
+}
+
+func shouldRecordUpstreamFailure(statusCode int) bool {
+	switch {
+	case statusCode == http.StatusUnauthorized:
+		return true
+	case statusCode == http.StatusForbidden:
+		return true
+	case statusCode == http.StatusTooManyRequests:
+		return true
+	case statusCode >= http.StatusInternalServerError:
+		return true
+	default:
+		return false
 	}
 }
 

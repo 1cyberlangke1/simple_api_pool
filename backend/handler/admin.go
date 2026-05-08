@@ -154,7 +154,7 @@ func (ah *AdminHandler) handleProviders(w http.ResponseWriter, r *http.Request) 
 			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
-		if err := ah.cfg.SaveProvider(p); err != nil {
+		if err := ah.cfg.UpdateProviderSettings(p); err != nil {
 			if errors.Is(err, os.ErrInvalid) {
 				writeErrorResponse(w, http.StatusBadRequest, "提供商名称非法或为保留名称")
 				return
@@ -213,13 +213,17 @@ func (ah *AdminHandler) handleProviderKeys(w http.ResponseWriter, r *http.Reques
 	switch r.Method {
 	case http.MethodPost:
 		var body struct {
-			Keys string `json:"keys"`
+			Keys json.RawMessage `json:"keys"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 			return
 		}
-		keys := parseImportedKeys(body.Keys)
+		keys, err := parseImportedKeysPayload(body.Keys)
+		if err != nil {
+			writeErrorResponse(w, http.StatusBadRequest, "密钥导入格式无效")
+			return
+		}
 		if err := ah.cfg.AddKeys(name, keys); err != nil {
 			writeErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
@@ -284,7 +288,7 @@ func (ah *AdminHandler) handleProviderCache(w http.ResponseWriter, r *http.Reque
 func (ah *AdminHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		globalConfig := ah.cfg.GlobalConfig()
+		globalConfig := ah.cfg.AdminSettings()
 		writeJSONResponse(w, http.StatusOK, GlobalConfigSnapshot{
 			AdminKeyConfigured:     globalConfig.AdminKey != "",
 			TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
@@ -412,4 +416,26 @@ func parseImportedKeys(raw string) []string {
 		}
 	}
 	return out
+}
+
+func parseImportedKeysPayload(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	var rawText string
+	if err := json.Unmarshal(raw, &rawText); err == nil {
+		return parseImportedKeys(rawText), nil
+	}
+
+	var rawKeys []string
+	if err := json.Unmarshal(raw, &rawKeys); err == nil {
+		keys := make([]string, 0, len(rawKeys))
+		for _, rawKey := range rawKeys {
+			keys = append(keys, parseImportedKeys(rawKey)...)
+		}
+		return keys, nil
+	}
+
+	return nil, errors.New("unsupported imported key payload")
 }

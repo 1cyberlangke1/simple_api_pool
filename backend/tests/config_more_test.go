@@ -45,12 +45,12 @@ func TestConfigSupportsDeleteProviderUpdateKeyStateAndReadGlobalConfig(t *testin
 	if err := cfg.UpdateGlobalConfig("admin", true, []string{"c1", "c2"}); err != nil {
 		t.Fatalf("保存全局配置失败: %v", err)
 	}
-	global := cfg.GlobalConfig()
+	global := cfg.AdminSettings()
 	if global.AdminKey != "admin" || !global.TokenEstimationEnabled {
 		t.Fatalf("期望全局配置被保存，实际是 %+v", global)
 	}
 	if len(global.Providers) != 0 {
-		t.Fatalf("期望 GlobalConfig 不直接暴露 Providers，实际是 %+v", global.Providers)
+		t.Fatalf("期望管理配置快照不直接暴露 Providers，实际是 %+v", global.Providers)
 	}
 
 	if err := cfg.UpdateKeyState("openai", "k2", 12345, 3); err != nil {
@@ -104,6 +104,9 @@ func TestConfigReturnsNotExistForMissingKeyDeletionAndUnknownProviderKeyAdd(t *t
 
 	if err := cfg.AddKeys("missing", []string{"a"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("期望 AddKeys 返回 os.ErrNotExist，实际是 %v", err)
+	}
+	if err := cfg.DeleteProvider("missing"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("期望 DeleteProvider 返回 os.ErrNotExist，实际是 %v", err)
 	}
 	if err := cfg.DeleteKey("missing", "a"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("期望 DeleteKey 返回 os.ErrNotExist，实际是 %v", err)
