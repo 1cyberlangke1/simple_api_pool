@@ -8,6 +8,12 @@
       navAdmin: document.getElementById("nav-admin"),
       statusView: document.getElementById("status-view"),
       adminView: document.getElementById("admin-view"),
+      adminNavGlobal: document.getElementById("admin-nav-global"),
+      adminNavProviders: document.getElementById("admin-nav-providers"),
+      adminSessionCopy: document.getElementById("admin-session-copy"),
+      adminSessionBadge: document.getElementById("admin-session-badge"),
+      adminSessionSummary: document.getElementById("admin-session-summary"),
+      adminSessionState: document.getElementById("admin-session-state"),
       serviceHealth: document.getElementById("service-health"),
       serviceHealthNote: document.getElementById("service-health-note"),
       providerCount: document.getElementById("provider-count"),
@@ -26,8 +32,13 @@
       globalTokenEstimation: document.getElementById("global-token-estimation"),
       globalClientKeys: document.getElementById("global-client-keys"),
       globalStatus: document.getElementById("global-status"),
+      globalSummaryAdminKey: document.getElementById("global-summary-admin-key"),
+      globalSummaryClientKeys: document.getElementById("global-summary-client-keys"),
+      globalSummaryTokenEstimation: document.getElementById("global-summary-token-estimation"),
       createForm: document.getElementById("provider-create-form"),
       createStatus: document.getElementById("provider-create-status"),
+      adminGlobalSection: document.getElementById("admin-global-section"),
+      adminProviderSection: document.getElementById("admin-provider-section"),
       providerSelectorSearch: document.getElementById("provider-selector-search"),
       providerSelectorList: document.getElementById("provider-selector-list"),
       providerListPanelBody: document.getElementById("provider-list-panel-body"),
@@ -114,6 +125,7 @@
 
     function setAdminAuthenticated(authenticated) {
       state.adminAuthenticated = Boolean(authenticated);
+      renderAdminSessionState();
     }
 
     function normalizeErrorMessage(error, fallbackText) {
@@ -133,6 +145,63 @@
       renderAdminWorkspaceProviders();
       if (route === "admin" && messageText) {
         setMessage(refs.loginStatus, messageText, "error");
+      }
+    }
+
+    function countClientKeysInDraft(rawValue) {
+      return String(rawValue || "")
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean).length;
+    }
+
+    function renderGlobalConfigSummary() {
+      const draft = state.globalConfigDraft || {};
+      const adminConfigured = Boolean(
+        (state.globalAdminKeyDirty && refs.globalAdminKey && refs.globalAdminKey.value.trim()) ||
+        draft.admin_key_configured
+      );
+      const clientKeyCount = state.globalClientKeysDirty && refs.globalClientKeys
+        ? countClientKeysInDraft(refs.globalClientKeys.value)
+        : Number(draft.client_key_count || 0);
+      const tokenEstimationEnabled = refs.globalTokenEstimation
+        ? Boolean(refs.globalTokenEstimation.checked)
+        : Boolean(draft.token_estimation_enabled);
+
+      if (refs.globalSummaryAdminKey) {
+        refs.globalSummaryAdminKey.textContent = t(adminConfigured ? "admin.configured" : "admin.notConfigured");
+      }
+      if (refs.globalSummaryClientKeys) {
+        refs.globalSummaryClientKeys.textContent = t("admin.clientKeyCount", { count: clientKeyCount });
+      }
+      if (refs.globalSummaryTokenEstimation) {
+        refs.globalSummaryTokenEstimation.textContent = t(tokenEstimationEnabled ? "admin.enabled" : "admin.disabled");
+      }
+    }
+
+    function renderAdminSessionState() {
+      const authenticated = Boolean(state.adminAuthenticated);
+      if (document.body) {
+        document.body.classList.toggle("admin-authenticated", authenticated);
+      }
+      if (refs.loginForm) {
+        refs.loginForm.classList.toggle("hidden", authenticated);
+      }
+      if (refs.adminSessionSummary) {
+        refs.adminSessionSummary.classList.toggle("hidden", !authenticated);
+      }
+      if (refs.logoutButton) {
+        refs.logoutButton.classList.toggle("hidden", !authenticated);
+      }
+      if (refs.adminSessionCopy) {
+        refs.adminSessionCopy.textContent = authenticated ? t("admin.sessionActiveCopy") : t("admin.loginSub");
+      }
+      if (refs.adminSessionState) {
+        refs.adminSessionState.textContent = authenticated ? t("admin.sessionActive") : t("admin.sessionInactive");
+      }
+      if (refs.adminSessionBadge) {
+        refs.adminSessionBadge.textContent = authenticated ? t("admin.sessionActive") : t("admin.sessionInactive");
+        refs.adminSessionBadge.className = authenticated ? "status-badge ok" : "status-badge";
       }
     }
 

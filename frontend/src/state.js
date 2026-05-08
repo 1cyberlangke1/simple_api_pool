@@ -116,6 +116,7 @@
       state.globalConfigDirty = false;
       state.globalAdminKeyDirty = false;
       state.globalClientKeysDirty = false;
+      renderGlobalConfigSummary();
     }
 
     function syncCreateProviderDraft(forceUpdate) {
@@ -158,6 +159,7 @@
       refs.globalAdminKey.value = "";
       refs.globalTokenEstimation.checked = Boolean(state.globalConfigDraft.token_estimation_enabled);
       refs.globalClientKeys.value = "";
+      renderGlobalConfigSummary();
     }
 
     function applyCreateProviderDraftToForm() {

@@ -4,6 +4,23 @@
 
     refs.navStatus.addEventListener("click", () => goTo("/status"));
     refs.navAdmin.addEventListener("click", () => goTo("/admin"));
+    refs.adminNavGlobal.addEventListener("click", () => {
+      const globalDisclosure = refs.adminGlobalSection && refs.adminGlobalSection.querySelector("details");
+      if (globalDisclosure) {
+        globalDisclosure.open = true;
+      }
+      if (refs.adminGlobalSection) {
+        refs.adminGlobalSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    refs.adminNavProviders.addEventListener("click", () => {
+      if (refs.adminProviderSection) {
+        refs.adminProviderSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (refs.providerSelectorSearch) {
+        refs.providerSelectorSearch.focus({ preventScroll: true });
+      }
+    });
 
     document.addEventListener("mousedown", scheduleUiActivityMark);
     document.addEventListener("keydown", scheduleUiActivityMark);
@@ -183,7 +200,9 @@
       state.globalConfigDraft = {
         admin_key: refs.globalAdminKey.value,
         token_estimation_enabled: refs.globalTokenEstimation.checked,
-        client_keys: refs.globalClientKeys.value
+        client_keys: refs.globalClientKeys.value,
+        admin_key_configured: Boolean(refs.globalAdminKey.value.trim()) || Boolean(state.globalConfigDraft && state.globalConfigDraft.admin_key_configured),
+        client_key_count: countClientKeysInDraft(refs.globalClientKeys.value)
       };
       state.globalConfigDirty = true;
       if (event.target === refs.globalAdminKey) {
@@ -192,6 +211,7 @@
       if (event.target === refs.globalClientKeys) {
         state.globalClientKeysDirty = true;
       }
+      renderGlobalConfigSummary();
     }
 
     function syncCreateProviderDraftFromForm() {
@@ -367,8 +387,10 @@
       applyTheme();
       applyI18nStatic();
       renderBuildVersion();
+      renderAdminSessionState();
       syncCreateProviderDraft();
       applyCreateProviderDraftToForm();
+      renderGlobalConfigSummary();
       refs.hidePanelLogsToggle.checked = state.hidePanelLogs;
       setRouteView();
       startOverviewPolling();

@@ -71,7 +71,6 @@
             <div class="provider-overview-actions">
               <span class="tag ${provider.cache_enabled ? "ok" : "muted"}">${escapeHTML(t(provider.cache_enabled ? "provider.tagCacheOn" : "provider.tagCacheOff"))}</span>
               <span class="tag muted">${escapeHTML(providerStrategyLabel(provider.key_strategy))}</span>
-              <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
             </div>
           </div>
           <div class="tag-row provider-overview-tags">
@@ -99,7 +98,15 @@
       }
 
       return `
-        <div class="key-list key-workspace-list">
+        <div class="key-table">
+          <div class="key-table-head">
+            <span>${escapeHTML(t("provider.keyColumnRef"))}</span>
+            <span>${escapeHTML(t("provider.keyColumnStatus"))}</span>
+            <span>${escapeHTML(t("provider.keyColumnFails"))}</span>
+            <span>${escapeHTML(t("provider.keyColumnDisabledUntil"))}</span>
+            <span>${escapeHTML(t("provider.keyColumnActions"))}</span>
+          </div>
+          <div class="key-list key-workspace-list">
           ${pageKeys.map((key) => {
             const isDisabled = Number(key.disabled_until || 0) * 1000 > Date.now();
             const keyRef = String(key.ref || key.value || "");
@@ -107,23 +114,38 @@
             const stateText = isDisabled
               ? t("provider.disabledUntil", { time: formatTimestamp(key.disabled_until) })
               : t("provider.usable");
+            const disabledUntilText = isDisabled
+              ? formatTimestamp(key.disabled_until)
+              : t("provider.notDisabled");
+            const maskedValue = key.value && key.value !== keyRef ? String(key.value) : "";
 
             return `
-              <div class="key-item key-workspace-item">
-                <label class="checkbox key-selector-checkbox">
-                  <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
-                </label>
-                <div class="key-workspace-main">
-                  <code>${escapeHTML(key.value)}</code>
-                  <div class="key-workspace-meta">
-                    <span class="tag ${isDisabled ? "err" : "ok"}">${escapeHTML(stateText)}</span>
-                    <span class="provider-meta">${escapeHTML(t("provider.fails", { n: key.consecutive_fails || 0 }))}</span>
+              <div class="key-table-row">
+                <div class="key-table-key">
+                  <label class="checkbox key-selector-checkbox">
+                    <input type="checkbox" data-role="key-selector" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}" ${checked}>
+                  </label>
+                  <div class="key-workspace-main">
+                    <code>${escapeHTML(keyRef)}</code>
+                    ${maskedValue ? `<span class="provider-meta">${escapeHTML(maskedValue)}</span>` : ""}
                   </div>
                 </div>
-                <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}">${escapeHTML(t("provider.delete"))}</button>
+                <div class="key-table-cell">
+                  <span class="tag ${isDisabled ? "err" : "ok"}">${escapeHTML(stateText)}</span>
+                </div>
+                <div class="key-table-cell">
+                  <span class="provider-meta">${escapeHTML(String(key.consecutive_fails || 0))}</span>
+                </div>
+                <div class="key-table-cell">
+                  <span class="provider-meta">${escapeHTML(disabledUntilText)}</span>
+                </div>
+                <div class="key-table-cell key-table-actions">
+                  <button class="secondary" type="button" data-action="delete-key" data-provider="${escapeHTML(provider.name)}" data-key="${escapeHTML(keyRef)}">${escapeHTML(t("provider.delete"))}</button>
+                </div>
               </div>
             `;
           }).join("")}
+          </div>
         </div>
       `;
     }
@@ -137,8 +159,8 @@
       const selectedKeys = new Set(getSelectedKeys(provider.name));
       const selectionSummary = t("admin.keySelectionSummary", {
         selected: selectedKeys.size,
-        page: pageKeys.length,
-        total: filteredKeys.length
+        result: filteredKeys.length,
+        total: (provider.keys || []).length
       });
       const importDraftValue = state.providerImportDraftsByName[provider.name] || "";
       const importExpanded = Boolean(state.providerImportExpandedByName[provider.name]);
@@ -153,13 +175,13 @@
           </div>
 
           <div class="key-workspace-toolbar">
-            <div class="workspace-search-stack">
-              <label class="search-label workspace-search">
-                <span>${escapeHTML(t("admin.keySearch"))}</span>
+            <label class="search-label workspace-search">
+              <span>${escapeHTML(t("admin.keySearch"))}</span>
+              <div class="key-workspace-search-row">
                 <input id="key-search" data-role="key-search-input" type="search" value="${escapeHTML(state.keySearchQuery)}" placeholder="${escapeHTML(t("admin.keySearchPlaceholder"))}">
-              </label>
-              <button class="secondary workspace-import-toggle" type="button" data-action="toggle-import-keys" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t(importExpanded ? "admin.hideImportKeys" : "admin.importKeys"))}</button>
-            </div>
+                <button class="secondary workspace-import-toggle" type="button" data-action="toggle-import-keys" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t(importExpanded ? "admin.hideImportKeys" : "admin.importKeys"))}</button>
+              </div>
+            </label>
             <div class="workspace-action-stack">
               <div class="key-list-summary">
                 <span>${escapeHTML(selectionSummary)}</span>
@@ -264,6 +286,7 @@
             <div class="actions provider-config-actions">
               <button class="primary" type="submit">${escapeHTML(t("provider.save"))}</button>
               <button class="secondary" type="button" data-action="clear-cache" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.clearCache"))}</button>
+              <button class="secondary" type="button" data-action="delete-provider" data-provider="${escapeHTML(provider.name)}">${escapeHTML(t("provider.delete"))}</button>
             </div>
             <div class="inline-status" data-role="provider-status"></div>
           </form>

@@ -71,14 +71,43 @@
     </section>
 
     <section id="admin-view" class="grid admin-dashboard-grid hidden">
+      <article class="panel admin-console-strip">
+        <div class="admin-console-tabs">
+          <button id="admin-nav-global" class="admin-console-tab" type="button" data-i18n="admin.tabGlobal">全局</button>
+          <button id="admin-nav-providers" class="admin-console-tab" type="button" data-i18n="admin.tabProviders">提供商</button>
+          <button id="open-log-modal" class="admin-console-tab" type="button" data-i18n="admin.tabLogs">日志</button>
+        </div>
+        <div class="admin-console-strip-note hint" data-i18n-html="admin.entryHint">
+          代理入口 <code>/{provider}/...</code> · 缓存入口 <code>/cache/{provider}/...</code>
+        </div>
+      </article>
+
       <article class="panel admin-sidebar">
-        <h2 data-i18n="admin.workspaceTitle">管理工作区</h2>
-        <div class="panel-subtitle" data-i18n="admin.workspaceSub">登录后维护全局配置、提供商与上游密钥。</div>
+        <h2 class="admin-sidebar-title" data-i18n="admin.workspaceTitle">管理工作区</h2>
+        <div class="panel-subtitle admin-sidebar-subtitle" data-i18n="admin.workspaceSub">登录后维护全局配置、提供商与上游密钥。</div>
         <div id="admin-action-status" class="inline-status"></div>
 
-        <div class="panel-section">
-          <h3 data-i18n="admin.loginTitle">登录</h3>
-          <div class="panel-subtitle" data-i18n="admin.loginSub">登录状态保存在当前浏览器。</div>
+        <div class="panel-section admin-session-card">
+          <div class="admin-session-header">
+            <div>
+              <h3 data-i18n="admin.loginTitle">登录</h3>
+              <div id="admin-session-copy" class="panel-subtitle admin-session-copy" data-i18n="admin.loginSub">登录状态保存在当前浏览器。</div>
+            </div>
+            <div id="admin-session-badge" class="status-badge" data-i18n="admin.sessionInactive">未登录</div>
+          </div>
+          <div id="admin-session-summary" class="admin-session-summary hidden">
+            <div class="admin-summary-list compact">
+              <div class="admin-summary-item">
+                <span data-i18n="admin.sessionSummaryStatus">会话</span>
+                <strong id="admin-session-state" data-i18n="admin.sessionActive">已登录</strong>
+              </div>
+              <div class="admin-summary-item">
+                <span data-i18n="admin.sessionSummaryStorage">保存位置</span>
+                <strong data-i18n="admin.sessionBrowser">当前浏览器</strong>
+              </div>
+            </div>
+            <button class="secondary" id="logout-button" type="button" data-i18n="admin.logoutBtn">退出登录</button>
+          </div>
           <form id="login-form">
             <label>
               <span data-role="label-text" data-i18n="admin.adminKey">管理员密钥</span>
@@ -86,47 +115,59 @@
             </label>
             <div class="actions">
               <button class="primary" type="submit" data-i18n="admin.loginBtn">登录</button>
-              <button class="secondary hidden" id="logout-button" type="button" data-i18n="admin.logoutBtn">退出登录</button>
             </div>
-            <div id="login-status" class="inline-status"></div>
           </form>
+          <div id="login-status" class="inline-status"></div>
         </div>
 
         <div id="admin-workspace" class="hidden">
-          <hr class="divider">
-
-          <div class="hint" data-i18n-html="admin.entryHint">
-            代理入口 <code>/{provider}/...</code> · 缓存入口 <code>/cache/{provider}/...</code>
+          <div id="admin-global-section" class="panel-section admin-rail-section">
+            <details class="admin-rail-disclosure" open>
+              <summary class="admin-rail-summary">
+                <span data-i18n="admin.globalTitle">全局配置</span>
+              </summary>
+              <div class="admin-rail-body">
+                <div class="admin-summary-list">
+                  <div class="admin-summary-item">
+                    <span data-i18n="admin.globalSummaryAdmin">管理员密钥</span>
+                    <strong id="global-summary-admin-key" data-i18n="admin.notConfigured">未配置</strong>
+                  </div>
+                  <div class="admin-summary-item">
+                    <span data-i18n="admin.globalSummaryClients">客户端密钥</span>
+                    <strong id="global-summary-client-keys">0</strong>
+                  </div>
+                  <div class="admin-summary-item">
+                    <span data-i18n="admin.globalSummaryTokenEst">Token 估算</span>
+                    <strong id="global-summary-token-estimation" data-i18n="admin.disabled">关闭</strong>
+                  </div>
+                </div>
+                <form id="global-config-form">
+                  <div class="form-grid">
+                    <label>
+                      <span data-role="label-text" data-i18n="admin.adminKey">管理员密钥</span>
+                      <input id="global-admin-key" name="admin_key" type="password" data-i18n-placeholder="admin.adminKeyPlaceholderHint" placeholder="用于管理接口鉴权" autocomplete="new-password">
+                    </label>
+                    <label class="checkbox">
+                      <input id="global-token-estimation" name="token_estimation_enabled" type="checkbox">
+                      <span data-i18n="admin.tokenEst">上游缺统计时启用 Token 估算</span>
+                    </label>
+                  </div>
+                  <label>
+                    <span data-role="label-text" data-i18n="admin.clientKeys">客户端访问密钥</span>
+                    <textarea id="global-client-keys" name="client_keys" data-i18n-placeholder="admin.keysPlaceholder" placeholder="每行一个，或用半角逗号分隔"></textarea>
+                  </label>
+                  <div class="actions">
+                    <button class="primary" type="submit" data-i18n="admin.saveGlobal">保存全局配置</button>
+                  </div>
+                  <div id="global-status" class="inline-status"></div>
+                </form>
+              </div>
+            </details>
           </div>
 
-          <div class="panel-section admin-rail-section">
-            <h3 data-i18n="admin.globalTitle">全局配置</h3>
-            <form id="global-config-form">
-              <div class="form-grid">
-                <label>
-                  <span data-role="label-text" data-i18n="admin.adminKey">管理员密钥</span>
-                  <input id="global-admin-key" name="admin_key" type="password" data-i18n-placeholder="admin.adminKeyPlaceholderHint" placeholder="用于管理接口鉴权" autocomplete="new-password">
-                </label>
-                <label class="checkbox">
-                  <input id="global-token-estimation" name="token_estimation_enabled" type="checkbox">
-                  <span data-i18n="admin.tokenEst">上游缺统计时启用 Token 估算</span>
-                </label>
-              </div>
-              <label>
-                <span data-role="label-text" data-i18n="admin.clientKeys">客户端访问密钥</span>
-                <textarea id="global-client-keys" name="client_keys" data-i18n-placeholder="admin.keysPlaceholder" placeholder="每行一个，或用半角逗号分隔"></textarea>
-              </label>
-              <div class="actions">
-                <button class="primary" type="submit" data-i18n="admin.saveGlobal">保存全局配置</button>
-              </div>
-              <div id="global-status" class="inline-status"></div>
-            </form>
-          </div>
-
-          <div class="panel-section admin-rail-section">
+          <div id="admin-provider-section" class="panel-section admin-rail-section">
             <div class="panel-header admin-rail-header">
               <h3 data-i18n="admin.providerListTitle">提供商列表</h3>
-              <button id="open-log-modal" class="secondary" type="button" data-i18n="admin.viewLogs">查看日志</button>
             </div>
             <div class="panel-subtitle" data-i18n="admin.providerListSub">一次只聚焦一个提供商，分页处理配置与密钥。</div>
             <label class="search-label workspace-search provider-selector-search">
@@ -139,65 +180,71 @@
           </div>
 
           <div class="panel-section admin-rail-section">
-            <h3 data-i18n="admin.newProvider">新增提供商</h3>
-            <form id="provider-create-form">
-              <div class="form-grid">
-                <label>
-                  <span data-role="label-text" data-i18n="provider.name">名称</span>
-                  <input name="name" type="text" data-i18n-placeholder="provider.namePlaceholder" placeholder="例如 openai" required>
-                </label>
-                <label>
-                  <span data-role="label-text" data-i18n="provider.type">接口格式</span>
-                  <select name="type">
-                    <option value="openai_chat">OpenAI Chat</option>
-                    <option value="openai_responses">OpenAI Responses</option>
-                    <option value="claude">Claude</option>
-                    <option value="gemini">Gemini</option>
-                  </select>
-                </label>
+            <details class="admin-rail-disclosure">
+              <summary class="admin-rail-summary">
+                <span data-i18n="admin.newProvider">新增提供商</span>
+              </summary>
+              <div class="admin-rail-body">
+                <form id="provider-create-form">
+                  <div class="form-grid">
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.name">名称</span>
+                      <input name="name" type="text" data-i18n-placeholder="provider.namePlaceholder" placeholder="例如 openai" required>
+                    </label>
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.type">接口格式</span>
+                      <select name="type">
+                        <option value="openai_chat">OpenAI Chat</option>
+                        <option value="openai_responses">OpenAI Responses</option>
+                        <option value="claude">Claude</option>
+                        <option value="gemini">Gemini</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.baseUrl">上游地址</span>
+                      <input name="base_url" type="text" data-i18n-placeholder="provider.baseUrlPlaceholder" placeholder="留空则使用对应类型的默认地址">
+                    </label>
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.strategy">密钥策略</span>
+                      <select name="key_strategy">
+                        <option value="round_robin" data-i18n="strategy.roundRobin">轮询</option>
+                        <option value="fill" data-i18n="strategy.fill">填充</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="form-grid three">
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.failThreshold">失败阈值</span>
+                      <input name="fail_threshold" type="number" min="1" value="3">
+                    </label>
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.minDisable">最小禁用秒数</span>
+                      <input name="min_disable_secs" type="number" min="1" value="30">
+                    </label>
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.maxDisable">最大禁用秒数</span>
+                      <input name="max_disable_secs" type="number" min="1" value="43200">
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label class="checkbox">
+                      <input name="cache_enabled" type="checkbox">
+                      <span data-i18n="provider.cacheEnabled">启用硬盘缓存</span>
+                    </label>
+                    <label>
+                      <span data-role="label-text" data-i18n="provider.cacheMax">最大缓存条目</span>
+                      <input name="cache_max_entries" type="number" min="1" value="1000">
+                    </label>
+                  </div>
+                  <div class="actions">
+                    <button class="primary" type="submit" data-i18n="admin.saveProvider">保存提供商</button>
+                  </div>
+                  <div id="provider-create-status" class="inline-status"></div>
+                </form>
               </div>
-              <div class="form-grid">
-                <label>
-                  <span data-role="label-text" data-i18n="provider.baseUrl">上游地址</span>
-                  <input name="base_url" type="text" data-i18n-placeholder="provider.baseUrlPlaceholder" placeholder="留空则使用对应类型的默认地址">
-                </label>
-                <label>
-                  <span data-role="label-text" data-i18n="provider.strategy">密钥策略</span>
-                  <select name="key_strategy">
-                    <option value="round_robin" data-i18n="strategy.roundRobin">轮询</option>
-                    <option value="fill" data-i18n="strategy.fill">填充</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-grid three">
-                <label>
-                  <span data-role="label-text" data-i18n="provider.failThreshold">失败阈值</span>
-                  <input name="fail_threshold" type="number" min="1" value="3">
-                </label>
-                <label>
-                  <span data-role="label-text" data-i18n="provider.minDisable">最小禁用秒数</span>
-                  <input name="min_disable_secs" type="number" min="1" value="30">
-                </label>
-                <label>
-                  <span data-role="label-text" data-i18n="provider.maxDisable">最大禁用秒数</span>
-                  <input name="max_disable_secs" type="number" min="1" value="43200">
-                </label>
-              </div>
-              <div class="form-grid">
-                <label class="checkbox">
-                  <input name="cache_enabled" type="checkbox">
-                  <span data-i18n="provider.cacheEnabled">启用硬盘缓存</span>
-                </label>
-                <label>
-                  <span data-role="label-text" data-i18n="provider.cacheMax">最大缓存条目</span>
-                  <input name="cache_max_entries" type="number" min="1" value="1000">
-                </label>
-              </div>
-              <div class="actions">
-                <button class="primary" type="submit" data-i18n="admin.saveProvider">保存提供商</button>
-              </div>
-              <div id="provider-create-status" class="inline-status"></div>
-            </form>
+            </details>
           </div>
         </div>
       </article>
