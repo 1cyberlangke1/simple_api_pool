@@ -57,6 +57,10 @@ func (h *ProxyHandler) handleStream(w http.ResponseWriter, resp *http.Response, 
 
 	logFields.Status = resp.StatusCode
 	logFields.ResponseBytes = collected.Len()
+	if logFields.Model == "" {
+		analysis = ensureCacheAnalysis(analysis, providerType, suffix, recordedRequestBody)
+		logFields.Model = analysis.model
+	}
 	if streamErr != nil {
 		logFields.Error = "流式透传中断: " + streamErr.Error()
 		h.stats.RecordError(provider, http.StatusBadGateway)

@@ -123,6 +123,7 @@ func TestProxyRequestWritesStructuredLogs(t *testing.T) {
 		`"msg":"proxy_request"`,
 		`"provider":"openai"`,
 		`"provider_type":"openai_chat"`,
+		`"model":"gpt-4.1"`,
 		`"upstream_path":"/v1/chat/completions"`,
 		`"status":200`,
 		`"key_ref":"****-key"`,
@@ -183,6 +184,7 @@ func TestProxyStreamRequestWritesFirstByteLatencyLog(t *testing.T) {
 	out := logs.String()
 	for _, fragment := range []string{
 		`"msg":"proxy_request"`,
+		`"model":"gpt-4.1"`,
 		`"stream":true`,
 		`"upstream_header_ms":`,
 		`"first_byte_ms":`,

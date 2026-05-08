@@ -222,7 +222,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		copyLimit := 0
-		if cacheEligible {
+		if !useCache || cacheEligible {
 			copyLimit = maxCacheableRequestBodyBytes
 		}
 		recordedRequestBody = newRecordedRequestBody(r.Body, copyLimit)
@@ -279,6 +279,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responseBytes, copyErr := io.Copy(w, io.TeeReader(resp.Body, errorCapture))
 		logFields.ResponseBytes = int(responseBytes)
 		logFields.Error = errorCapture.String()
+		if logFields.Model == "" {
+			analysis = ensureCacheAnalysis(analysis, p.Type, parts.suffix, recordedRequestBody)
+			logFields.Model = analysis.model
+		}
 		if copyErr != nil && logFields.Error == "" {
 			logFields.Error = fmt.Sprintf("读取上游错误响应失败: %v", copyErr)
 		}
@@ -309,6 +313,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(resp.StatusCode)
 		responseBytes, copyErr := writeBufferedPassthroughResponse(w, respBody, resp.Body, upstreamStart, &logFields)
 		logFields.ResponseBytes = responseBytes
+		if logFields.Model == "" {
+			analysis = ensureCacheAnalysis(analysis, p.Type, parts.suffix, recordedRequestBody)
+			logFields.Model = analysis.model
+		}
 		if copyErr != nil {
 			logFields.Error = fmt.Sprintf("透传上游响应失败: %v", copyErr)
 			return
@@ -319,6 +327,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logFields.Status = resp.StatusCode
 	logFields.ResponseBytes = len(respBody)
+	if logFields.Model == "" {
+		analysis = ensureCacheAnalysis(analysis, p.Type, parts.suffix, recordedRequestBody)
+		logFields.Model = analysis.model
+	}
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
