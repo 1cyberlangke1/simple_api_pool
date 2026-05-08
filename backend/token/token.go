@@ -123,8 +123,26 @@ func extractGemini(body []byte) Usage {
 	}
 	input := resp.UsageMetadata.PromptTokenCount
 	output := resp.UsageMetadata.CandidatesTokenCount
+	cacheTokens := geminiCacheTokens(input, output, resp.UsageMetadata.TotalTokenCount, resp.UsageMetadata.CachedContentTokenCount)
 	if input == 0 && output == 0 && resp.UsageMetadata.TotalTokenCount > 0 {
 		input = resp.UsageMetadata.TotalTokenCount
 	}
-	return Usage{InputTokens: input, OutputTokens: output, CacheTokens: resp.UsageMetadata.CachedContentTokenCount}
+	return Usage{
+		InputTokens:  input,
+		OutputTokens: output,
+		CacheTokens:  cacheTokens,
+	}
+}
+
+func geminiCacheTokens(inputTokens, outputTokens, totalTokens, cachedTokens int64) int64 {
+	if cachedTokens <= 0 {
+		return 0
+	}
+	if inputTokens > 0 || outputTokens > 0 {
+		if totalTokens > 0 {
+			return totalTokens
+		}
+		return inputTokens + outputTokens
+	}
+	return cachedTokens
 }

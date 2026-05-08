@@ -165,8 +165,11 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if !strings.Contains(scriptBundle, `const API_BASE = "/api"`) {
 		t.Fatal("期望前端脚本包含 API_BASE 常量")
 	}
-	if !strings.Contains(scriptBundle, `__APP_VERSION__`) || !strings.Contains(scriptBundle, `__APP_REVISION__`) || !strings.Contains(scriptBundle, `__APP_BUILD_TIME__`) {
-		t.Fatal("期望前端脚本保留构建元信息占位符")
+	if strings.Contains(scriptBundle, `__APP_VERSION__`) || strings.Contains(scriptBundle, `__APP_REVISION__`) || strings.Contains(scriptBundle, `__APP_BUILD_TIME__`) {
+		t.Fatal("期望前端脚本在构建后注入真实构建元信息，而不是保留占位符")
+	}
+	if strings.Contains(string(indexHTML), `dev / local / unknown`) {
+		t.Fatal("期望前端首页在构建后不再显示默认版本占位文本")
 	}
 	if !strings.Contains(scriptBundle, `request("/admin/login"`) {
 		t.Fatal("期望前端脚本包含管理员登录请求")

@@ -1476,6 +1476,141 @@ func TestUpstreamCacheTokensAreIncludedInStats(t *testing.T) {
 	}
 }
 
+func TestGeminiUpstreamCachedContentUsesTotalTokensInStats(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"cached gemini"}]}}],"usageMetadata":{"promptTokenCount":6,"candidatesTokenCount":881,"totalTokenCount":887,"cachedContentTokenCount":113}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "gemini",
+		Type:            config.Gemini,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    false,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "gemini-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	body := []byte(`{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models/gemini-2.5-flash:generateContent", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	snapshot := statsMgr.Snapshot()
+	stat, ok := snapshot["gemini"]
+	if !ok {
+		t.Fatal("期望产生 gemini 统计")
+	}
+	if stat.InputTokens != 6 || stat.OutputTokens != 881 {
+		t.Fatalf("期望 Gemini 输入输出 token 为 6/881，实际是 %d/%d", stat.InputTokens, stat.OutputTokens)
+	}
+	if stat.CacheHits != 0 {
+		t.Fatalf("期望上游 Gemini 渠道缓存不计入本地缓存命中，实际是 %d", stat.CacheHits)
+	}
+	if stat.CacheTokens != 887 {
+		t.Fatalf("期望 Gemini 渠道缓存 token 统计为 887，实际是 %d", stat.CacheTokens)
+	}
+}
+
+func TestGeminiLargeMultimodalCacheHitAvoidsUpstream500WithinConfiguredLimit(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if upstreamCalls > 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"code":500,"message":"Internal error encountered.","status":"INTERNAL"}}`))
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		events := []string{
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"cached\"}]}}]}\r\n\r\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" answer\"}]}}]}\r\n\r\n",
+			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":107,\"totalTokenCount\":113}}\r\n\r\n",
+		}
+		for _, event := range events {
+			if _, err := w.Write([]byte(event)); err != nil {
+				t.Fatalf("写入 Gemini 大请求流式事件失败: %v", err)
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "gemini",
+		Type:            config.Gemini,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "gemini-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	multimodalBody := `{"contents":[{"role":"user","parts":[{"text":"describe image"},{"inlineData":{"mimeType":"image/png","data":"` + strings.Repeat("A", 300<<10) + `"}}]}]}`
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemma-4-31b-it:streamGenerateContent?alt=sse", strings.NewReader(multimodalBody))
+	firstReq.Header.Set("Authorization", "Bearer client-key")
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstReq.Header.Set("Accept", "text/event-stream")
+	firstRec := httptest.NewRecorder()
+	proxy.ServeHTTP(firstRec, firstReq)
+
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("第一次 Gemini 大多模态请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, firstRec.Code, firstRec.Body.String())
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemma-4-31b-it:streamGenerateContent?alt=sse", strings.NewReader(multimodalBody))
+	secondReq.Header.Set("Authorization", "Bearer client-key")
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq.Header.Set("Accept", "text/event-stream")
+	secondRec := httptest.NewRecorder()
+	proxy.ServeHTTP(secondRec, secondReq)
+
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("第二次 Gemini 大多模态请求期望命中缓存返回 %d，实际是 %d，响应体: %s", http.StatusOK, secondRec.Code, secondRec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望第二次 Gemini 大多模态请求直接命中缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	if !strings.Contains(secondRec.Body.String(), `"cachedContentTokenCount":113`) {
+		t.Fatalf("期望第二次 Gemini 大多模态缓存命中响应带 cachedContentTokenCount=113，实际是 %s", secondRec.Body.String())
+	}
+}
+
 func TestGeminiProviderInjectsGoogAPIKey(t *testing.T) {
 	var gotHeader string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

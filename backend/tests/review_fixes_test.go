@@ -174,7 +174,9 @@ func TestCacheRouteBypassesCacheForOversizedRequestBody(t *testing.T) {
 	}
 }
 
-func TestCacheRouteBypassesCacheForRequestBodyAboveDefaultMemoryBudget(t *testing.T) {
+func TestCacheRouteBypassesCacheForRequestBodyAboveConfiguredBudget(t *testing.T) {
+	t.Setenv("CACHEABLE_REQUEST_BODY_LIMIT_BYTES", "131072")
+
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -219,7 +221,7 @@ func TestCacheRouteBypassesCacheForRequestBodyAboveDefaultMemoryBudget(t *testin
 	}
 
 	if upstreamCalls != 2 {
-		t.Fatalf("期望超出默认内存预算的请求体不进入缓存，实际上游调用次数是 %d", upstreamCalls)
+		t.Fatalf("期望超出显式请求体缓存门槛的请求不进入缓存，实际上游调用次数是 %d", upstreamCalls)
 	}
 }
 

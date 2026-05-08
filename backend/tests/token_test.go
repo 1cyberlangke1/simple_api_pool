@@ -36,13 +36,13 @@ func TestExtractClaudeCacheTokenCounts(t *testing.T) {
 	}
 }
 
-func TestExtractGeminiCacheTokenCounts(t *testing.T) {
+func TestExtractGeminiCacheTokenCountsUseTotalWhenCachedContentPresent(t *testing.T) {
 	body := []byte(`{"usageMetadata":{"promptTokenCount":14,"candidatesTokenCount":5,"totalTokenCount":19,"cachedContentTokenCount":7}}`)
 
 	got := token.Extract("gemini", body, false)
 
-	if got.InputTokens != 14 || got.OutputTokens != 5 || got.CacheTokens != 7 {
-		t.Fatalf("期望 Gemini usage 为 14/5，缓存 token=7，实际是 %+v", got)
+	if got.InputTokens != 14 || got.OutputTokens != 5 || got.CacheTokens != 19 {
+		t.Fatalf("期望 Gemini usage 为 14/5，缓存 token=19，实际是 %+v", got)
 	}
 }
 
@@ -93,5 +93,15 @@ func TestGeminiStreamUsesTotalTokensWithoutInventingSplit(t *testing.T) {
 
 	if got.InputTokens != 19 || got.OutputTokens != 0 || got.CacheTokens != 7 {
 		t.Fatalf("期望 Gemini 只有总 token 时不虚构 input/output 拆分，实际是 %+v", got)
+	}
+}
+
+func TestGeminiStreamUsesTotalTokensForCacheWhenCachedContentPresent(t *testing.T) {
+	stream := []byte("data: {\"usageMetadata\":{\"promptTokenCount\":6,\"candidatesTokenCount\":881,\"totalTokenCount\":887,\"cachedContentTokenCount\":113}}\n\n")
+
+	got := token.ExtractFromStream("gemini", stream, false)
+
+	if got.InputTokens != 6 || got.OutputTokens != 881 || got.CacheTokens != 887 {
+		t.Fatalf("期望 Gemini 流式 usage 为 6/881，缓存 token=887，实际是 %+v", got)
 	}
 }

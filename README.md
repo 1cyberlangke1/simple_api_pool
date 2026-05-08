@@ -1069,9 +1069,10 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - `OpenAI Chat` 使用 `usage.prompt_tokens_details.cached_tokens`
 - `OpenAI Responses` 使用 `usage.input_tokens_details.cached_tokens`
 - `Claude` 使用 `usage.cache_read_input_tokens`
-- `Gemini` 使用 `usageMetadata.cachedContentTokenCount`
+- `Gemini` 在 `usageMetadata.cachedContentTokenCount > 0` 时，按同一响应里的 `totalTokenCount` 计入缓存 Token；如果缺少总量，再回退到原字段
 - 缓存按提供商独立存储为 SQLite 文件，不会为每条记录创建零碎小文件
 - 同一组 `model + 核心消息字段` 的流式响应和非流式响应会分别占用独立缓存条目
+- `/cache/...` 请求体只有在不超过 `CACHEABLE_REQUEST_BODY_LIMIT_BYTES` 时才会参与本地缓存判定；默认值是 `524288` 字节
 - 非流式上游响应会先按 `UPSTREAM_RESPONSE_LIMIT_BYTES` 作为本地可缓存体上限做探测；在上限内仍按整包路径处理，超过上限时改为直接透传，并放弃依赖完整响应体的缓存和整包后处理，避免内存被单次大响应耗尽
 
 ## 测试

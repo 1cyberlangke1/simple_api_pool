@@ -33,7 +33,6 @@ var streamCaptureBufferPool = sync.Pool{
 }
 
 const (
-	maxCacheableRequestBodyBytes      = 256 << 10
 	maxRetainedStreamCaptureBodyBytes = 128 << 10
 	maxUpstreamErrorLogBytes          = 4 << 10
 )
@@ -47,6 +46,7 @@ type ProxyHandler struct {
 	sema                        chan struct{}
 	limiter                     *auth.FailureLimiter
 	nonStreamResponseLimitBytes int64
+	cacheableRequestBodyLimit   int
 }
 
 func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
@@ -94,6 +94,7 @@ func NewProxyHandler(cfg *config.Config, sm *stats.Manager, kr *keyring.KeyRing,
 		sema:                        make(chan struct{}, maxConcurrent),
 		limiter:                     auth.NewFailureLimiter(20, time.Minute, 5*time.Minute),
 		nonStreamResponseLimitBytes: config.UpstreamResponseLimitBytes(),
+		cacheableRequestBodyLimit:   config.CacheableRequestBodyLimitBytes(),
 	}
 }
 
@@ -185,13 +186,13 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if useCache && cacheEligible {
-		if r.ContentLength > maxCacheableRequestBodyBytes {
+		if r.ContentLength > int64(h.cacheableRequestBodyLimit) {
 			cacheEligible = false
 			recordedRequestBody = newRecordedRequestBody(r.Body, 0)
 			upstreamBodyReader = recordedRequestBody
 		} else {
 			var requestBodyComplete bool
-			analysis.requestBody, requestBodyComplete, err = readRequestBodyForCache(r.Body, maxCacheableRequestBodyBytes)
+			analysis.requestBody, requestBodyComplete, err = readRequestBodyForCache(r.Body, h.cacheableRequestBodyLimit)
 			if err != nil {
 				logFields.Status = http.StatusBadRequest
 				logFields.Error = "读取请求体失败"
@@ -247,7 +248,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		copyLimit := 0
 		if !useCache || cacheEligible {
-			copyLimit = maxCacheableRequestBodyBytes
+			copyLimit = h.cacheableRequestBodyLimit
 		}
 		recordedRequestBody = newRecordedRequestBody(r.Body, copyLimit)
 		upstreamBodyReader = recordedRequestBody

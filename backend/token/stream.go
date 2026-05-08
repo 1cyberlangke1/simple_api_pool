@@ -122,11 +122,16 @@ func extractGeminiStream(body []byte) Usage {
 		}
 		input := resp.UsageMetadata.PromptTokenCount
 		output := resp.UsageMetadata.CandidatesTokenCount
+		cacheTokens := geminiCacheTokens(input, output, resp.UsageMetadata.TotalTokenCount, resp.UsageMetadata.CachedContentTokenCount)
 		if input == 0 && output == 0 && resp.UsageMetadata.TotalTokenCount > 0 {
 			input = resp.UsageMetadata.TotalTokenCount
 		}
 		if input > 0 || output > 0 {
-			u = Usage{InputTokens: input, OutputTokens: output, CacheTokens: resp.UsageMetadata.CachedContentTokenCount}
+			u = Usage{
+				InputTokens:  input,
+				OutputTokens: output,
+				CacheTokens:  cacheTokens,
+			}
 			break
 		}
 	}
