@@ -266,6 +266,7 @@ func normalizeSSELineEndings(body string) string {
 
 func sseChunkPayload(chunk string) (map[string]any, bool) {
 	lines := strings.Split(strings.TrimSuffix(chunk, "\n\n"), "\n")
+	dataLines := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
@@ -274,13 +275,17 @@ func sseChunkPayload(chunk string) (map[string]any, bool) {
 		if rawJSON == "[DONE]" {
 			return nil, false
 		}
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(rawJSON), &payload); err != nil {
-			return nil, false
-		}
-		return payload, true
+		dataLines = append(dataLines, rawJSON)
 	}
-	return nil, false
+	if len(dataLines) == 0 {
+		return nil, false
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(strings.Join(dataLines, "\n")), &payload); err != nil {
+		return nil, false
+	}
+	return payload, true
 }
 
 func encodeDataOnlySSEChunk(payload map[string]any) string {

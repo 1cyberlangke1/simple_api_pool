@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -120,7 +121,7 @@ func (ah *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, "请求体无效")
 		return
 	}
-	if body.AdminKey == "" || body.AdminKey != ah.cfg.AdminKey() {
+	if body.AdminKey == "" || subtle.ConstantTimeCompare([]byte(body.AdminKey), []byte(ah.cfg.AdminKey())) != 1 {
 		if ah.limiter != nil {
 			ah.limiter.RecordFailure(r.RemoteAddr)
 		}

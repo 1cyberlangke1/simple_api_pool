@@ -1,8 +1,8 @@
 package token
 
 import (
+	"bytes"
 	"encoding/json"
-	"strings"
 )
 
 // ExtractFromStream tries to extract token usage from accumulated streamed response bytes
@@ -30,16 +30,10 @@ func ExtractFromStream(providerType string, body []byte, estimateEnabled bool) U
 }
 
 func extractOpenAIStream(body []byte) Usage {
-	// Parse SSE stream: each line starts with "data: "
-	// The last data line contains "[DONE]" or the final chunk with usage
-	lines := strings.Split(string(body), "\n")
 	var u Usage
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(line, "data: ") || line == "data: [DONE]" {
-			continue
-		}
-		jsonStr := strings.TrimPrefix(line, "data: ")
+	payloads := sseDataPayloads(body)
+	for i := len(payloads) - 1; i >= 0; i-- {
+		jsonStr := payloads[i]
 		var chunk struct {
 			Usage struct {
 				PromptTokens       int64 `json:"prompt_tokens"`
@@ -58,7 +52,7 @@ func extractOpenAIStream(body []byte) Usage {
 				} `json:"usage"`
 			} `json:"response"`
 		}
-		if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
+		if err := json.Unmarshal(jsonStr, &chunk); err != nil {
 			continue
 		}
 		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
@@ -82,14 +76,10 @@ func extractOpenAIStream(body []byte) Usage {
 }
 
 func extractClaudeStream(body []byte) Usage {
-	lines := strings.Split(string(body), "\n")
 	var u Usage
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		jsonStr := strings.TrimPrefix(line, "data: ")
+	payloads := sseDataPayloads(body)
+	for i := len(payloads) - 1; i >= 0; i-- {
+		jsonStr := payloads[i]
 		var msg struct {
 			Type  string `json:"type"`
 			Usage struct {
@@ -99,7 +89,7 @@ func extractClaudeStream(body []byte) Usage {
 				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 			} `json:"usage"`
 		}
-		if err := json.Unmarshal([]byte(jsonStr), &msg); err != nil {
+		if err := json.Unmarshal(jsonStr, &msg); err != nil {
 			continue
 		}
 		if msg.Usage.InputTokens > 0 || msg.Usage.OutputTokens > 0 {
@@ -115,14 +105,10 @@ func extractClaudeStream(body []byte) Usage {
 }
 
 func extractGeminiStream(body []byte) Usage {
-	lines := strings.Split(string(body), "\n")
 	var u Usage
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		jsonStr := strings.TrimPrefix(line, "data: ")
+	payloads := sseDataPayloads(body)
+	for i := len(payloads) - 1; i >= 0; i-- {
+		jsonStr := payloads[i]
 		var resp struct {
 			UsageMetadata struct {
 				PromptTokenCount        int64 `json:"promptTokenCount"`
@@ -131,14 +117,13 @@ func extractGeminiStream(body []byte) Usage {
 				CachedContentTokenCount int64 `json:"cachedContentTokenCount"`
 			} `json:"usageMetadata"`
 		}
-		if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+		if err := json.Unmarshal(jsonStr, &resp); err != nil {
 			continue
 		}
 		input := resp.UsageMetadata.PromptTokenCount
 		output := resp.UsageMetadata.CandidatesTokenCount
 		if input == 0 && output == 0 && resp.UsageMetadata.TotalTokenCount > 0 {
-			input = resp.UsageMetadata.TotalTokenCount / 2
-			output = resp.UsageMetadata.TotalTokenCount - input
+			input = resp.UsageMetadata.TotalTokenCount
 		}
 		if input > 0 || output > 0 {
 			u = Usage{InputTokens: input, OutputTokens: output, CacheTokens: resp.UsageMetadata.CachedContentTokenCount}
@@ -146,4 +131,38 @@ func extractGeminiStream(body []byte) Usage {
 		}
 	}
 	return u
+}
+
+func sseDataPayloads(body []byte) [][]byte {
+	normalized := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
+	normalized = bytes.ReplaceAll(normalized, []byte("\r"), []byte("\n"))
+
+	rawEvents := bytes.Split(normalized, []byte("\n\n"))
+	payloads := make([][]byte, 0, len(rawEvents))
+	for _, event := range rawEvents {
+		if len(bytes.TrimSpace(event)) == 0 {
+			continue
+		}
+
+		lines := bytes.Split(event, []byte("\n"))
+		dataLines := make([][]byte, 0, len(lines))
+		skipEvent := false
+		for _, rawLine := range lines {
+			line := bytes.TrimSpace(rawLine)
+			if !bytes.HasPrefix(line, []byte("data:")) {
+				continue
+			}
+			payload := bytes.TrimSpace(line[len("data:"):])
+			if bytes.Equal(payload, []byte("[DONE]")) {
+				skipEvent = true
+				break
+			}
+			dataLines = append(dataLines, append([]byte(nil), payload...))
+		}
+		if skipEvent || len(dataLines) == 0 {
+			continue
+		}
+		payloads = append(payloads, bytes.Join(dataLines, []byte("\n")))
+	}
+	return payloads
 }

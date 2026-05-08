@@ -115,12 +115,12 @@ func signAdminSessionPayload(adminKey, payload string) string {
 func shouldSetAdminSessionSecureCookie(r *http.Request) bool {
 	value := strings.TrimSpace(os.Getenv("ADMIN_COOKIE_SECURE"))
 	if value == "" {
-		return r != nil && r.TLS != nil
+		return true
 	}
 
 	secure, err := strconv.ParseBool(value)
 	if err != nil {
-		return r != nil && r.TLS != nil
+		return true
 	}
 	return secure
 }

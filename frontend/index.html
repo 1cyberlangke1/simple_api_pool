@@ -1367,8 +1367,12 @@ const API_BASE = "/api";
     const RAW_APP_VERSION = "__APP_VERSION__";
     const RAW_APP_REVISION = "__APP_REVISION__";
     const RAW_APP_BUILD_TIME = "__APP_BUILD_TIME__";
-    const route = location.pathname === "/admin" ? "admin" : "status";
+    let route = getRouteFromPath(location.pathname);
     let statusPollTimer = null;
+
+    function getRouteFromPath(pathname) {
+      return pathname === "/admin" ? "admin" : "status";
+    }
 
 /* ---------- i18n ---------- */
 
@@ -1742,10 +1746,33 @@ const API_BASE = "/api";
         el.placeholder = t(el.getAttribute("data-i18n-placeholder"));
       });
       document.querySelectorAll("[data-i18n-html]").forEach((el) => {
-        el.innerHTML = t(el.getAttribute("data-i18n-html"));
+        renderTranslatedInlineMarkup(el, t(el.getAttribute("data-i18n-html")));
       });
       const langLabel = document.getElementById("lang-toggle-label");
       if (langLabel) langLabel.textContent = t("label.lang");
+    }
+
+    function renderTranslatedInlineMarkup(element, markupText) {
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
+
+      const templatePattern = /<code>(.*?)<\/code>/g;
+      let lastIndex = 0;
+      let match = templatePattern.exec(markupText);
+      while (match) {
+        if (match.index > lastIndex) {
+          element.appendChild(document.createTextNode(markupText.slice(lastIndex, match.index)));
+        }
+        const code = document.createElement("code");
+        code.textContent = match[1];
+        element.appendChild(code);
+        lastIndex = match.index + match[0].length;
+        match = templatePattern.exec(markupText);
+      }
+      if (lastIndex < markupText.length) {
+        element.appendChild(document.createTextNode(markupText.slice(lastIndex)));
+      }
     }
 
     function applyTheme() {
@@ -1829,7 +1856,17 @@ const API_BASE = "/api";
     }
 
     function goTo(path) {
-      window.location.href = path;
+      const nextRoute = getRouteFromPath(path);
+      if (location.pathname !== path) {
+        history.pushState({}, "", path);
+      }
+      route = nextRoute;
+      setRouteView();
+      if (route === "admin") {
+        void loadAdminOverview();
+        return;
+      }
+      void loadStatusOverview();
     }
 
     function replaceEvery(source, search, replacement) {
@@ -2010,7 +2047,9 @@ const API_BASE = "/api";
         return null;
       }
       return {
-        formClassName: activeElement.form ? activeElement.form.className || "" : "",
+        formRole: activeElement.form && activeElement.form.classList.contains("provider-edit-form")
+          ? "provider-edit-form"
+          : (activeElement.form && activeElement.form.classList.contains("provider-keys-form") ? "provider-keys-form" : ""),
         providerName: activeElement.form && activeElement.form.dataset ? activeElement.form.dataset.provider || "" : "",
         fieldName: activeElement.name,
         selectionStart: typeof activeElement.selectionStart === "number" ? activeElement.selectionStart : null,
@@ -2023,9 +2062,9 @@ const API_BASE = "/api";
         return;
       }
       let selector = "";
-      if (focusSnapshot.formClassName.includes("provider-edit-form")) {
+      if (focusSnapshot.formRole === "provider-edit-form") {
         selector = `.provider-edit-form[data-provider="${CSS.escape(focusSnapshot.providerName)}"] [name="${CSS.escape(focusSnapshot.fieldName)}"]`;
-      } else if (focusSnapshot.formClassName.includes("provider-keys-form")) {
+      } else if (focusSnapshot.formRole === "provider-keys-form") {
         selector = `.provider-keys-form[data-provider="${CSS.escape(focusSnapshot.providerName)}"] [name="${CSS.escape(focusSnapshot.fieldName)}"]`;
       }
       if (!selector) {
@@ -2955,6 +2994,16 @@ const API_BASE = "/api";
         }
         void loadStatusOverview();
       }
+    });
+
+    window.addEventListener("popstate", () => {
+      route = getRouteFromPath(location.pathname);
+      setRouteView();
+      if (route === "admin") {
+        void loadAdminOverview();
+        return;
+      }
+      void loadStatusOverview();
     });
 
     // Follow system theme until user manually overrides

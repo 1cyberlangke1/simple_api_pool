@@ -65,3 +65,23 @@ func TestStreamResponseUsesLastChunkWithUsage(t *testing.T) {
 		t.Fatalf("期望 usage 为 9/3，实际是 %+v", got)
 	}
 }
+
+func TestStreamResponseParsesMultilineSSEDataPayload(t *testing.T) {
+	stream := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"usage\":\ndata: {\"prompt_tokens\":9,\"completion_tokens\":3,\"prompt_tokens_details\":{\"cached_tokens\":4}}}\n\ndata: [DONE]\n")
+
+	got := token.ExtractFromStream("openai_chat", stream, false)
+
+	if got.InputTokens != 9 || got.OutputTokens != 3 || got.CacheTokens != 4 {
+		t.Fatalf("期望多行 SSE data 仍能提取 usage=9/3/4，实际是 %+v", got)
+	}
+}
+
+func TestGeminiStreamUsesTotalTokensWithoutInventingSplit(t *testing.T) {
+	stream := []byte("data: {\"usageMetadata\":{\"totalTokenCount\":19,\"cachedContentTokenCount\":7}}\n\n")
+
+	got := token.ExtractFromStream("gemini", stream, false)
+
+	if got.InputTokens != 19 || got.OutputTokens != 0 || got.CacheTokens != 7 {
+		t.Fatalf("期望 Gemini 只有总 token 时不虚构 input/output 拆分，实际是 %+v", got)
+	}
+}

@@ -243,6 +243,17 @@ func TestProxyAndAccessLogsRedactSensitiveQueryValues(t *testing.T) {
 	}
 }
 
+func TestSanitizeQueryMasksMalformedSensitiveQuery(t *testing.T) {
+	sanitized := applog.SanitizeQuery("key=secret-value&bad=%gg")
+
+	if strings.Contains(sanitized, "secret-value") {
+		t.Fatalf("期望畸形 query 也不能泄露敏感值，实际是 %q", sanitized)
+	}
+	if sanitized != "[unparseable]" {
+		t.Fatalf("期望畸形 query 返回统一占位，实际是 %q", sanitized)
+	}
+}
+
 func TestCacheHitWritesDedicatedCacheEventLog(t *testing.T) {
 	var logs bytes.Buffer
 	oldLogger := slog.Default()

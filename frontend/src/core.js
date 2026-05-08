@@ -6,5 +6,9 @@ const API_BASE = "/api";
     const RAW_APP_VERSION = "__APP_VERSION__";
     const RAW_APP_REVISION = "__APP_REVISION__";
     const RAW_APP_BUILD_TIME = "__APP_BUILD_TIME__";
-    const route = location.pathname === "/admin" ? "admin" : "status";
+    let route = getRouteFromPath(location.pathname);
     let statusPollTimer = null;
+
+    function getRouteFromPath(pathname) {
+      return pathname === "/admin" ? "admin" : "status";
+    }

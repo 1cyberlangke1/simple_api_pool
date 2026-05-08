@@ -1,9 +1,11 @@
 package tests
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"simple-api-pool/auth"
 	"simple-api-pool/config"
@@ -33,6 +35,18 @@ func TestClientKeyAcceptsBearerAndRawAuthorization(t *testing.T) {
 	rawReq.Header.Set("Authorization", "client-b")
 	if !auth.CheckClientKey(rawReq, cfg) {
 		t.Fatal("原始格式客户端密钥应当通过")
+	}
+}
+
+func TestClientKeyRejectsNonBearerAuthorizationSchemes(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-a"})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Basic client-a")
+
+	if auth.CheckClientKey(req, cfg) {
+		t.Fatal("非 Bearer 鉴权方案不应被当作客户端密钥")
 	}
 }
 
@@ -74,6 +88,44 @@ func TestClientKeyAcceptsGeminiApiKeyHeaderAndQueryKey(t *testing.T) {
 	}
 }
 
+func TestClientKeyPrefersDedicatedProviderCredentialsOverBearer(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"provider-key", "bearer-key"})
+
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "gemini",
+		Type: config.Gemini,
+	}); err != nil {
+		t.Fatalf("保存 Gemini 提供商失败: %v", err)
+	}
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "claude",
+		Type: config.Claude,
+	}); err != nil {
+		t.Fatalf("保存 Claude 提供商失败: %v", err)
+	}
+
+	testCases := []struct {
+		name   string
+		path   string
+		header string
+	}{
+		{name: "gemini", path: "/gemini/v1beta/models", header: "x-goog-api-key"},
+		{name: "claude", path: "/claude/v1/messages", header: "x-api-key"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer bearer-key")
+			req.Header.Set(tc.header, "provider-key")
+			if !auth.CheckClientKey(req, cfg) {
+				t.Fatalf("%s 路径存在专用凭据时应优先通过专用鉴权", tc.name)
+			}
+		})
+	}
+}
+
 func TestClientKeyAcceptsClaudeApiKeyHeader(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"claude-client"})
@@ -105,6 +157,18 @@ func TestAdminKeyAcceptsBearerAndRawAuthorization(t *testing.T) {
 	rawReq.Header.Set("Authorization", "secret-admin")
 	if !auth.CheckAdminKey(rawReq, cfg) {
 		t.Fatal("原始格式管理员密钥应当通过")
+	}
+}
+
+func TestAdminKeyRejectsNonBearerAuthorizationSchemes(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Basic secret-admin")
+
+	if auth.CheckAdminKey(req, cfg) {
+		t.Fatal("非 Bearer 鉴权方案不应被当作管理员密钥")
 	}
 }
 
@@ -154,5 +218,34 @@ func TestConfigLoadsAdminAndClientKeysFromEnvironment(t *testing.T) {
 	keys := cfg.ClientKeys()
 	if len(keys) != 3 || keys[0] != "a" || keys[1] != "b" || keys[2] != "c" {
 		t.Fatalf("期望读取环境变量客户端密钥 [a b c]，实际是 %+v", keys)
+	}
+}
+
+func TestFailureLimiterSuccessDoesNotFullyResetFailures(t *testing.T) {
+	limiter := auth.NewFailureLimiter(3, time.Minute, time.Minute)
+	remoteAddr := "127.0.0.1:8080"
+
+	limiter.RecordFailure(remoteAddr)
+	limiter.RecordFailure(remoteAddr)
+	limiter.RecordSuccess(remoteAddr)
+	limiter.RecordFailure(remoteAddr)
+	if !limiter.Allow(remoteAddr) {
+		t.Fatal("单次成功后第一次再次失败不应立即封禁")
+	}
+	limiter.RecordFailure(remoteAddr)
+	if limiter.Allow(remoteAddr) {
+		t.Fatal("单次成功后不应把之前的失败记录全部清空")
+	}
+}
+
+func TestFailureLimiterCapsTrackedEntries(t *testing.T) {
+	limiter := auth.NewFailureLimiter(10, time.Minute, time.Minute)
+
+	for i := 0; i < 5000; i++ {
+		limiter.RecordFailure(fmt.Sprintf("192.0.2.%d:8080", i))
+	}
+
+	if limiter.Len() > 4096 {
+		t.Fatalf("期望失败限流器限制跟踪条目数量，实际是 %d", limiter.Len())
 	}
 }

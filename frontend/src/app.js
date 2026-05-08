@@ -54,7 +54,17 @@
     }
 
     function goTo(path) {
-      window.location.href = path;
+      const nextRoute = getRouteFromPath(path);
+      if (location.pathname !== path) {
+        history.pushState({}, "", path);
+      }
+      route = nextRoute;
+      setRouteView();
+      if (route === "admin") {
+        void loadAdminOverview();
+        return;
+      }
+      void loadStatusOverview();
     }
 
     function replaceEvery(source, search, replacement) {
@@ -235,7 +245,9 @@
         return null;
       }
       return {
-        formClassName: activeElement.form ? activeElement.form.className || "" : "",
+        formRole: activeElement.form && activeElement.form.classList.contains("provider-edit-form")
+          ? "provider-edit-form"
+          : (activeElement.form && activeElement.form.classList.contains("provider-keys-form") ? "provider-keys-form" : ""),
         providerName: activeElement.form && activeElement.form.dataset ? activeElement.form.dataset.provider || "" : "",
         fieldName: activeElement.name,
         selectionStart: typeof activeElement.selectionStart === "number" ? activeElement.selectionStart : null,
@@ -248,9 +260,9 @@
         return;
       }
       let selector = "";
-      if (focusSnapshot.formClassName.includes("provider-edit-form")) {
+      if (focusSnapshot.formRole === "provider-edit-form") {
         selector = `.provider-edit-form[data-provider="${CSS.escape(focusSnapshot.providerName)}"] [name="${CSS.escape(focusSnapshot.fieldName)}"]`;
-      } else if (focusSnapshot.formClassName.includes("provider-keys-form")) {
+      } else if (focusSnapshot.formRole === "provider-keys-form") {
         selector = `.provider-keys-form[data-provider="${CSS.escape(focusSnapshot.providerName)}"] [name="${CSS.escape(focusSnapshot.fieldName)}"]`;
       }
       if (!selector) {
@@ -1180,6 +1192,16 @@
         }
         void loadStatusOverview();
       }
+    });
+
+    window.addEventListener("popstate", () => {
+      route = getRouteFromPath(location.pathname);
+      setRouteView();
+      if (route === "admin") {
+        void loadAdminOverview();
+        return;
+      }
+      void loadStatusOverview();
     });
 
     // Follow system theme until user manually overrides

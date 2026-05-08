@@ -18,7 +18,7 @@ import (
 	"simple-api-pool/token"
 )
 
-func TestAdminSessionCookieDefaultsToRequestSecurity(t *testing.T) {
+func TestAdminSessionCookieDefaultsToSecure(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
 
@@ -32,8 +32,8 @@ func TestAdminSessionCookieDefaultsToRequestSecurity(t *testing.T) {
 	if len(httpCookies) != 1 {
 		t.Fatalf("期望签发 1 个管理员会话 Cookie，实际是 %d", len(httpCookies))
 	}
-	if httpCookies[0].Secure {
-		t.Fatal("HTTP 请求下不应默认写入 Secure Cookie")
+	if !httpCookies[0].Secure {
+		t.Fatal("管理员会话 Cookie 默认应启用 Secure")
 	}
 
 	httpsReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/admin/login", nil)
@@ -48,7 +48,7 @@ func TestAdminSessionCookieDefaultsToRequestSecurity(t *testing.T) {
 		t.Fatalf("期望签发 1 个 HTTPS 管理员会话 Cookie，实际是 %d", len(httpsCookies))
 	}
 	if !httpsCookies[0].Secure {
-		t.Fatal("HTTPS 请求下应默认写入 Secure Cookie")
+		t.Fatal("HTTPS 请求下管理员会话 Cookie 应继续保持 Secure")
 	}
 }
 

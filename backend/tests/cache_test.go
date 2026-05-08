@@ -387,3 +387,26 @@ func TestDecorateCachedStreamBodyKeepsClaudeUsageOnlyOnFinalEvent(t *testing.T) 
 		t.Fatalf("期望 Claude 流式缓存只保留一个最终 cache_read_input_tokens，实际是 %s", streamText)
 	}
 }
+
+func TestDecorateCachedStreamBodyParsesMultilineClaudeDataChunk(t *testing.T) {
+	claudeStream := cache.DecorateCachedStreamBody(
+		config.Claude,
+		[]byte(
+			"event: message_delta\n"+
+				"data: {\"type\":\"message_delta\",\"delta\":\n"+
+				"data: {\"text\":\"hello\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":6}}\n\n"+
+				"event: message_stop\n"+
+				"data: {\"type\":\"message_stop\"}\n\n",
+		),
+		8,
+		6,
+	)
+
+	streamText := string(claudeStream)
+	if !strings.Contains(streamText, `"text":"hello"`) {
+		t.Fatalf("期望保留多行 Claude SSE 事件内容，实际是 %s", streamText)
+	}
+	if !strings.Contains(streamText, `"cache_read_input_tokens":14`) {
+		t.Fatalf("期望多行 Claude SSE 事件仍能注入缓存 token，实际是 %s", streamText)
+	}
+}

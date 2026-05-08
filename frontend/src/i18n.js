@@ -370,10 +370,33 @@
         el.placeholder = t(el.getAttribute("data-i18n-placeholder"));
       });
       document.querySelectorAll("[data-i18n-html]").forEach((el) => {
-        el.innerHTML = t(el.getAttribute("data-i18n-html"));
+        renderTranslatedInlineMarkup(el, t(el.getAttribute("data-i18n-html")));
       });
       const langLabel = document.getElementById("lang-toggle-label");
       if (langLabel) langLabel.textContent = t("label.lang");
+    }
+
+    function renderTranslatedInlineMarkup(element, markupText) {
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
+
+      const templatePattern = /<code>(.*?)<\/code>/g;
+      let lastIndex = 0;
+      let match = templatePattern.exec(markupText);
+      while (match) {
+        if (match.index > lastIndex) {
+          element.appendChild(document.createTextNode(markupText.slice(lastIndex, match.index)));
+        }
+        const code = document.createElement("code");
+        code.textContent = match[1];
+        element.appendChild(code);
+        lastIndex = match.index + match[0].length;
+        match = templatePattern.exec(markupText);
+      }
+      if (lastIndex < markupText.length) {
+        element.appendChild(document.createTextNode(markupText.slice(lastIndex)));
+      }
     }
 
     function applyTheme() {

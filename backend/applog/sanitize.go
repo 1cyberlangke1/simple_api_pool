@@ -12,7 +12,7 @@ func SanitizeQuery(rawQuery string) string {
 
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		return rawQuery
+		return "[unparseable]"
 	}
 
 	changed := false

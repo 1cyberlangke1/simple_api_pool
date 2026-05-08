@@ -80,7 +80,12 @@ func ServeIndex(w http.ResponseWriter, r *http.Request, frontendRoot string) {
 		http.Error(w, `{"error":"前端资源不存在"}`, http.StatusServiceUnavailable)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(frontendRoot, "index.html"))
+	indexPath, ok := safeAssetPath(frontendRoot, "index.html")
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, indexPath)
 }
 
 func ServeAsset(w http.ResponseWriter, r *http.Request, frontendRoot, assetName string) {
@@ -88,5 +93,33 @@ func ServeAsset(w http.ResponseWriter, r *http.Request, frontendRoot, assetName 
 		http.Error(w, `{"error":"前端资源不存在"}`, http.StatusServiceUnavailable)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(frontendRoot, assetName))
+	assetPath, ok := safeAssetPath(frontendRoot, assetName)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, assetPath)
+}
+
+func safeAssetPath(frontendRoot, assetName string) (string, bool) {
+	rootPath, err := filepath.Abs(frontendRoot)
+	if err != nil {
+		return "", false
+	}
+	rootPath = filepath.Clean(rootPath)
+
+	candidatePath, err := filepath.Abs(filepath.Join(rootPath, assetName))
+	if err != nil {
+		return "", false
+	}
+	candidatePath = filepath.Clean(candidatePath)
+
+	if candidatePath != rootPath && !strings.HasPrefix(candidatePath, rootPath+string(filepath.Separator)) {
+		return "", false
+	}
+	if _, err := os.Stat(candidatePath); err != nil {
+		return "", false
+	}
+	return candidatePath, true
 }
