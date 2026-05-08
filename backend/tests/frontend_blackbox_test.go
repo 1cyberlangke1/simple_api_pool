@@ -123,9 +123,9 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		mustContain(t, body, `id="build-version"`)
 		mustContain(t, body, `id="build-version-value"`)
 		mustContain(t, body, `rel="icon" type="image/svg+xml" href="/favicon.svg"`)
-		mustContain(t, body, `rel="stylesheet" href="/assets/styles.css"`)
+		mustContain(t, body, `rel="stylesheet" href="/assets/styles.css?v=`)
 		for _, assetPath := range frontendScriptAssetPaths {
-			mustContain(t, body, `<script src="`+assetPath+`" defer></script>`)
+			mustContain(t, body, `<script src="`+assetPath+`?v=`)
 		}
 		mustContain(t, body, `class="list provider-catalog"`)
 		mustContain(t, body, `id="status-view" class="grid content-grid single-column-grid"`)

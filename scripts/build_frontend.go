@@ -79,6 +79,7 @@ func replaceBuildTokens(content []byte, metadata buildMetadata) []byte {
 		"__APP_VERSION__", metadata.version,
 		"__APP_REVISION__", metadata.revision,
 		"__APP_BUILD_TIME__", metadata.buildTime,
+		"__ASSET_VERSION__", metadata.revision,
 		"dev / local / unknown", metadata.version+" / "+metadata.revision+" / "+metadata.buildTime,
 	)
 	return []byte(replacer.Replace(string(content)))
