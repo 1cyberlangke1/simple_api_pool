@@ -340,3 +340,50 @@ func TestDecorateCachedStreamBodyPreservesGeminiEventsAcrossLineEndings(t *testi
 		})
 	}
 }
+
+func TestDecorateCachedStreamBodyKeepsGeminiUsageOnlyOnFinalEvent(t *testing.T) {
+	geminiStream := cache.DecorateCachedStreamBody(
+		config.Gemini,
+		[]byte(
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"thought-1\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"totalTokenCount\":431,\"thoughtsTokenCount\":14}}\n\n"+
+				"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"draft\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":422,\"totalTokenCount\":839,\"thoughtsTokenCount\":839}}\n\n"+
+				"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"final-text\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":439,\"totalTokenCount\":856,\"thoughtsTokenCount\":839}}\n\n"+
+				"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":439,\"totalTokenCount\":856,\"thoughtsTokenCount\":839}}\n\n",
+		),
+		417,
+		439,
+	)
+	streamText := string(geminiStream)
+	if strings.Contains(streamText, `"candidatesTokenCount":422`) {
+		t.Fatalf("期望 Gemini 流式缓存只在最终事件保留 output token，实际是 %s", streamText)
+	}
+	if strings.Count(streamText, `"candidatesTokenCount":439`) != 1 {
+		t.Fatalf("期望 Gemini 流式缓存只保留一个最终 candidatesTokenCount，实际是 %s", streamText)
+	}
+	if strings.Count(streamText, `"cachedContentTokenCount":856`) != 1 {
+		t.Fatalf("期望 Gemini 流式缓存只保留一个最终 cachedContentTokenCount，实际是 %s", streamText)
+	}
+}
+
+func TestDecorateCachedStreamBodyKeepsClaudeUsageOnlyOnFinalEvent(t *testing.T) {
+	claudeStream := cache.DecorateCachedStreamBody(
+		config.Claude,
+		[]byte(
+			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"text\":\"A\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":2}}\n\n"+
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"text\":\"B\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":6}}\n\n"+
+				"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+		),
+		8,
+		6,
+	)
+	streamText := string(claudeStream)
+	if strings.Contains(streamText, `"output_tokens":2`) {
+		t.Fatalf("期望 Claude 流式缓存移除早期累计 usage，实际是 %s", streamText)
+	}
+	if strings.Count(streamText, `"output_tokens":6`) != 1 {
+		t.Fatalf("期望 Claude 流式缓存只保留一个最终 output_tokens，实际是 %s", streamText)
+	}
+	if strings.Count(streamText, `"cache_read_input_tokens":14`) != 1 {
+		t.Fatalf("期望 Claude 流式缓存只保留一个最终 cache_read_input_tokens，实际是 %s", streamText)
+	}
+}

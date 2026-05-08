@@ -51,7 +51,7 @@ func DecorateCachedStreamBody(providerType config.ProviderType, streamBody []byt
 	case config.Claude:
 		return decorateClaudeStreamUsage(streamBody, totalTokens)
 	case config.Gemini:
-		return decorateGeminiStreamUsage(streamBody, totalTokens)
+		return decorateGeminiStreamUsage(streamBody, inputTokens, outputTokens)
 	default:
 		return append([]byte(nil), streamBody...)
 	}
@@ -175,18 +175,35 @@ func decorateOpenAIResponsesStreamUsage(streamBody []byte, totalTokens int64) []
 }
 
 func decorateClaudeStreamUsage(streamBody []byte, totalTokens int64) []byte {
+	sourceChunks := splitSSEChunks(streamBody)
+	lastUsageChunk := -1
+	for index := len(sourceChunks) - 1; index >= 0; index-- {
+		payload, ok := sseChunkPayload(sourceChunks[index])
+		if !ok {
+			continue
+		}
+		if _, exists := payload["usage"].(map[string]any); exists {
+			lastUsageChunk = index
+			break
+		}
+	}
+
 	var (
 		chunks       []string
 		usageUpdated bool
 	)
-	for _, chunk := range splitSSEChunks(streamBody) {
+	for index, chunk := range sourceChunks {
 		payload, ok := sseChunkPayload(chunk)
 		if ok {
 			if usage, exists := payload["usage"].(map[string]any); exists {
-				usage["cache_read_input_tokens"] = totalTokens
-				payload["usage"] = usage
+				if index == lastUsageChunk {
+					usage["cache_read_input_tokens"] = totalTokens
+					payload["usage"] = usage
+					usageUpdated = true
+				} else {
+					delete(payload, "usage")
+				}
 				chunk = replaceSSEDataChunk(chunk, payload)
-				usageUpdated = true
 			}
 			if chunkType, _ := payload["type"].(string); chunkType == "message_stop" && !usageUpdated {
 				chunks = append(chunks, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"cache_read_input_tokens\":"+fmt.Sprintf("%d", totalTokens)+"}}\n\n")
@@ -198,15 +215,31 @@ func decorateClaudeStreamUsage(streamBody []byte, totalTokens int64) []byte {
 	return []byte(strings.Join(chunks, ""))
 }
 
-func decorateGeminiStreamUsage(streamBody []byte, totalTokens int64) []byte {
+func decorateGeminiStreamUsage(streamBody []byte, inputTokens, outputTokens int64) []byte {
+	totalTokens := inputTokens + outputTokens
+	sourceChunks := splitSSEChunks(streamBody)
+	lastPayloadChunk := -1
+	for index := len(sourceChunks) - 1; index >= 0; index-- {
+		if _, ok := sseChunkPayload(sourceChunks[index]); ok {
+			lastPayloadChunk = index
+			break
+		}
+	}
+
 	var chunks []string
-	for _, chunk := range splitSSEChunks(streamBody) {
+	for index, chunk := range sourceChunks {
 		payload, ok := sseChunkPayload(chunk)
 		if ok {
-			usage := ensureMap(payload, "usageMetadata")
-			usage["totalTokenCount"] = totalTokens
-			usage["cachedContentTokenCount"] = totalTokens
-			payload["usageMetadata"] = usage
+			if index == lastPayloadChunk {
+				usage := ensureMap(payload, "usageMetadata")
+				usage["promptTokenCount"] = inputTokens
+				usage["candidatesTokenCount"] = outputTokens
+				usage["totalTokenCount"] = totalTokens
+				usage["cachedContentTokenCount"] = totalTokens
+				payload["usageMetadata"] = usage
+			} else {
+				delete(payload, "usageMetadata")
+			}
 			chunk = encodeDataOnlySSEChunk(payload)
 		}
 		chunks = append(chunks, chunk)

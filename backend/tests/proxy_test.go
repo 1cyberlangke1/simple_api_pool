@@ -1095,6 +1095,84 @@ func TestGeminiAltSSEStreamRequestUpdatesCacheTokensOnCacheHit(t *testing.T) {
 	}
 }
 
+func TestGeminiAltSSECacheHitDoesNotRepeatCumulativeUsage(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		events := []string{
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"thought-1\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"totalTokenCount\":431,\"thoughtsTokenCount\":14}}\r\n\r\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"draft\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":422,\"totalTokenCount\":839,\"thoughtsTokenCount\":839}}\r\n\r\n",
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"final-text\"}]}}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":439,\"totalTokenCount\":856,\"thoughtsTokenCount\":839}}\r\n\r\n",
+			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":417,\"candidatesTokenCount\":439,\"totalTokenCount\":856,\"thoughtsTokenCount\":839}}\r\n\r\n",
+		}
+		for _, event := range events {
+			if _, err := w.Write([]byte(event)); err != nil {
+				t.Fatalf("写入 Gemini 重复 usage 流式事件失败: %v", err)
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "gemini",
+		Type:            config.Gemini,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "gemini-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := handler.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	body := `{"model":"gemini-2.5-flash","contents":[{"parts":[{"text":"hello"}]}]}`
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", strings.NewReader(body))
+	firstReq.Header.Set("Authorization", "Bearer client-key")
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstRec := httptest.NewRecorder()
+	proxy.ServeHTTP(firstRec, firstReq)
+
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("第一次 Gemini 重复 usage alt=sse 请求期望状态码 %d，实际是 %d", http.StatusOK, firstRec.Code)
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/cache/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", strings.NewReader(body))
+	secondReq.Header.Set("Authorization", "Bearer client-key")
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondRec := httptest.NewRecorder()
+	proxy.ServeHTTP(secondRec, secondReq)
+
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("第二次 Gemini 重复 usage alt=sse 请求期望状态码 %d，实际是 %d", http.StatusOK, secondRec.Code)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望 Gemini 重复 usage alt=sse 第二次请求命中缓存，实际上游调用次数是 %d", upstreamCalls)
+	}
+	if strings.Contains(secondRec.Body.String(), `"candidatesTokenCount":422`) {
+		t.Fatalf("期望 Gemini 缓存命中时移除早期累计 output token，实际是 %s", secondRec.Body.String())
+	}
+	if strings.Count(secondRec.Body.String(), `"candidatesTokenCount":439`) != 1 {
+		t.Fatalf("期望 Gemini 缓存命中时只保留一个最终 output token，实际是 %s", secondRec.Body.String())
+	}
+	if strings.Count(secondRec.Body.String(), `"cachedContentTokenCount":856`) != 1 {
+		t.Fatalf("期望 Gemini 缓存命中时只保留一个最终 cached token，实际是 %s", secondRec.Body.String())
+	}
+}
+
 func TestCacheHitWritesCacheTokensIntoOpenAIChatUsage(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
