@@ -10,10 +10,8 @@
       adminView: document.getElementById("admin-view"),
       adminNavGlobal: document.getElementById("admin-nav-global"),
       adminNavProviders: document.getElementById("admin-nav-providers"),
-      adminSessionCopy: document.getElementById("admin-session-copy"),
       adminSessionBadge: document.getElementById("admin-session-badge"),
       adminSessionSummary: document.getElementById("admin-session-summary"),
-      adminSessionState: document.getElementById("admin-session-state"),
       serviceHealth: document.getElementById("service-health"),
       serviceHealthNote: document.getElementById("service-health-note"),
       providerCount: document.getElementById("provider-count"),
@@ -192,12 +190,6 @@
       }
       if (refs.logoutButton) {
         refs.logoutButton.classList.toggle("hidden", !authenticated);
-      }
-      if (refs.adminSessionCopy) {
-        refs.adminSessionCopy.textContent = authenticated ? t("admin.sessionActiveCopy") : t("admin.loginSub");
-      }
-      if (refs.adminSessionState) {
-        refs.adminSessionState.textContent = authenticated ? t("admin.sessionActive") : t("admin.sessionInactive");
       }
       if (refs.adminSessionBadge) {
         refs.adminSessionBadge.textContent = authenticated ? t("admin.sessionActive") : t("admin.sessionInactive");

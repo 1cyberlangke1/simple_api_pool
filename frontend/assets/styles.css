@@ -356,10 +356,10 @@
     .admin-console-strip {
       grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 14px;
+      grid-template-columns: 1fr;
+      gap: 10px;
       align-items: center;
-      padding: 14px 18px;
+      padding: 12px 16px;
     }
 
     .admin-console-tabs {
@@ -386,11 +386,6 @@
       color: var(--accent-deep);
       border-color: var(--accent);
       background: var(--panel);
-    }
-
-    .admin-console-strip-note {
-      margin: 0;
-      justify-self: stretch;
     }
 
     .admin-sidebar {
@@ -454,21 +449,16 @@
     .admin-session-header {
       display: flex;
       gap: 10px;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-
-    .admin-session-copy {
-      margin: 4px 0 0;
-      font-size: 12px;
+      margin-bottom: 0;
     }
 
     .admin-session-summary {
-      display: grid;
-      gap: 12px;
-      margin-bottom: 12px;
+      display: flex;
+      justify-content: flex-start;
+      margin-top: 12px;
     }
 
     .admin-summary-list {
@@ -669,7 +659,7 @@
 
     .status-provider-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 12px;
     }
 
@@ -678,6 +668,9 @@
       display: grid;
       gap: 12px;
       align-content: start;
+      min-width: 0;
+      container-type: inline-size;
+      overflow: hidden;
     }
 
     .status-provider-head {
@@ -696,7 +689,7 @@
 
     .status-stats-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(84px, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 8px;
     }
 
@@ -909,7 +902,7 @@
     .provider-workbench-grid {
       display: grid;
       gap: 16px;
-      grid-template-columns: minmax(0, 1.92fr) minmax(260px, 0.48fr);
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
       align-items: start;
     }
 
@@ -1300,7 +1293,7 @@
     .key-table-head,
     .key-table-row {
       display: grid;
-      grid-template-columns: minmax(240px, 1.4fr) minmax(118px, 0.8fr) 72px minmax(148px, 0.95fr) auto;
+      grid-template-columns: minmax(180px, 1.3fr) minmax(90px, 0.72fr) 64px minmax(110px, 0.9fr) auto;
       gap: 12px;
       align-items: center;
     }
@@ -1585,6 +1578,18 @@
       min-height: 0;
     }
 
+    @container (max-width: 620px) {
+      .status-stats-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @container (max-width: 420px) {
+      .status-stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     /* Responsive */
     @media (min-width: 1280px) {
       .content-grid {
@@ -1596,7 +1601,7 @@
       }
 
       .provider-workbench-grid {
-        grid-template-columns: minmax(0, 2fr) minmax(270px, 0.46fr);
+        grid-template-columns: minmax(0, 1fr) minmax(250px, 330px);
       }
 
       .admin-sidebar {
@@ -1607,7 +1612,6 @@
     @media (max-width: 960px) {
       .content-grid { grid-template-columns: 1fr; }
       .admin-dashboard-grid { grid-template-columns: 1fr; }
-      .admin-console-strip { grid-template-columns: 1fr; }
       .admin-sidebar { position: static; max-height: none; overflow: visible; padding-right: 0; }
       .admin-workspace-column { grid-template-rows: auto; }
       .provider-workbench-grid { grid-template-columns: 1fr; }
@@ -1627,7 +1631,6 @@
       .key-bulk-actions { justify-content: flex-start; }
       .legend-grid { grid-template-columns: 1fr; }
       .status-provider-grid { grid-template-columns: 1fr; }
-      .status-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
 
     @media (max-width: 720px) {
@@ -1648,7 +1651,6 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
       .admin-summary-list.compact { grid-template-columns: 1fr; }
       .key-workspace-search-row { grid-template-columns: 1fr; }
-      .status-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
       .provider-overview-top { flex-direction: column; align-items: stretch; }
       .key-item {

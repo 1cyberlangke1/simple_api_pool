@@ -124,10 +124,14 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		}
 		mustContain(t, body, `class="list provider-catalog"`)
 		mustContain(t, body, `id="status-view" class="grid content-grid single-column-grid"`)
+		mustContain(t, body, `id="status-entry-hint" class="hint"`)
 		mustContain(t, body, `id="admin-view" class="grid admin-dashboard-grid hidden"`)
 		mustContain(t, body, `id="global-admin-key" name="admin_key" type="password"`)
 		if strings.Contains(body, `公开统计，无需登录。`) {
 			t.Fatal("期望状态页移除“公开统计，无需登录。”文案")
+		}
+		if strings.Contains(body, `admin-console-strip-note`) {
+			t.Fatal("期望代理入口提示已从管理页顶部移走")
 		}
 	}
 
