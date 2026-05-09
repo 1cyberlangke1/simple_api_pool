@@ -1,5 +1,10 @@
-/* ---------- status service ---------- */
+import { requestJSON } from "../api.js";
 
-function fetchStatusOverviewSnapshot() {
-  return requestOverview("/status/overview", "status");
+export async function fetchStatusOverview(options) {
+  const requestOptions = options || {};
+  const headers = {};
+  if (!requestOptions.forceRefresh && requestOptions.etag) {
+    headers["If-None-Match"] = requestOptions.etag;
+  }
+  return requestJSON("/api/status/overview", { headers });
 }

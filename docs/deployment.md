@@ -24,6 +24,8 @@
 - 代理接口默认要求客户端密钥；如果 `CLIENT_KEYS` 为空，所有代理请求都会返回 `401`
 - 所有运行时数据都会写入 `/app/data`
 - 如果你不挂载卷，容器删除后配置、统计和缓存也会一起丢失
+- 状态数据位于 `/app/data/simple-api-pool.db`
+- provider 缓存位于 `/app/data/cache/<provider>/cache.db`
 
 ## 环境变量
 

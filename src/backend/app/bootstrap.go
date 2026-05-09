@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/go-chi/chi/v5"
+
 	"simple-api-pool/adminapi"
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
@@ -46,14 +48,24 @@ func NewRuntime(opts Options) (*Runtime, error) {
 	}
 	proxyConcurrency := opts.ProxyConcurrency
 	if proxyConcurrency <= 0 {
-		proxyConcurrency = 50
+		proxyConcurrency = config.ProxyConcurrency()
 	}
 
 	stateStore := store.New(dataDir)
+	if err := stateStore.Err(); err != nil {
+		return nil, err
+	}
 	cfg := config.New(stateStore)
+	if err := cfg.Err(); err != nil {
+		return nil, err
+	}
 	cfg.ApplyEnvOverrides()
 	statsMgr := stats.NewManager(stateStore)
 	cacheStore := cache.NewStore(filepath.Join(dataDir, "cache"))
+	if err := cacheStore.Err(); err != nil {
+		statsMgr.Stop()
+		return nil, err
+	}
 	kr := keyring.New(cfg)
 
 	proxyHandler := proxyapi.NewProxyHandler(cfg, statsMgr, kr, cacheStore, proxyConcurrency)
@@ -102,17 +114,18 @@ func policyFunc(provider ContentSecurityPolicyProvider) func() string {
 }
 
 func newRootHandler(frontendRoot string, proxyHandler http.Handler, adminHandler http.Handler, statusHandler http.Handler) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+	router := chi.NewRouter()
+	router.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.Handle("/api/status/stats", statusHandler)
-	mux.Handle("/api/status/overview", statusHandler)
-	mux.Handle("/api/admin/", adminHandler)
-	mux.Handle("/api/admin", adminHandler)
+	router.Handle("/api/status/*", statusHandler)
+	router.Handle("/api/admin/*", adminHandler)
+	router.Handle("/api/admin", adminHandler)
+	router.Handle("/api/status/overview", statusHandler)
+	router.Handle("/api/status/stats", statusHandler)
 
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "/" || path == "/status" || path == "/admin" {
 			webui.ServeIndex(w, r, frontendRoot)
@@ -128,5 +141,5 @@ func newRootHandler(frontendRoot string, proxyHandler http.Handler, adminHandler
 		proxyHandler.ServeHTTP(w, r)
 	}))
 
-	return mux
+	return router
 }

@@ -1,12 +1,16 @@
 package tests
 
 import (
+	"database/sql"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"simple-api-pool/stats"
 	"simple-api-pool/store"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestStoreCanSaveLoadAndCheckExistence(t *testing.T) {
@@ -46,6 +50,46 @@ func TestStoreReturnsNotExistForMissingFile(t *testing.T) {
 	err := st.Load("missing.json", &payload)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("期望返回 os.ErrNotExist，实际是 %v", err)
+	}
+}
+
+func TestStoreUsesUnifiedStateDatabaseFile(t *testing.T) {
+	baseDir := t.TempDir()
+	st := store.New(baseDir)
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+	if err := st.Save("nested/config.json", map[string]any{"ok": true}); err != nil {
+		t.Fatalf("写入统一状态库失败: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(baseDir, store.DefaultDatabaseFileName)); err != nil {
+		t.Fatalf("期望状态存储创建统一数据库文件，实际错误: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "nested", "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("期望不再直接写出旧 JSON 文件路径，实际 err=%v", err)
+	}
+}
+
+func TestStoreInitializesSchemaVersion(t *testing.T) {
+	baseDir := t.TempDir()
+	st := store.New(baseDir)
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	db, err := sql.Open("sqlite", filepath.Join(baseDir, store.DefaultDatabaseFileName))
+	if err != nil {
+		t.Fatalf("打开状态库失败: %v", err)
+	}
+	defer db.Close()
+
+	var value string
+	if err := db.QueryRow(`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&value); err != nil {
+		t.Fatalf("读取状态库 schema version 失败: %v", err)
+	}
+	if value != "1" {
+		t.Fatalf("期望状态库 schema version 为 1，实际是 %q", value)
 	}
 }
 

@@ -20,20 +20,13 @@ $baseLog = Join-Path $logDir "check-go-test-$timestamp.txt"
 $raceLog = Join-Path $logDir "check-go-test-race-$timestamp.txt"
 $requiredFrontendFiles = @(
     "index.html",
-    "assets\\styles.css",
-    "assets\\build-manifest.json",
-    "assets\\core.js",
-    "assets\\state.js",
-    "assets\\i18n.js",
+    "favicon.svg",
+    "build.mjs",
+    "package.json",
+    "package-lock.json",
     "assets\\app.js",
-    "assets\\features\\providers\\provider_form_state.js",
-    "assets\\features\\providers\\provider_events.js",
-    "assets\\views\\status_view.js",
-    "assets\\views\\logs_view.js",
-    "assets\\views\\provider_view.js",
-    "assets\\api.js",
-    "assets\\actions\\polling_actions.js",
-    "assets\\boot.js"
+    "assets\\styles.css",
+    "assets\\build-manifest.json"
 )
 
 Push-Location $repoRoot
@@ -54,7 +47,11 @@ try {
     if (Test-Path $frontendJsLog) {
         Remove-Item $frontendJsLog -Force
     }
-    $frontendJsFiles = Get-ChildItem (Join-Path $frontendDir 'src'), (Join-Path $frontendDir 'assets') -Recurse -Filter *.js | Sort-Object FullName
+    $frontendJsFiles = @()
+    $frontendJsFiles += Get-Item (Join-Path $frontendDir 'build.mjs')
+    $frontendJsFiles += Get-ChildItem (Join-Path $frontendDir 'src') -Recurse -Filter *.js
+    $frontendJsFiles += Get-Item (Join-Path $frontendDir 'assets\\app.js')
+    $frontendJsFiles = $frontendJsFiles | Sort-Object FullName
     foreach ($file in $frontendJsFiles) {
         "检查 $($file.FullName)" | Tee-Object -FilePath $frontendJsLog -Append
         node --check $file.FullName *>&1 | Tee-Object -FilePath $frontendJsLog -Append
@@ -65,14 +62,46 @@ try {
 
     Push-Location $backendDir
     try {
-    Write-Host "运行 go test ./..."
-    go test ./... *>&1 | Tee-Object -FilePath $baseLog
+    if (Test-Path $baseLog) {
+        Remove-Item $baseLog -Force
+    }
+    if (Test-Path $raceLog) {
+        Remove-Item $raceLog -Force
+    }
+
+    $backendPackages = @(go list ./...)
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 
-    Write-Host "运行 go test -race ./tests"
-    go test -race ./tests *>&1 | Tee-Object -FilePath $raceLog
+    $packageStage = "阶段: 后端包测试（非 tests 包）"
+    Write-Host $packageStage
+    $packageStage | Tee-Object -FilePath $baseLog -Append | Out-Null
+    foreach ($packageName in $backendPackages) {
+        if ($packageName -eq 'simple-api-pool/tests') {
+            continue
+        }
+        $packageLine = "运行包测试: $packageName"
+        Write-Host $packageLine
+        $packageLine | Tee-Object -FilePath $baseLog -Append | Out-Null
+        go test -count=1 $packageName *>&1 | Tee-Object -FilePath $baseLog -Append
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+
+    $testsStage = "阶段: 集成测试包 ./tests"
+    Write-Host $testsStage
+    $testsStage | Tee-Object -FilePath $baseLog -Append | Out-Null
+    go test -v -count=1 ./tests *>&1 | Tee-Object -FilePath $baseLog -Append
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    $raceStage = "阶段: race 集成测试包 ./tests"
+    Write-Host $raceStage
+    $raceStage | Tee-Object -FilePath $raceLog -Append | Out-Null
+    go test -race -v -count=1 ./tests *>&1 | Tee-Object -FilePath $raceLog -Append
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

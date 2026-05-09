@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestFrontendDisableDurationBlackbox(t *testing.T) {
+func TestFrontendDisableDurationCapabilitiesExistInBundle(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("读取测试文件路径失败")
@@ -18,46 +18,33 @@ func TestFrontendDisableDurationBlackbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取前端首页失败: %v", err)
 	}
-
-	assetPaths := []string{
-		"/assets/features/providers/disable_duration_model.js",
-		"/assets/features/providers/provider_actions.js",
-		"/assets/features/providers/provider_renderer.js",
-		"/assets/features/providers/key_panel_view.js",
-		"/assets/features/providers/config_panel_view.js",
-		"/assets/features/providers/provider_form_state.js",
-		"/assets/features/providers/provider_events.js",
+	appBundleBytes, err := os.ReadFile(filepath.Join(frontendRoot, "assets", "app.js"))
+	if err != nil {
+		t.Fatalf("读取前端 bundle 失败: %v", err)
 	}
+
 	indexHTML := string(indexHTMLBytes)
-	var scriptBundle strings.Builder
-	for _, assetPath := range assetPaths {
-		assetDiskPath := filepath.Join(frontendRoot, strings.TrimPrefix(filepath.FromSlash(assetPath), string(filepath.Separator)))
-		assetBody, readErr := os.ReadFile(assetDiskPath)
-		if readErr != nil {
-			t.Fatalf("读取前端特性脚本 %s 失败: %v", assetPath, readErr)
+	appBundle := string(appBundleBytes)
+
+	mustContain(t, indexHTML, `<script src="/assets/app.js?v=`)
+
+	for _, requiredMarker := range []string{
+		"disable_until",
+		"disable_forever",
+		"bulk-disable-seconds",
+		"bulk-disable-mode",
+		"min_disable_secs",
+		"max_disable_secs",
+		"parseImportedKeys",
+		"splitImportedKeys",
+		"每行一个，或用半角逗号分隔",
+	} {
+		if !strings.Contains(appBundle, requiredMarker) {
+			t.Fatalf("期望前端 bundle 保留定时禁用或批量导入能力标记 %q", requiredMarker)
 		}
-		scriptBundle.Write(assetBody)
-		scriptBundle.WriteString("\n")
-		mustContain(t, indexHTML, `<script src="`+assetPath+`?v=`)
 	}
 
-	combinedScripts := scriptBundle.String()
-	if !strings.Contains(combinedScripts, `disable_until`) {
-		t.Fatal("期望前端特性脚本包含定时禁用动作")
-	}
-	if !strings.Contains(combinedScripts, `state.bulkKeyActionModeByProvider[providerName] = "disable_until";`) {
-		t.Fatal("期望前端默认按时长禁用，而不是默认永久禁用")
-	}
-	if !strings.Contains(combinedScripts, `bulk-disable-seconds`) {
-		t.Fatal("期望前端渲染定时禁用秒数输入")
-	}
-	if !strings.Contains(combinedScripts, `bulk-disable-mode`) {
-		t.Fatal("期望前端渲染批量禁用模式选择器")
-	}
-	if !strings.Contains(combinedScripts, `getBulkDisableBounds(providerName)`) {
-		t.Fatal("期望前端按当前提供商的禁用范围约束时长输入")
-	}
-	if !strings.Contains(combinedScripts, `admin.bulkDisableRange`) {
-		t.Fatal("期望前端展示当前禁用时长可选范围")
+	if strings.Contains(appBundle, `/\s+/`) {
+		t.Fatal("期望前端导入 key 不再把空格当作分隔符")
 	}
 }

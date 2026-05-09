@@ -1,0 +1,99 @@
+.summary-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric-card {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+}
+
+.metric-label {
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  line-height: 1.05;
+}
+
+.metric-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.status-page,
+.admin-page {
+  display: grid;
+  gap: 24px;
+}
+
+.provider-card-list {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.provider-status-card {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+.provider-status-header {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.status-pill {
+  background: rgba(184, 119, 31, 0.12);
+  border: 1px solid rgba(184, 119, 31, 0.18);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 7px 12px;
+  text-transform: uppercase;
+}
+
+.status-pill.ok {
+  background: rgba(15, 108, 92, 0.12);
+  border-color: rgba(15, 108, 92, 0.18);
+  color: var(--accent);
+}
+
+.status-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.status-stat {
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.status-stat span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.status-stat strong {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  overflow-wrap: anywhere;
+}

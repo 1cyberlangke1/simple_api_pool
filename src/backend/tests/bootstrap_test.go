@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -65,8 +67,47 @@ func TestBootstrapRuntimeServesFrontendEntrypoints(t *testing.T) {
 			t.Fatalf("%s 期望状态码 %d，实际是 %d", path, http.StatusOK, rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `id="build-version"`) {
-			t.Fatalf("期望 %s 返回前端入口页，实际响应缺少构建版本区域", path)
+		if !strings.Contains(body, `id="app-root"`) || !strings.Contains(body, `/assets/app.js?v=`) {
+			t.Fatalf("期望 %s 返回新的单 bundle 前端入口页", path)
 		}
+	}
+}
+
+func TestBootstrapRuntimeRejectsInvalidDataDir(t *testing.T) {
+	repoRoot := repoRootFromTestFile(t)
+	baseDir := t.TempDir()
+	blockingPath := filepath.Join(baseDir, "blocked")
+	if err := os.WriteFile(blockingPath, []byte("blocked"), 0600); err != nil {
+		t.Fatalf("创建阻塞文件失败: %v", err)
+	}
+
+	runtimeInstance, err := app.NewRuntime(app.Options{
+		DataDir:      blockingPath,
+		FrontendRoot: frontendRootFromRepoRoot(repoRoot),
+	})
+	if err == nil {
+		if runtimeInstance != nil {
+			_ = runtimeInstance.Close()
+		}
+		t.Fatal("期望无效 dataDir 在启动阶段直接返回错误")
+	}
+}
+
+func TestBootstrapRuntimeRejectsInvalidConfigSnapshot(t *testing.T) {
+	repoRoot := repoRootFromTestFile(t)
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.json"), []byte(`{invalid`), 0600); err != nil {
+		t.Fatalf("写入损坏配置文件失败: %v", err)
+	}
+
+	runtimeInstance, err := app.NewRuntime(app.Options{
+		DataDir:      dataDir,
+		FrontendRoot: frontendRootFromRepoRoot(repoRoot),
+	})
+	if err == nil {
+		if runtimeInstance != nil {
+			_ = runtimeInstance.Close()
+		}
+		t.Fatal("期望损坏的 config.json 在启动阶段直接返回错误")
 	}
 }

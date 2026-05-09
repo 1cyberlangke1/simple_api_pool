@@ -40,6 +40,28 @@ func TestAdminLoginAllowsRequestBodyKey(t *testing.T) {
 	}
 }
 
+func TestAdminLoginRejectsMissingAdminKey(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	stateStore := store.New(t.TempDir())
+	t.Cleanup(func() {
+		_ = stateStore.Close()
+	})
+	statsManager := stats.NewManager(stateStore)
+	t.Cleanup(statsManager.Stop)
+
+	h := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", bytes.NewReader([]byte(`{}`)))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("期望缺少 admin_key 时返回 400，实际是 %d，响应体: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
@@ -254,6 +276,36 @@ func TestAdminBulkUpdateKeyStateAndDeleteKeys(t *testing.T) {
 	}
 }
 
+func TestAdminBulkKeyActionRejectsMissingActionAndKeys(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{{Value: "key-1"}},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+	stateStore := store.New(t.TempDir())
+	t.Cleanup(func() {
+		_ = stateStore.Close()
+	})
+	statsManager := stats.NewManager(stateStore)
+	t.Cleanup(statsManager.Stop)
+
+	h := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/providers/openai/keys/bulk", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("期望缺少 action 和 keys 时返回 400，实际是 %d，响应体: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminClearProviderCache(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, nil)
@@ -413,6 +465,9 @@ func newTestConfig(t *testing.T) *config.Config {
 
 func newTestConfigWithStore(t *testing.T, st *store.Store) *config.Config {
 	t.Helper()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 	cfg := config.New(st)
 	cfg.ApplyEnvOverrides()
 	return cfg

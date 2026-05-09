@@ -3,11 +3,11 @@ package auth
 import (
 	"crypto/subtle"
 	"net/http"
-	"strings"
 	"unsafe"
 
 	"simple-api-pool/config"
 	"simple-api-pool/internal/proxyroute"
+	"simple-api-pool/providerapi"
 )
 
 func CheckClientKey(r *http.Request, cfg *config.Config) bool {
@@ -48,7 +48,7 @@ func CheckAdminAuthorizationHeader(r *http.Request, cfg *config.Config) bool {
 
 func extractClientKey(r *http.Request, cfg *config.Config) string {
 	if providerType, ok := providerTypeFromRequest(r, cfg); ok {
-		if key := extractProviderKey(r, providerType); key != "" {
+		if key := providerapi.ExtractClientCredential(r, providerType); key != "" {
 			return key
 		}
 	}
@@ -56,21 +56,7 @@ func extractClientKey(r *http.Request, cfg *config.Config) string {
 }
 
 func extractAuthorizationCredential(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-
-	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
-	if authorization == "" {
-		return ""
-	}
-	if strings.HasPrefix(authorization, "Bearer ") {
-		return strings.TrimSpace(authorization[len("Bearer "):])
-	}
-	if strings.Contains(authorization, " ") {
-		return ""
-	}
-	return authorization
+	return providerapi.ExtractClientCredential(r, config.ProviderType("unknown"))
 }
 
 func providerTypeFromRequest(r *http.Request, cfg *config.Config) (config.ProviderType, bool) {
@@ -88,23 +74,6 @@ func providerTypeFromRequest(r *http.Request, cfg *config.Config) (config.Provid
 		return "", false
 	}
 	return provider.Type, true
-}
-
-func extractProviderKey(r *http.Request, providerType config.ProviderType) string {
-	switch providerType {
-	case config.Claude:
-		if key := strings.TrimSpace(r.Header.Get("x-api-key")); key != "" {
-			return key
-		}
-	case config.Gemini:
-		if key := strings.TrimSpace(r.Header.Get("x-goog-api-key")); key != "" {
-			return key
-		}
-		if key := strings.TrimSpace(r.URL.Query().Get("key")); key != "" {
-			return key
-		}
-	}
-	return extractAuthorizationCredential(r)
 }
 
 func constantTimeEqual(left, right string) bool {

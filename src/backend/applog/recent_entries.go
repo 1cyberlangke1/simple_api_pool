@@ -125,6 +125,9 @@ func (buffer *entryRingBuffer) append(entry Entry) {
 	defer buffer.mu.Unlock()
 
 	entrySize := estimateEntrySize(entry)
+	if entrySize > buffer.maxBytes {
+		return
+	}
 	if buffer.count == buffer.limit {
 		buffer.evictOldestLocked()
 	}

@@ -84,7 +84,11 @@ func prepareFrontendBuildFixture(t *testing.T, repoRoot string) string {
 	t.Helper()
 	fixtureRoot := t.TempDir()
 	relativeRoot := frontendRelativeRootFromRepoRoot(repoRoot)
+	frontendRoot := frontendRootFromRepoRoot(repoRoot)
 	copyTree(t, filepath.Join(frontendRootFromRepoRoot(repoRoot), "src"), filepath.Join(fixtureRoot, relativeRoot, "src"))
+	copyFile(t, filepath.Join(frontendRoot, "build.mjs"), filepath.Join(fixtureRoot, relativeRoot, "build.mjs"))
+	copyFile(t, filepath.Join(frontendRoot, "package.json"), filepath.Join(fixtureRoot, relativeRoot, "package.json"))
+	copyFile(t, filepath.Join(frontendRoot, "package-lock.json"), filepath.Join(fixtureRoot, relativeRoot, "package-lock.json"))
 	copyTree(t, filepath.Join(repoRoot, "scripts"), filepath.Join(fixtureRoot, "scripts"))
 	return fixtureRoot
 }
@@ -131,5 +135,19 @@ func copyTree(t *testing.T, sourceRoot string, targetRoot string) {
 	})
 	if walkErr != nil {
 		t.Fatalf("复制测试夹具失败: %v", walkErr)
+	}
+}
+
+func copyFile(t *testing.T, sourcePath string, targetPath string) {
+	t.Helper()
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("读取文件 %s 失败: %v", sourcePath, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
+		t.Fatalf("创建目录 %s 失败: %v", filepath.Dir(targetPath), err)
+	}
+	if err := os.WriteFile(targetPath, content, 0600); err != nil {
+		t.Fatalf("写入文件 %s 失败: %v", targetPath, err)
 	}
 }

@@ -13,7 +13,7 @@ ENV GO_VERSION=1.26.1
 ENV GO_TARBALL_URL=https://go.dev/dl/go${GO_VERSION}.linux-${BUILDARCH}.tar.gz
 ENV PATH=/usr/local/go/bin:${PATH}
 
-RUN apk add --no-cache ca-certificates tar wget
+RUN apk add --no-cache ca-certificates nodejs npm tar wget
 
 WORKDIR /src/src/backend
 
@@ -32,17 +32,18 @@ COPY src/backend/go.mod src/backend/go.sum ./
 RUN go mod download
 
 COPY src/backend/ ./
-COPY src/frontend/ /src/src/frontend/
+COPY src/frontend/build.mjs /src/src/frontend/build.mjs
+COPY src/frontend/package.json /src/src/frontend/package.json
+COPY src/frontend/package-lock.json /src/src/frontend/package-lock.json
+COPY src/frontend/favicon.svg /src/src/frontend/favicon.svg
+COPY src/frontend/src/ /src/src/frontend/src/
 COPY scripts/ /src/scripts/
 
 RUN go run /src/scripts/build_frontend.go -root /src \
-    && mkdir -p /out/frontend \
-    && cp -R /src/src/frontend/. /out/frontend/ \
-    && sed -i \
-        -e "s|__APP_VERSION__|${APP_VERSION}|g" \
-        -e "s|__APP_REVISION__|${APP_REVISION}|g" \
-        -e "s|__APP_BUILD_TIME__|${APP_BUILD_TIME}|g" \
-        /out/frontend/index.html \
+    && mkdir -p /out/frontend/assets \
+    && cp /src/src/frontend/index.html /out/frontend/index.html \
+    && cp /src/src/frontend/favicon.svg /out/frontend/favicon.svg \
+    && cp -R /src/src/frontend/assets/. /out/frontend/assets/ \
     && GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 go build -o /out/server .
 
 FROM alpine:3.21

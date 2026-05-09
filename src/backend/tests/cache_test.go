@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,9 +9,11 @@ import (
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+
+	_ "modernc.org/sqlite"
 )
 
-func TestProviderCacheUsesSingleSQLiteMainFile(t *testing.T) {
+func TestProviderCacheUsesSingleSQLiteMainFilePerProvider(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)
 	t.Cleanup(func() { _ = store.Close() })
@@ -35,6 +38,31 @@ func TestProviderCacheUsesSingleSQLiteMainFile(t *testing.T) {
 
 	if dbFiles != 1 {
 		t.Fatalf("期望单提供商缓存目录里只有一个 SQLite 主文件，实际是 %d 个", dbFiles)
+	}
+}
+
+func TestProviderCacheInitializesSchemaVersion(t *testing.T) {
+	baseDir := t.TempDir()
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"a"}]}`)
+	if ok := store.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"1"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10); !ok {
+		t.Fatal("写入缓存失败")
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(baseDir, "openai", "cache.db"))
+	if err != nil {
+		t.Fatalf("打开缓存库失败: %v", err)
+	}
+	defer db.Close()
+
+	var value string
+	if err := db.QueryRow(`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&value); err != nil {
+		t.Fatalf("读取缓存库 schema version 失败: %v", err)
+	}
+	if value != "1" {
+		t.Fatalf("期望缓存库 schema version 为 1，实际是 %q", value)
 	}
 }
 

@@ -1,62 +1,67 @@
-/* ---------- admin service ---------- */
+import { requestJSON } from "../api.js";
 
-function fetchAdminOverviewSnapshot() {
-  return requestOverview("/admin/overview", "admin");
+export async function fetchAdminOverview(options) {
+  const requestOptions = options || {};
+  const headers = {};
+  if (!requestOptions.forceRefresh && requestOptions.etag) {
+    headers["If-None-Match"] = requestOptions.etag;
+  }
+  return requestJSON("/api/admin/overview", { headers });
 }
 
-function sendAdminLoginRequest(adminKey) {
-  return request("/admin/login", {
-    method: "POST",
-    body: JSON.stringify({ admin_key: adminKey })
+export async function loginAdmin(adminKey) {
+  return requestJSON("/api/admin/login", {
+    body: { admin_key: adminKey },
+    method: "POST"
   });
 }
 
-function sendAdminLogoutRequest() {
-  return request("/admin/logout", { method: "POST" });
+export async function logoutAdmin() {
+  return requestJSON("/api/admin/logout", { method: "POST" });
 }
 
-function sendSaveProviderRequest(payload) {
-  return request("/admin/providers", {
-    method: "POST",
-    body: JSON.stringify(payload)
+export async function saveGlobalConfig(payload) {
+  return requestJSON("/api/admin/config", {
+    body: payload,
+    method: "PUT"
   });
 }
 
-function sendSaveGlobalConfigRequest(payload) {
-  return request("/admin/config", {
-    method: "PUT",
-    body: JSON.stringify(payload)
+export async function saveProvider(payload) {
+  return requestJSON("/api/admin/providers", {
+    body: payload,
+    method: "POST"
   });
 }
 
-function sendImportKeysRequest(provider, parsedKeys) {
-  return request("/admin/providers/" + encodeURIComponent(provider) + "/keys", {
-    method: "POST",
-    body: JSON.stringify({ keys: parsedKeys })
-  });
-}
-
-function sendDeleteProviderRequest(name) {
-  return request("/admin/providers/" + encodeURIComponent(name), {
+export async function deleteProvider(providerName) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName), {
     method: "DELETE"
   });
 }
 
-function sendDeleteKeyRequest(provider, key) {
-  return request("/admin/providers/" + encodeURIComponent(provider) + "/" + encodeURIComponent(key), {
+export async function clearProviderCache(providerName) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/cache", {
     method: "DELETE"
   });
 }
 
-function sendClearProviderCacheRequest(provider) {
-  return request(`/admin/providers/${encodeURIComponent(provider)}/cache`, {
-    method: "DELETE"
+export async function importProviderKeys(providerName, keys) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/keys", {
+    body: { keys },
+    method: "POST"
   });
 }
 
-function sendBulkKeyActionRequest(providerName, payload) {
-  return request("/admin/providers/" + encodeURIComponent(providerName) + "/keys/bulk", {
-    method: "POST",
-    body: JSON.stringify(payload)
+export async function applyProviderBulkAction(providerName, payload) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/keys/bulk", {
+    body: payload,
+    method: "POST"
+  });
+}
+
+export async function deleteProviderKey(providerName, keyRef) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/" + encodeURIComponent(keyRef), {
+    method: "DELETE"
   });
 }

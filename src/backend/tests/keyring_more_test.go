@@ -140,18 +140,20 @@ func TestFailureBackoffGrowsExponentiallyAndRespectsMaxDuration(t *testing.T) {
 	}
 
 	kr := keyring.New(cfg)
+	firstBefore := time.Now().Unix()
 	kr.RecordFailure("responses", "k1")
+	firstAfter := time.Now().Unix()
 	firstProvider, _ := cfg.Provider("responses")
-	firstDelay := firstProvider.Keys[0].DisabledUntil - time.Now().Unix()
-	if firstDelay < 5 || firstDelay > 9 {
-		t.Fatalf("期望第一次禁用时长在 5 到 9 之间，实际是 %d", firstDelay)
+	if firstProvider.Keys[0].DisabledUntil < firstBefore+5 || firstProvider.Keys[0].DisabledUntil > firstAfter+9 {
+		t.Fatalf("期望第一次禁用时间在 %d 到 %d 之间，实际是 %d", firstBefore+5, firstAfter+9, firstProvider.Keys[0].DisabledUntil)
 	}
 
 	time.Sleep(1100 * time.Millisecond)
+	secondBefore := time.Now().Unix()
 	kr.RecordFailure("responses", "k1")
+	secondAfter := time.Now().Unix()
 	secondProvider, _ := cfg.Provider("responses")
-	secondDelay := secondProvider.Keys[0].DisabledUntil - time.Now().Unix()
-	if secondDelay < 8 || secondDelay > 9 {
-		t.Fatalf("期望第二次禁用时长被限制在接近 9 秒，实际是 %d", secondDelay)
+	if secondProvider.Keys[0].DisabledUntil < secondBefore+8 || secondProvider.Keys[0].DisabledUntil > secondAfter+9 {
+		t.Fatalf("期望第二次禁用时间在 %d 到 %d 之间，实际是 %d", secondBefore+8, secondAfter+9, secondProvider.Keys[0].DisabledUntil)
 	}
 }

@@ -3,6 +3,7 @@ package adminapi
 import (
 	"simple-api-pool/applog"
 	"simple-api-pool/config"
+	"simple-api-pool/service"
 	"simple-api-pool/stats"
 	"simple-api-pool/statusapi"
 )
@@ -24,16 +25,16 @@ type AdminOverviewResponse struct {
 }
 
 func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) AdminOverviewResponse {
-	globalConfig := cfg.AdminSettings()
+	overview := service.NewOverviewService(cfg, statsManager).AdminOverview(adminRecentLogLimit)
 	return AdminOverviewResponse{
-		Health: statusapi.ServiceHealthSnapshot{Status: "ok"},
+		Health: statusapi.ServiceHealthSnapshot{Status: overview.Health.Status},
 		GlobalConfig: GlobalConfigSnapshot{
-			AdminKeyConfigured:     globalConfig.AdminKey != "",
-			TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
-			ClientKeyCount:         len(globalConfig.ClientKeys),
+			AdminKeyConfigured:     overview.GlobalConfig.AdminKeyConfigured,
+			TokenEstimationEnabled: overview.GlobalConfig.TokenEstimationEnabled,
+			ClientKeyCount:         overview.GlobalConfig.ClientKeyCount,
 		},
 		Providers:     buildAdminProviderSnapshots(cfg.Providers()),
-		ProviderStats: statusapi.CollectProviderStatusSnapshots(cfg, statsManager),
-		RecentLogs:    applog.RecentEntries(adminRecentLogLimit),
+		ProviderStats: overview.ProviderStats,
+		RecentLogs:    overview.RecentLogs,
 	}
 }

@@ -118,7 +118,14 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 
 ## 存储与内存边界
 
+- 状态数据统一写入 `data/simple-api-pool.db`
+- 缓存按提供商分别写入 `data/cache/<provider>/cache.db`
+- 状态库与缓存库都带有 schema version 元数据，便于后续演进
+- 状态数据和缓存数据分离：
+  - 状态库负责 provider 配置、key 状态、全局配置、统计快照
+  - 缓存库只负责对应 provider 的响应缓存
 - 缓存按提供商独立存储为 SQLite 文件，不会为每条记录创建零碎小文件
 - 同一组 `model + 核心消息字段` 的流式响应和非流式响应会分别占用独立缓存条目
 - `/cache/...` 请求体只有在不超过 `CACHEABLE_REQUEST_BODY_LIMIT_BYTES` 时才会参与本地缓存判定；默认值是 `524288` 字节
 - 非流式上游响应会先按 `UPSTREAM_RESPONSE_LIMIT_BYTES` 作为本地可缓存体上限做探测；在上限内仍按整包路径处理，超过上限时改为直接透传，并放弃依赖完整响应体的缓存和整包后处理
+- 流式上游响应只会在累计体积不超过 `CACHEABLE_STREAM_RESPONSE_LIMIT_BYTES` 时尝试写入缓存；超过后继续透传，但放弃缓存

@@ -39,7 +39,7 @@ func InitFromEnv() *slog.Logger {
 }
 
 func NewTestLogger(w io.Writer) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	return slog.New(NewRecentEntryHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})))
 }
 
 func LoggingMiddleware(next http.Handler) http.Handler {

@@ -1,0 +1,18 @@
+{
+  "name": "simple-api-pool-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@preact/signals": "2.5.1",
+    "htm": "3.1.1",
+    "preact": "10.29.1",
+    "valibot": "1.1.0",
+    "wouter-preact": "3.7.1"
+  },
+  "devDependencies": {
+    "esbuild-wasm": "0.28.0"
+  }
+}

@@ -463,6 +463,27 @@ func TestRecentEntriesEvictsOldRecordsWhenByteLimitIsReached(t *testing.T) {
 	}
 }
 
+func TestRecentEntriesDropsOversizedSingleEntryWithoutEvictingExistingLogs(t *testing.T) {
+	restoreRecentEntries := applog.ReplaceRecentEntriesForTestingWithBytes(4, 80)
+	defer restoreRecentEntries()
+
+	applog.AppendRecentEntryForTesting(applog.Entry{Time: "1", Level: "INFO", Msg: "keep-first"})
+	applog.AppendRecentEntryForTesting(applog.Entry{Time: "2", Level: "INFO", Msg: "keep-second"})
+	applog.AppendRecentEntryForTesting(applog.Entry{
+		Time:  "3",
+		Level: "ERROR",
+		Msg:   strings.Repeat("x", 200),
+	})
+
+	entries := applog.RecentEntries(10)
+	if len(entries) != 2 {
+		t.Fatalf("期望超大单条日志被丢弃且保留已有日志，实际条数是 %d，内容是 %+v", len(entries), entries)
+	}
+	if entries[0].Msg != "keep-first" || entries[1].Msg != "keep-second" {
+		t.Fatalf("期望已有日志顺序保持不变，实际是 %+v", entries)
+	}
+}
+
 func TestGeminiClientAuthIsReplacedWithUpstreamKey(t *testing.T) {
 	received := struct {
 		APIKey string
@@ -509,5 +530,25 @@ func TestGeminiClientAuthIsReplacedWithUpstreamKey(t *testing.T) {
 	}
 	if received.Query != "pageSize=20" {
 		t.Fatalf("期望移除客户端 query key 后仅保留业务参数，实际是 %q", received.Query)
+	}
+}
+
+func TestNewTestLoggerAlsoFeedsRecentEntries(t *testing.T) {
+	restoreRecentEntries := applog.ReplaceRecentEntriesForTesting(10)
+	defer restoreRecentEntries()
+
+	var logs bytes.Buffer
+	logger := applog.NewTestLogger(&logs)
+	logger.Info("recent-entry-test", "provider", "openai")
+
+	entries := applog.RecentEntries(10)
+	if len(entries) != 1 {
+		t.Fatalf("期望测试 logger 也写入最近日志缓冲，实际条数是 %d", len(entries))
+	}
+	if entries[0].Msg != "recent-entry-test" {
+		t.Fatalf("期望最近日志消息为 recent-entry-test，实际是 %+v", entries)
+	}
+	if !strings.Contains(logs.String(), `"msg":"recent-entry-test"`) {
+		t.Fatalf("期望测试 logger 继续写出结构化日志，实际是 %s", logs.String())
 	}
 }

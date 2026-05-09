@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,69 +21,41 @@ func main() {
 
 	frontendLayout, err := resolveFrontendLayout(*rootDir)
 	must(err)
-	sourceDir := frontendLayout.SourceDir
-	outputDir := frontendLayout.OutputDir
+
 	buildMetadata := loadBuildMetadata(*rootDir)
-	templateHTML, err := os.ReadFile(filepath.Join(sourceDir, "index.template.html"))
+	must(os.MkdirAll(frontendLayout.OutputDir, 0700))
+	must(removeStaleGeneratedAssets(frontendLayout.OutputDir, expectedGeneratedAssets()))
+	must(ensureFrontendDependencies(frontendLayout.RootDir))
+	must(bundleFrontend(frontendLayout.RootDir, buildMetadata))
+	must(writeBuildManifest(frontendLayout, buildMetadata))
+
+	templateHTML, err := os.ReadFile(filepath.Join(frontendLayout.SourceDir, "index.template.html"))
 	must(err)
 	templateHTML = replaceBuildTokens(templateHTML, buildMetadata)
 
-	styleCSS, err := os.ReadFile(filepath.Join(sourceDir, "styles.css"))
+	appBundlePath := filepath.Join(frontendLayout.OutputDir, "app.js")
+	appBundle, err := os.ReadFile(appBundlePath)
 	must(err)
-	assetPaths := make(map[string]struct{}, len(frontendScriptPaths())+1)
-	must(os.MkdirAll(outputDir, 0700))
-	expectedAssets := expectedGeneratedAssets()
-	must(removeStaleGeneratedAssets(outputDir, expectedAssets))
-	for _, scriptPath := range frontendScriptPaths() {
-		scriptBody, readErr := os.ReadFile(filepath.Join(sourceDir, scriptPath))
-		must(readErr)
-		scriptBody = replaceBuildTokens(scriptBody, buildMetadata)
-		outputPath := filepath.Join(outputDir, scriptPath)
-		must(os.MkdirAll(filepath.Dir(outputPath), 0700))
-		must(os.WriteFile(outputPath, scriptBody, 0600))
-		recordGeneratedAsset(assetPaths, scriptPath)
-	}
-	must(os.WriteFile(filepath.Join(outputDir, "styles.css"), styleCSS, 0600))
-	recordGeneratedAsset(assetPaths, "styles.css")
-	must(writeBuildManifest(frontendLayout, buildMetadata))
 
-	outputPath := filepath.Join(frontendLayout.RootDir, "index.html")
+	styleBundlePath := filepath.Join(frontendLayout.OutputDir, "styles.css")
+	styleBundle, err := os.ReadFile(styleBundlePath)
+	must(err)
+
+	generatedAssets := map[string]struct{}{
+		"/assets/app.js":    {},
+		"/assets/styles.css": {},
+	}
+
 	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "index.html")), templateHTML))
-	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "styles.css")), styleCSS))
-	must(validateAssetReferences(templateHTML, assetPaths))
-	must(os.WriteFile(outputPath, templateHTML, 0600))
+	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "app.js")), appBundle))
+	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "styles.css")), styleBundle))
+	must(validateAssetReferences(templateHTML, generatedAssets))
+	must(os.WriteFile(filepath.Join(frontendLayout.RootDir, "index.html"), templateHTML, 0600))
 }
 
 func must(err error) {
 	if err != nil {
 		panic(err)
-	}
-}
-
-func frontendScriptPaths() []string {
-	return []string{
-		"core.js",
-		filepath.Join("store", "app_store.js"),
-		filepath.Join("store", "provider_store.js"),
-		filepath.Join("store", "ui_store.js"),
-		"state.js",
-		"i18n.js",
-		"app.js",
-		filepath.Join("services", "status_service.js"),
-		filepath.Join("services", "admin_service.js"),
-		filepath.Join("features", "providers", "disable_duration_model.js"),
-		filepath.Join("features", "providers", "provider_actions.js"),
-		filepath.Join("features", "providers", "provider_renderer.js"),
-		filepath.Join("features", "providers", "key_panel_view.js"),
-		filepath.Join("features", "providers", "config_panel_view.js"),
-		filepath.Join("features", "providers", "provider_form_state.js"),
-		filepath.Join("features", "providers", "provider_events.js"),
-		filepath.Join("views", "status_view.js"),
-		filepath.Join("views", "logs_view.js"),
-		filepath.Join("views", "provider_view.js"),
-		"api.js",
-		filepath.Join("actions", "polling_actions.js"),
-		"boot.js",
 	}
 }
 
@@ -131,13 +104,11 @@ func resolveFrontendLayout(rootDir string) (frontendLayout, error) {
 }
 
 func expectedGeneratedAssets() map[string]struct{} {
-	expected := make(map[string]struct{}, len(frontendScriptPaths())+2)
-	for _, scriptPath := range frontendScriptPaths() {
-		expected[filepath.ToSlash(scriptPath)] = struct{}{}
+	return map[string]struct{}{
+		"app.js":             {},
+		"styles.css":         {},
+		"build-manifest.json": {},
 	}
-	expected["styles.css"] = struct{}{}
-	expected["build-manifest.json"] = struct{}{}
-	return expected
 }
 
 func removeStaleGeneratedAssets(outputDir string, expectedAssets map[string]struct{}) error {
@@ -161,12 +132,12 @@ func removeStaleGeneratedAssets(outputDir string, expectedAssets map[string]stru
 }
 
 func writeBuildManifest(layout frontendLayout, metadata buildMetadata) error {
-	assets := make([]string, 0, len(frontendScriptPaths())+2)
-	for _, scriptPath := range frontendScriptPaths() {
-		assets = append(assets, "/"+filepath.ToSlash(filepath.Join("assets", scriptPath)))
+	assets := []string{
+		"/assets/app.js",
+		"/assets/styles.css",
 	}
-	assets = append(assets, "/assets/styles.css")
 	sort.Strings(assets)
+
 	manifestBytes, err := json.MarshalIndent(buildManifest{
 		Version:      metadata.version,
 		Revision:     metadata.revision,
@@ -246,11 +217,6 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func recordGeneratedAsset(assetPaths map[string]struct{}, relativePath string) {
-	assetPath := "/" + filepath.ToSlash(filepath.Join("assets", relativePath))
-	assetPaths[assetPath] = struct{}{}
-}
-
 func buildScopedAssetVersion(revision string, buildTime string) string {
 	rawValue := firstNonEmpty(revision, "local") + "-" + firstNonEmpty(buildTime, "unknown")
 	var builder strings.Builder
@@ -286,4 +252,59 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func ensureFrontendDependencies(frontendRoot string) error {
+	if !needsFrontendInstall(frontendRoot) {
+		return nil
+	}
+	return runFrontendCommand(frontendRoot, "npm", []string{"ci", "--no-fund", "--no-audit"}, nil)
+}
+
+func needsFrontendInstall(frontendRoot string) bool {
+	installMarkerPath := filepath.Join(frontendRoot, "node_modules", "esbuild-wasm", "package.json")
+	if !fileExists(installMarkerPath) {
+		return true
+	}
+
+	installInfo, err := os.Stat(installMarkerPath)
+	if err != nil {
+		return true
+	}
+	for _, dependencyFile := range []string{
+		filepath.Join(frontendRoot, "package.json"),
+		filepath.Join(frontendRoot, "package-lock.json"),
+	} {
+		info, err := os.Stat(dependencyFile)
+		if err != nil {
+			return true
+		}
+		if info.ModTime().After(installInfo.ModTime()) {
+			return true
+		}
+	}
+	return false
+}
+
+func bundleFrontend(frontendRoot string, metadata buildMetadata) error {
+	env := map[string]string{
+		"APP_VERSION":    metadata.version,
+		"APP_REVISION":   metadata.revision,
+		"APP_BUILD_TIME": metadata.buildTime,
+	}
+	return runFrontendCommand(frontendRoot, "node", []string{"build.mjs"}, env)
+}
+
+func runFrontendCommand(frontendRoot string, binary string, args []string, envVars map[string]string) error {
+	command := exec.Command(binary, args...)
+	command.Dir = frontendRoot
+	command.Env = os.Environ()
+	for key, value := range envVars {
+		command.Env = append(command.Env, key+"="+value)
+	}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s failed: %w\n%s", binary, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }

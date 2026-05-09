@@ -12,8 +12,6 @@ import (
 	"simple-api-pool/token"
 )
 
-const maxCacheableStreamResponseBytes = 1 << 20
-
 func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -53,7 +51,7 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 				logFields.FirstByteMeasured = true
 				firstByteRecorded = true
 			}
-			if allowStreamCache && collected.Len()+n <= maxCacheableStreamResponseBytes {
+			if allowStreamCache && collected.Len()+n <= h.cacheableStreamResponseLimit {
 				_, _ = collected.Write(buf[:n])
 			} else {
 				allowStreamCache = false
@@ -96,23 +94,7 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 	if allowStreamCache {
 		analysis = ensureCacheAnalysis(analysis, providerType, suffix, recordedRequestBody)
 		if analysis.cacheKeyReady {
-			stored := h.cache.SetForRequestByKey(provider, providerType, analysis.cacheKey, collected.Bytes(), resp.StatusCode, cacheableHeaders(resp.Header, true), usage.InputTokens, usage.OutputTokens, cacheMaxEntries, true)
-			if stored {
-				h.logCacheEvent(cacheEventLogFields{
-					Event:         "store",
-					Provider:      provider,
-					ProviderType:  string(providerType),
-					Model:         analysis.model,
-					CacheKey:      analysis.cacheKey,
-					CacheRoute:    cacheRoute,
-					Stream:        true,
-					Status:        resp.StatusCode,
-					RequestBytes:  analysis.requestBytes,
-					ResponseBytes: collected.Len(),
-					InputTokens:   usage.InputTokens,
-					OutputTokens:  usage.OutputTokens,
-				})
-			}
+			h.storeStreamCacheEntry(provider, providerType, analysis.cacheKey, resp, collected.Bytes(), cacheMaxEntries, usage.InputTokens, usage.OutputTokens, analysis, cacheRoute)
 		}
 	}
 }

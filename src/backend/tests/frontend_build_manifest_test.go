@@ -22,8 +22,8 @@ func TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset(t *testin
 	}
 	templateBody = []byte(strings.Replace(
 		string(templateBody),
-		`<script src="/assets/boot.js?v=__ASSET_VERSION__" defer></script>`,
-		"<script src=\"/assets/boot.js?v=__ASSET_VERSION__\" defer></script>\n  <script src=\"/assets/missing.js?v=__ASSET_VERSION__\" defer></script>",
+		`<script src="/assets/app.js?v=__ASSET_VERSION__" defer></script>`,
+		"<script src=\"/assets/app.js?v=__ASSET_VERSION__\" defer></script>\n  <script src=\"/assets/missing.js?v=__ASSET_VERSION__\" defer></script>",
 		1,
 	))
 	if err := os.WriteFile(templatePath, templateBody, 0600); err != nil {
@@ -52,7 +52,7 @@ func TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder(t *testing
 	if err != nil {
 		t.Fatalf("读取前端样式失败: %v", err)
 	}
-	stylesBody = append(stylesBody, []byte("\n/* __APP_VERSION__ */\n")...)
+	stylesBody = append(stylesBody, []byte("\n.placeholder-check{color:__APP_VERSION__;}\n")...)
 	if err := os.WriteFile(stylesPath, stylesBody, 0600); err != nil {
 		t.Fatalf("写入前端样式失败: %v", err)
 	}
@@ -109,10 +109,7 @@ func TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets(t *testing.T) {
 	}
 
 	expectedAssets := []string{
-		"/assets/boot.js",
-		"/assets/core.js",
-		"/assets/features/providers/provider_events.js",
-		"/assets/features/providers/provider_form_state.js",
+		"/assets/app.js",
 		"/assets/styles.css",
 	}
 	for _, assetPath := range expectedAssets {
@@ -124,6 +121,9 @@ func TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets(t *testing.T) {
 		}
 	}
 
+	if len(manifest.Assets) != len(expectedAssets) {
+		t.Fatalf("期望构建清单仅包含单 bundle 契约资源，实际是 %+v", manifest.Assets)
+	}
 	if !sort.StringsAreSorted(manifest.Assets) {
 		t.Fatalf("期望构建清单内资源按字典序排序，实际是 %+v", manifest.Assets)
 	}

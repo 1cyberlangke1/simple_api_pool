@@ -16,6 +16,7 @@ import (
 	"simple-api-pool/config"
 	"simple-api-pool/internal/cachekeyjson"
 	"simple-api-pool/internal/proxyroute"
+	"simple-api-pool/providerapi"
 )
 
 type Entry struct {
@@ -26,20 +27,31 @@ type Entry struct {
 	OutputTokens int64             `json:"output_tokens"`
 }
 
+const CurrentSchemaVersion = 1
+
 type Store struct {
 	basePath string
 	mu       sync.Mutex
 	dbs      map[string]*sql.DB
 	writers  map[string]*sync.Mutex
+	initErr  error
 }
 
 func NewStore(basePath string) *Store {
-	os.MkdirAll(basePath, 0700)
+	initErr := os.MkdirAll(basePath, 0700)
 	return &Store{
 		basePath: basePath,
 		dbs:      make(map[string]*sql.DB),
 		writers:  make(map[string]*sync.Mutex),
+		initErr:  initErr,
 	}
+}
+
+func (s *Store) Err() error {
+	if s == nil {
+		return nil
+	}
+	return s.initErr
 }
 
 func (s *Store) Close() error {
@@ -204,7 +216,7 @@ func (s *Store) GetForRequestByKeyContext(ctx context.Context, providerName stri
 		if len(responseBody) == 0 {
 			return nil, false
 		}
-		cachedBody = decorateCachedResponse(providerType, responseBody, inputTokens, outputTokens)
+		cachedBody = providerapi.DecorateCachedResponse(providerType, responseBody, inputTokens, outputTokens)
 	}
 
 	headers := make(map[string]string)
@@ -339,6 +351,9 @@ func (s *Store) ClearProvider(provider string) error {
 }
 
 func (s *Store) dbFor(provider string) (*sql.DB, error) {
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -360,7 +375,7 @@ func (s *Store) dbFor(provider string) (*sql.DB, error) {
 	db.SetMaxIdleConns(4)
 
 	if err := initializeDB(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -402,6 +417,12 @@ func initializeDB(db *sql.DB) error {
 	defer tx.Rollback()
 
 	schemaStatements := []string{
+		`CREATE TABLE IF NOT EXISTS schema_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);`,
+		fmt.Sprintf(`INSERT INTO schema_meta(key, value) VALUES ('schema_version', '%d')
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value;`, CurrentSchemaVersion),
 		`CREATE TABLE IF NOT EXISTS cache_entries (
 			cache_key TEXT PRIMARY KEY,
 			response_body BLOB NOT NULL,

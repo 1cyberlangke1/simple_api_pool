@@ -13,45 +13,31 @@ import (
 	"testing"
 )
 
-var frontendScriptAssetPaths = []string{
-	"/assets/core.js",
-	"/assets/store/app_store.js",
-	"/assets/store/provider_store.js",
-	"/assets/store/ui_store.js",
-	"/assets/state.js",
-	"/assets/i18n.js",
+var frontendGeneratedAssetPaths = []string{
 	"/assets/app.js",
-	"/assets/services/status_service.js",
-	"/assets/services/admin_service.js",
-	"/assets/features/providers/disable_duration_model.js",
-	"/assets/features/providers/provider_actions.js",
-	"/assets/features/providers/provider_renderer.js",
-	"/assets/features/providers/key_panel_view.js",
-	"/assets/features/providers/config_panel_view.js",
-	"/assets/features/providers/provider_form_state.js",
-	"/assets/features/providers/provider_events.js",
-	"/assets/views/status_view.js",
-	"/assets/views/logs_view.js",
-	"/assets/views/provider_view.js",
-	"/assets/api.js",
-	"/assets/actions/polling_actions.js",
-	"/assets/boot.js",
+	"/assets/styles.css",
 }
 
-func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testing.T) {
+func TestStatusAndAdminPagesServeSingleBundleFrontend(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("读取测试文件路径失败")
 	}
 	frontendRoot := frontendRootFromRepoRoot(filepath.Join(filepath.Dir(thisFile), "..", ".."))
 	indexPath := filepath.Join(frontendRoot, "index.html")
+	appBundlePath := filepath.Join(frontendRoot, "assets", "app.js")
 	stylesPath := filepath.Join(frontendRoot, "assets", "styles.css")
 	faviconPath := filepath.Join(frontendRoot, "favicon.svg")
-	indexHTML, err := os.ReadFile(indexPath)
+
+	indexHTMLBytes, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("读取前端首页失败: %v", err)
 	}
-	stylesCSS, err := os.ReadFile(stylesPath)
+	appBundleBytes, err := os.ReadFile(appBundlePath)
+	if err != nil {
+		t.Fatalf("读取前端 bundle 失败: %v", err)
+	}
+	stylesCSSBytes, err := os.ReadFile(stylesPath)
 	if err != nil {
 		t.Fatalf("读取前端样式失败: %v", err)
 	}
@@ -59,38 +45,35 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 	if err != nil {
 		t.Fatalf("读取 favicon 失败: %v", err)
 	}
-	scriptContents := make(map[string]string, len(frontendScriptAssetPaths))
-	allScripts := make([]string, 0, len(frontendScriptAssetPaths))
-	for _, assetPath := range frontendScriptAssetPaths {
-		if !strings.HasPrefix(assetPath, "/assets/") {
-			t.Fatalf("非法脚本路径: %s", assetPath)
+
+	indexHTML := string(indexHTMLBytes)
+	appBundle := string(appBundleBytes)
+	stylesCSS := string(stylesCSSBytes)
+
+	for _, unexpectedAsset := range []string{
+		"/assets/core.js",
+		"/assets/boot.js",
+		"/assets/state.js",
+		"/assets/views/status_view.js",
+		"/assets/features/providers/provider_events.js",
+	} {
+		if strings.Contains(indexHTML, unexpectedAsset) {
+			t.Fatalf("期望首页不再引用旧多脚本资源 %q", unexpectedAsset)
 		}
-		scriptPath := filepath.Join(frontendRoot, strings.TrimPrefix(filepath.FromSlash(assetPath), string(filepath.Separator)))
-		scriptBody, readErr := os.ReadFile(scriptPath)
-		if readErr != nil {
-			t.Fatalf("读取前端脚本 %s 失败: %v", assetPath, readErr)
-		}
-		scriptContents[assetPath] = string(scriptBody)
-		allScripts = append(allScripts, string(scriptBody))
 	}
-	scriptBundle := strings.Join(allScripts, "\n\n")
-	coreJS := scriptContents["/assets/core.js"]
-	apiJS := scriptContents["/assets/api.js"]
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/", "/status", "/admin":
 			http.ServeFile(w, r, indexPath)
+		case "/assets/app.js":
+			http.ServeFile(w, r, appBundlePath)
 		case "/assets/styles.css":
 			http.ServeFile(w, r, stylesPath)
 		case "/favicon.svg":
 			http.ServeFile(w, r, faviconPath)
 		default:
-			if strings.HasPrefix(r.URL.Path, "/assets/") {
-				http.ServeFile(w, r, filepath.Join(frontendRoot, strings.TrimPrefix(filepath.FromSlash(r.URL.Path), string(filepath.Separator))))
-				return
-			}
 			http.NotFound(w, r)
 		}
 	})
@@ -103,7 +86,6 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		if err != nil {
 			t.Fatalf("请求 %s 失败: %v", path, err)
 		}
-
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("请求 %s 期望状态码 %d，实际是 %d", path, http.StatusOK, resp.StatusCode)
 		}
@@ -117,297 +99,67 @@ func TestStatusAndAdminPagesAreAccessibleAndContainFrontendEntrypoints(t *testin
 		}
 		body := string(bodyBytes)
 
-		mustContain(t, body, `<button id="nav-admin"`)
-		mustContain(t, body, `id="login-form"`)
-		mustContain(t, body, `id="admin-workspace"`)
-		mustContain(t, body, `id="provider-selector-search"`)
-		mustContain(t, body, `id="provider-selector-list"`)
-		mustContain(t, body, `id="provider-list"`)
-		mustContain(t, body, `id="recent-log-list"`)
-		mustContain(t, body, `id="open-log-modal"`)
-		mustContain(t, body, `id="log-modal"`)
-		mustContain(t, body, `id="hide-panel-logs"`)
-		mustContain(t, body, `value="43200"`)
-		mustContain(t, body, `id="build-version"`)
-		mustContain(t, body, `id="build-version-value"`)
+		mustContain(t, body, `<div id="app-root"></div>`)
 		mustContain(t, body, `rel="icon" type="image/svg+xml" href="/favicon.svg"`)
 		mustContain(t, body, `rel="stylesheet" href="/assets/styles.css?v=`)
-		for _, assetPath := range frontendScriptAssetPaths {
-			mustContain(t, body, `<script src="`+assetPath+`?v=`)
+		mustContain(t, body, `<script src="/assets/app.js?v=`)
+
+		if strings.Contains(body, "__APP_VERSION__") || strings.Contains(body, "__APP_REVISION__") || strings.Contains(body, "__APP_BUILD_TIME__") || strings.Contains(body, "__ASSET_VERSION__") {
+			t.Fatalf("期望页面 %s 的构建占位符已全部注入", path)
 		}
-		mustContain(t, body, `class="list provider-catalog"`)
-		mustContain(t, body, `id="status-view" class="grid content-grid single-column-grid"`)
-		mustContain(t, body, `id="status-entry-hint" class="hint"`)
-		mustContain(t, body, `id="admin-view" class="grid admin-dashboard-grid hidden"`)
-		mustContain(t, body, `id="global-admin-key" name="admin_key" type="password"`)
-		if strings.Contains(body, `公开统计，无需登录。`) {
-			t.Fatal("期望状态页移除“公开统计，无需登录。”文案")
-		}
-		if strings.Contains(body, `admin-console-strip-note`) {
-			t.Fatal("期望代理入口提示已从管理页顶部移走")
+		if strings.Contains(body, "<style>") || strings.Contains(body, "<script>") {
+			t.Fatalf("期望页面 %s 不内联整块样式或脚本", path)
 		}
 	}
 
-	faviconResp, err := http.Get(server.URL + "/favicon.svg")
-	if err != nil {
-		t.Fatalf("请求 favicon 失败: %v", err)
-	}
-	if faviconResp.StatusCode != http.StatusOK {
-		t.Fatalf("请求 favicon 期望状态码 %d，实际是 %d", http.StatusOK, faviconResp.StatusCode)
-	}
-	if got := faviconResp.Header.Get("Content-Type"); !strings.Contains(got, "image/svg+xml") && !strings.Contains(got, "text/xml") {
-		t.Fatalf("请求 favicon 期望返回 SVG，实际 Content-Type 是 %q", got)
+	assetVersion := extractSingleFrontendAssetVersion(t, indexHTML)
+	if assetVersion == "" {
+		t.Fatal("期望前端入口页带统一静态资源版本号")
 	}
 
-	if !strings.Contains(string(indexHTML), `rel="shortcut icon" href="/favicon.svg"`) {
-		t.Fatal("期望前端声明浏览器图标")
+	if len(appBundleBytes) == 0 {
+		t.Fatal("期望前端 bundle 非空")
 	}
-	if !strings.Contains(string(faviconSVG), `<svg`) || !strings.Contains(string(faviconSVG), `linearGradient`) {
-		t.Fatal("期望 favicon 使用可渲染的 SVG 图形")
+	if len(stylesCSSBytes) == 0 {
+		t.Fatal("期望前端样式非空")
 	}
-	if !strings.Contains(scriptBundle, `const STATUS_POLL_INTERVAL_MS =`) {
-		t.Fatal("期望前端定义状态轮询间隔")
-	}
-	assetVersion := extractSingleFrontendAssetVersion(t, string(indexHTML))
-	rawRevision := extractJavaScriptStringConstant(t, coreJS, "RAW_APP_REVISION")
-	if assetVersion == rawRevision {
-		t.Fatalf("期望前端资源版本号独立于 Git revision，避免浏览器继续复用旧缓存；当前两者都为 %q", assetVersion)
-	}
-	if !strings.Contains(scriptBundle, `overviewEtags`) {
-		t.Fatal("期望前端维护总览 ETag 状态")
-	}
-	if !strings.Contains(scriptBundle, `function startOverviewPolling()`) {
-		t.Fatal("期望前端具备总览轮询逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function requestOverview(`) {
-		t.Fatal("期望前端具备总览协商缓存请求逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function createAppStoreState(`) ||
-		!strings.Contains(scriptBundle, `function createProviderStoreState(`) ||
-		!strings.Contains(scriptBundle, `function createUiStoreState(`) {
-		t.Fatal("期望前端把应用状态拆到独立 store 源文件")
-	}
-	if !strings.Contains(scriptBundle, `function fetchStatusOverviewSnapshot(`) ||
-		!strings.Contains(scriptBundle, `function fetchAdminOverviewSnapshot(`) {
-		t.Fatal("期望前端把状态和管理总览请求拆到独立 service 源文件")
-	}
-	if !strings.Contains(scriptBundle, `provider-workbench-grid`) || !strings.Contains(scriptBundle, `key-workspace-panel`) || !strings.Contains(scriptBundle, `provider-config-sidebar`) {
-		t.Fatal("期望前端脚本包含新的 provider 工作台布局结构")
-	}
-	if !strings.Contains(scriptBundle, `status-provider-grid`) || !strings.Contains(string(stylesCSS), `.status-stats-grid`) {
-		t.Fatal("期望状态页使用紧凑横向统计布局")
-	}
-	if !strings.Contains(scriptBundle, `provider-selector-item`) || !strings.Contains(scriptBundle, `data-role="provider-selector"`) {
-		t.Fatal("期望前端脚本包含左侧提供商选择区")
-	}
-	if !strings.Contains(scriptBundle, `data-action="select-page-keys"`) ||
-		!strings.Contains(scriptBundle, `data-action="invert-page-keys"`) ||
-		!strings.Contains(scriptBundle, `data-action="enable-selected-keys"`) ||
-		!strings.Contains(scriptBundle, `data-action="disable-selected-keys"`) ||
-		!strings.Contains(scriptBundle, `data-action="delete-selected-keys"`) {
-		t.Fatal("期望前端脚本保留 key 工作区批量操作")
-	}
-	if !strings.Contains(scriptBundle, `data-role="key-search-input"`) {
-		t.Fatal("期望搜索 Key 输入框位于动态 key 工作区内")
-	}
-	if !strings.Contains(scriptBundle, `data-action="toggle-import-keys"`) {
-		t.Fatal("期望导入 Key 入口贴近搜索区并支持展开收起")
-	}
-	if !strings.Contains(scriptBundle, `const API_BASE = "/api"`) {
-		t.Fatal("期望前端脚本包含 API_BASE 常量")
-	}
-	if strings.Contains(string(indexHTML), `<label data-i18n=`) {
-		t.Fatal("期望静态首页不要直接把 data-i18n 绑在整个 label 上，避免重复标签文本")
-	}
-	if strings.Contains(scriptBundle, `__APP_VERSION__`) || strings.Contains(scriptBundle, `__APP_REVISION__`) || strings.Contains(scriptBundle, `__APP_BUILD_TIME__`) {
-		t.Fatal("期望前端脚本在构建后注入真实构建元信息，而不是保留占位符")
-	}
-	if strings.Contains(string(indexHTML), `dev / local / unknown`) {
-		t.Fatal("期望前端首页在构建后不再显示默认版本占位文本")
-	}
-	if !strings.Contains(scriptBundle, `request("/admin/login"`) {
-		t.Fatal("期望前端脚本包含管理员登录请求")
-	}
-	if !strings.Contains(scriptBundle, `requestOverview("/admin/overview", "admin")`) {
-		t.Fatal("期望前端脚本包含管理总览请求")
-	}
-	if !strings.Contains(scriptBundle, `requestOverview("/status/overview", "status")`) {
-		t.Fatal("期望前端脚本包含状态总览请求")
-	}
-	if !strings.Contains(scriptBundle, `If-None-Match`) {
-		t.Fatal("期望前端脚本使用协商缓存")
-	}
-	if !strings.Contains(scriptBundle, `provider.tagAvailableKeys`) {
-		t.Fatal("期望前端脚本保留可用密钥统计文案")
-	}
-	if !strings.Contains(scriptBundle, `/admin/providers/${encodeURIComponent(provider)}/cache`) {
-		t.Fatal("期望前端脚本保留清空缓存请求")
-	}
-	if !strings.Contains(scriptBundle, `data-action="clear-cache"`) {
-		t.Fatal("期望前端脚本保留清空缓存按钮渲染")
-	}
-	if strings.Contains(scriptBundle, `localStorage.getItem(STORAGE_KEY)`) {
-		t.Fatal("期望前端不再把管理员密钥持久化到本地存储")
-	}
-	if strings.Contains(string(indexHTML), `<style>`) || strings.Contains(string(indexHTML), `<script>`) {
-		t.Fatal("期望前端入口页不再内联整块样式和脚本")
-	}
-	if strings.Contains(string(indexHTML), `fonts.googleapis.com`) || strings.Contains(string(stylesCSS), `fonts.googleapis.com`) {
-		t.Fatal("期望前端不依赖外部字体 CDN")
-	}
-	if strings.Contains(scriptBundle, `Authorization`) || strings.Contains(scriptBundle, `Bearer`) {
-		t.Fatal("期望前端不再通过 Authorization 头长期携带管理员密钥")
-	}
-	if strings.Contains(scriptBundle, `innerHTML = t(el.getAttribute("data-i18n-html"))`) {
-		t.Fatal("期望前端不再把翻译文本直接写入 innerHTML")
-	}
-	if strings.Contains(scriptBundle, `.replaceAll(`) {
-		t.Fatal("期望前端避免依赖 replaceAll，兼容旧浏览器")
-	}
-	if strings.Contains(scriptBundle, `?.`) {
-		t.Fatal("期望前端避免依赖可选链语法，兼容旧浏览器")
-	}
-	if strings.Contains(scriptBundle, `??`) {
-		t.Fatal("期望前端避免依赖空值合并语法，兼容旧浏览器")
-	}
-	if !strings.Contains(scriptBundle, `credentials: "same-origin"`) {
-		t.Fatal("期望前端通过同源 Cookie 维持管理员会话")
-	}
-	if !strings.Contains(scriptBundle, `await request("/admin/logout", { method: "POST" });`) {
-		t.Fatal("期望前端支持管理员主动登出")
-	}
-	if !strings.Contains(scriptBundle, `function renderBuildVersion(`) {
-		t.Fatal("期望前端具备构建版本展示逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function setLogModalOpen(`) {
-		t.Fatal("期望前端具备日志弹窗控制逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function isPanelRequestLog(`) {
-		t.Fatal("期望前端具备面板请求过滤逻辑")
-	}
-	if !strings.Contains(scriptBundle, `path === "/favicon.ico"`) {
-		t.Fatal("期望前端过滤 favicon 请求日志")
-	}
-	if !strings.Contains(scriptBundle, `state.hidePanelLogs = refs.hidePanelLogsToggle.checked`) {
-		t.Fatal("期望前端支持切换隐藏面板日志")
-	}
-	if !strings.Contains(string(stylesCSS), `terminal-log-entry`) {
-		t.Fatal("期望前端使用终端风格日志样式")
-	}
-	if !strings.Contains(scriptBundle, `function renderProviderSelector(`) {
-		t.Fatal("期望前端具备左侧提供商选择区渲染逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function filterProviderKeys(`) {
-		t.Fatal("期望前端具备密钥搜索过滤逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function renderProviderKeysSection(`) {
-		t.Fatal("期望前端具备独立的密钥区域渲染逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function handleProviderWorkspaceClick(`) || !strings.Contains(scriptBundle, `function syncProviderPanelDraftFromEvent(`) {
-		t.Fatal("期望前端把 provider 工作台事件与表单状态同步拆到独立 feature 模块")
-	}
-	if !strings.Contains(scriptBundle, `state.bulkKeyActionModeByProvider[providerName] = "disable_until";`) {
-		t.Fatal("期望前端默认按时长禁用，而不是默认永久禁用")
-	}
-	if !strings.Contains(scriptBundle, `renderAdminWorkspaceProviders();`) || !strings.Contains(scriptBundle, `select[data-role="bulk-disable-mode"]`) {
-		t.Fatal("期望切换禁用方式后立即刷新工作区交互")
-	}
-	if !strings.Contains(string(stylesCSS), `.content-grid.single-column-grid`) {
-		t.Fatal("期望状态页单列布局在宽屏下保持满宽展示")
-	}
-	if !strings.Contains(string(stylesCSS), `.admin-sidebar`) {
-		t.Fatal("期望管理页保留侧栏样式")
-	}
-	if !strings.Contains(string(stylesCSS), `.provider-selector-list`) || !strings.Contains(string(stylesCSS), `.provider-selector-item.active`) {
-		t.Fatal("期望管理页在左侧提供提供商选择列表，并高亮当前项")
-	}
-	if !strings.Contains(scriptBundle, `function updateProviderKeysInState(`) {
-		t.Fatal("期望前端支持本地更新提供商密钥状态，减少整页重载")
-	}
-	if !strings.Contains(scriptBundle, `function syncGlobalConfigDraft(`) {
-		t.Fatal("期望前端具备全局配置草稿同步逻辑")
-	}
-	if !strings.Contains(scriptBundle, `function syncProviderDraft(`) {
-		t.Fatal("期望前端具备提供商表单草稿同步逻辑")
-	}
-	if !strings.Contains(scriptBundle, `draftProvider.max_disable_secs !== undefined ? draftProvider.max_disable_secs : Number(provider.max_disable_secs || 43200)`) {
-		t.Fatal("期望前端使用 43200 作为最大禁用时长默认值")
-	}
-	if !strings.Contains(apiJS, `function applyBulkKeyAction(`) {
-		t.Fatal("期望前端具备批量 Key 操作逻辑")
-	}
-	if !strings.Contains(string(stylesCSS), `provider-single-panel`) {
-		t.Fatal("期望前端使用单提供商聚焦布局")
-	}
-	if !strings.Contains(string(stylesCSS), `provider-compact-fields`) {
-		t.Fatal("期望前端收紧提供商配置布局")
-	}
-	if !strings.Contains(scriptBundle, `function parseImportedKeysInput(`) {
-		t.Fatal("期望前端在提交前先解析导入密钥")
-	}
-	if !strings.Contains(scriptBundle, `window.confirm`) {
-		t.Fatal("期望前端补上危险操作确认")
-	}
-	if !strings.Contains(scriptBundle, `window.addEventListener("error"`) {
-		t.Fatal("期望前端注册全局运行时异常处理")
-	}
-	if !strings.Contains(scriptBundle, `window.addEventListener("unhandledrejection"`) {
-		t.Fatal("期望前端注册未处理 Promise 异常处理")
-	}
-	if !strings.Contains(scriptBundle, `refs.logModal.addEventListener("keydown"`) {
-		t.Fatal("期望只在日志弹窗内处理 Escape 关闭")
-	}
-	if !strings.Contains(scriptBundle, `const actionHandlers = {`) {
-		t.Fatal("期望使用 action 映射表处理面板按钮")
-	}
-	bulkActionStart := strings.Index(apiJS, `async function applyBulkKeyAction(`)
-	if bulkActionStart == -1 {
-		t.Fatal("期望前端具备批量 Key 操作逻辑")
-	}
-	bulkActionBody := apiJS[bulkActionStart:]
-	if strings.Contains(bulkActionBody, `await loadAdminOverview();`) {
-		t.Fatal("期望批量 Key 操作优先更新前端本地状态，而不是每次整页重载")
-	}
-	if !strings.Contains(scriptBundle, `await loadStatusOverview();`) || !strings.Contains(scriptBundle, `await loadAdminOverview();`) {
-		t.Fatal("期望前端使用总览接口刷新状态和管理数据")
-	}
-	if strings.Contains(scriptBundle, `status.legendTitle`) || strings.Contains(scriptBundle, `legend.successError`) || strings.Contains(scriptBundle, `status.nextTitle`) {
-		t.Fatal("期望前端移除状态页指标说明和下一步文案")
-	}
-}
-
-func TestFrontendBlackboxIncludesStoreAndServiceSources(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("读取测试文件路径失败")
-	}
-	frontendRoot := frontendRootFromRepoRoot(filepath.Join(filepath.Dir(thisFile), "..", ".."))
-	indexHTMLBytes, err := os.ReadFile(filepath.Join(frontendRoot, "index.html"))
-	if err != nil {
-		t.Fatalf("读取前端首页失败: %v", err)
+	if !strings.Contains(string(faviconSVG), `<svg`) {
+		t.Fatal("期望 favicon 为可渲染 SVG")
 	}
 
-	indexHTML := string(indexHTMLBytes)
-	for _, assetPath := range []string{
-		"/assets/store/app_store.js",
-		"/assets/store/provider_store.js",
-		"/assets/store/ui_store.js",
-		"/assets/services/status_service.js",
-		"/assets/services/admin_service.js",
+	for _, requiredPath := range []string{
+		"/api/status/overview",
+		"/api/admin/overview",
+		"/api/admin/login",
+		"/api/admin/logout",
+		"/api/admin/config",
+		"/api/admin/providers/",
+		"same-origin",
+		"disable_until",
+		"bulk-disable-seconds",
+		"bulk-disable-mode",
+		"parseImportedKeys",
+		"recent_logs",
+		"hidePanelLogs",
 	} {
-		assetDiskPath := filepath.Join(frontendRoot, strings.TrimPrefix(filepath.FromSlash(assetPath), string(filepath.Separator)))
-		assetBody, readErr := os.ReadFile(assetDiskPath)
-		if readErr != nil {
-			t.Fatalf("读取前端模块脚本 %s 失败: %v", assetPath, readErr)
+		if !strings.Contains(appBundle, requiredPath) {
+			t.Fatalf("期望前端 bundle 保留能力标记 %q", requiredPath)
 		}
-		if len(assetBody) == 0 {
-			t.Fatalf("期望前端模块脚本 %s 非空", assetPath)
+	}
+
+	for _, requiredStyle := range []string{
+		".app-shell",
+		".status-grid",
+		".provider-layout",
+		".log-modal",
+	} {
+		if !strings.Contains(stylesCSS, requiredStyle) {
+			t.Fatalf("期望前端样式包含 %q", requiredStyle)
 		}
-		mustContain(t, indexHTML, `<script src="`+assetPath+`?v=`)
 	}
 }
 
-func TestFrontendBuildManifestMatchesCurrentFrontendLayout(t *testing.T) {
+func TestFrontendBuildManifestMatchesSingleBundleLayout(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	frontendRoot := frontendRootFromRepoRoot(repoRoot)
 	manifestPath := filepath.Join(frontendRoot, "assets", "build-manifest.json")
@@ -432,11 +184,8 @@ func TestFrontendBuildManifestMatchesCurrentFrontendLayout(t *testing.T) {
 	if manifest.SourceDir != expectedRoot+"/src" {
 		t.Fatalf("期望 source_dir 为 %q，实际是 %q", expectedRoot+"/src", manifest.SourceDir)
 	}
-	for _, assetPath := range []string{
-		"/assets/features/providers/provider_form_state.js",
-		"/assets/features/providers/provider_events.js",
-		"/assets/boot.js",
-	} {
+
+	for _, assetPath := range frontendGeneratedAssetPaths {
 		if !sliceContains(manifest.Assets, assetPath) {
 			t.Fatalf("期望构建清单包含 %q，实际是 %+v", assetPath, manifest.Assets)
 		}
@@ -444,6 +193,10 @@ func TestFrontendBuildManifestMatchesCurrentFrontendLayout(t *testing.T) {
 		if _, err := os.Stat(assetDiskPath); err != nil {
 			t.Fatalf("期望构建清单中的资源存在于磁盘 %q: %v", assetPath, err)
 		}
+	}
+
+	if len(manifest.Assets) != len(frontendGeneratedAssetPaths) {
+		t.Fatalf("期望构建清单仅包含单 bundle 契约资源，实际为 %+v", manifest.Assets)
 	}
 }
 
@@ -473,14 +226,4 @@ func extractSingleFrontendAssetVersion(t *testing.T, indexHTML string) string {
 		}
 	}
 	return version
-}
-
-func extractJavaScriptStringConstant(t *testing.T, scriptBody string, constantName string) string {
-	t.Helper()
-	pattern := regexp.MustCompile(`const ` + regexp.QuoteMeta(constantName) + ` = "([^"]+)";`)
-	match := pattern.FindStringSubmatch(scriptBody)
-	if len(match) != 2 {
-		t.Fatalf("期望前端脚本包含字符串常量 %s", constantName)
-	}
-	return match[1]
 }

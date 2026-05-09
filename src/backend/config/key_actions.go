@@ -8,16 +8,33 @@ import (
 type KeyAction string
 
 const (
-	KeyActionEnable         KeyAction = "enable"
-	KeyActionDisableUntil   KeyAction = "disable_until"
+	// KeyActionEnable clears disable state and failure counters for selected keys.
+	KeyActionEnable KeyAction = "enable"
+	// KeyActionDisableUntil disables selected keys until the provided Unix timestamp.
+	KeyActionDisableUntil KeyAction = "disable_until"
+	// KeyActionDisableForever disables selected keys with a permanent sentinel timestamp.
 	KeyActionDisableForever KeyAction = "disable_forever"
-	KeyActionDelete         KeyAction = "delete"
+	// KeyActionDelete removes selected keys from the provider.
+	KeyActionDelete KeyAction = "delete"
 )
 
 type KeyActionRequest struct {
 	Action        KeyAction `json:"action"`
 	Keys          []string  `json:"keys"`
 	DisabledUntil int64     `json:"disabled_until"`
+}
+
+func parseLegacyKeyAction(action string) (KeyAction, bool) {
+	switch action {
+	case string(KeyActionDelete):
+		return KeyActionDelete, true
+	case "disable":
+		return KeyActionDisableForever, true
+	case string(KeyActionEnable):
+		return KeyActionEnable, true
+	default:
+		return "", false
+	}
 }
 
 func (c *Config) ApplyStructuredKeyAction(providerName string, request KeyActionRequest) error {

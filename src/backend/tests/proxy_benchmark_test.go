@@ -40,7 +40,7 @@ func BenchmarkCacheHitRouteParallel(b *testing.B) {
 	b.Cleanup(func() { statsMgr.Stop() })
 	cacheStore := newBenchmarkCacheStore(b)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"load"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 20, false)
 
 	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 128)
 
@@ -104,6 +104,114 @@ func BenchmarkDirectStreamProxy(b *testing.B) {
 		proxy.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			b.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func BenchmarkLargeNonStreamPassthroughWithoutCaching(b *testing.B) {
+	restoreLogger := muteBenchmarkLogger()
+	defer restoreLogger()
+
+	b.Setenv("UPSTREAM_RESPONSE_LIMIT_BYTES", "64")
+
+	largeBody := `{"id":"oversized","payload":"` + strings.Repeat("A", 256) + `"}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	defer upstream.Close()
+
+	cfg := newBenchmarkConfig(b)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 100,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		b.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(b.TempDir()))
+	b.Cleanup(func() { statsMgr.Stop() })
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newBenchmarkCacheStore(b), 64)
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"large"}]}`
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(largeBody)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"oversized"`) {
+			b.Fatalf("期望继续透传超限响应，实际是 %s", rec.Body.String())
+		}
+	}
+}
+
+func BenchmarkLargeStreamPassthroughAfterCacheCutoff(b *testing.B) {
+	restoreLogger := muteBenchmarkLogger()
+	defer restoreLogger()
+
+	b.Setenv("CACHEABLE_STREAM_RESPONSE_LIMIT_BYTES", "128")
+
+	largeChunk := strings.Repeat("A", 512)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"delta\":{\"content\":\"" + largeChunk + "\"}}\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer upstream.Close()
+
+	cfg := newBenchmarkConfig(b)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 100,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		b.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(b.TempDir()))
+	b.Cleanup(func() { statsMgr.Stop() })
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newBenchmarkCacheStore(b), 64)
+	body := `{"model":"gpt-4.1","messages":[{"role":"user","content":"stream"}],"stream":true}`
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "data: [DONE]") {
+			b.Fatalf("期望累计超限后继续透传 SSE，实际是 %s", rec.Body.String())
 		}
 	}
 }

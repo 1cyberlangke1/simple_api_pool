@@ -1,0 +1,74 @@
+.log-modal {
+  inset: 0;
+  position: fixed;
+  z-index: 20;
+}
+
+.log-modal-scrim {
+  background: rgba(12, 14, 18, 0.66);
+  inset: 0;
+  position: absolute;
+}
+
+.log-modal-panel {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 18px;
+  inset: 5vh auto auto 50%;
+  max-height: 90vh;
+  overflow: hidden;
+  padding: 24px;
+  position: relative;
+  transform: translateX(-50%);
+  width: min(960px, calc(100vw - 32px));
+}
+
+.recent-log-list {
+  display: grid;
+  gap: 12px;
+  max-height: 60vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.terminal-log-entry {
+  background: #111318;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  color: #e7e0d4;
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.terminal-log-entry header {
+  align-items: center;
+  color: #8dd8c7;
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.terminal-log-entry.level-error header {
+  color: #ff8f7d;
+}
+
+.terminal-log-entry.level-warn header {
+  color: #ffc97a;
+}
+
+.terminal-log-message,
+.terminal-log-summary {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.terminal-log-summary {
+  color: #b5aa96;
+  font-size: 0.85rem;
+}

@@ -39,7 +39,7 @@ func BenchmarkProxyCacheHit(b *testing.B) {
 	})
 	cacheStore := newBenchmarkCacheStore(b)
 	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"bench-proxy"}]}`)
-	cacheStore.Set("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 100)
+	cacheStore.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"cached","usage":{"prompt_tokens":4,"completion_tokens":6}}`), http.StatusOK, map[string]string{"Content-Type": "application/json"}, 4, 6, 100, false)
 
 	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 64)
 

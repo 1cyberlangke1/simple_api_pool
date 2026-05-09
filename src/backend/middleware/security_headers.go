@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"simple-api-pool/webui"
 )
@@ -18,7 +19,9 @@ func ApplySecurityHeaders(next http.Handler, contentSecurityPolicy func() string
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		w.Header().Set("Permissions-Policy", "()")
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		if isHTTPSRequest(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 
 		if r.URL.Path == "/admin" || r.URL.Path == "/api/admin" || hasPathPrefix(r.URL.Path, "/api/admin/") {
 			w.Header().Set("Cache-Control", "no-store")
@@ -34,4 +37,14 @@ func hasPathPrefix(path, prefix string) bool {
 		return false
 	}
 	return path[:len(prefix)] == prefix
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

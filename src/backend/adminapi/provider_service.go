@@ -1,44 +1,32 @@
 package adminapi
 
 import (
-	"errors"
-	"os"
-
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+	svc "simple-api-pool/service"
 	"simple-api-pool/stats"
 )
 
-var ErrCacheServiceUnavailable = errors.New("cache service unavailable")
+var ErrCacheServiceUnavailable = svc.ErrCacheServiceUnavailable
 
 type ProviderService struct {
-	cfg   *config.Config
-	stats *stats.Manager
-	cache *cache.Store
+	service *svc.ProviderMutationService
 }
 
 func NewProviderService(cfg *config.Config, statsManager *stats.Manager, cacheStore *cache.Store) *ProviderService {
 	return &ProviderService{
-		cfg:   cfg,
-		stats: statsManager,
-		cache: cacheStore,
+		service: svc.NewProviderMutationService(cfg, statsManager, cacheStore),
 	}
 }
 
 func (service *ProviderService) ListSnapshots() []AdminProviderSnapshot {
-	return buildAdminProviderSnapshots(service.cfg.Providers())
+	return buildAdminProviderSnapshots(service.service.Providers())
 }
 
 func (service *ProviderService) SaveProvider(provider config.Provider) (AdminProviderSnapshot, bool, error) {
-	existingProvider, _ := service.cfg.Provider(provider.Name)
-	created := existingProvider == nil
-	if err := service.cfg.UpdateProviderSettings(provider); err != nil {
+	savedProvider, created, err := service.service.SaveProvider(provider)
+	if err != nil {
 		return AdminProviderSnapshot{}, false, err
-	}
-
-	savedProvider, _ := service.cfg.Provider(provider.Name)
-	if savedProvider == nil {
-		return AdminProviderSnapshot{}, created, os.ErrNotExist
 	}
 	logAdminAudit("provider_save",
 		"provider", savedProvider.Name,
@@ -48,13 +36,13 @@ func (service *ProviderService) SaveProvider(provider config.Provider) (AdminPro
 		"cache_max_entries", savedProvider.CacheMaxEntries,
 		"key_strategy", savedProvider.KeyStrategy,
 	)
-	return buildAdminProviderSnapshot(*savedProvider), created, nil
+	return buildAdminProviderSnapshot(savedProvider), created, nil
 }
 
 func (service *ProviderService) GetSnapshot(providerName string) (AdminProviderSnapshot, error) {
-	provider, _ := service.cfg.Provider(providerName)
-	if provider == nil {
-		return AdminProviderSnapshot{}, os.ErrNotExist
+	provider, err := service.service.Provider(providerName)
+	if err != nil {
+		return AdminProviderSnapshot{}, err
 	}
 	return buildAdminProviderSnapshot(*provider), nil
 }
@@ -68,7 +56,7 @@ func (service *ProviderService) GetKeySnapshots(providerName string) ([]AdminKey
 }
 
 func (service *ProviderService) AddKeys(providerName string, keys []string) ([]AdminKeySnapshot, error) {
-	if err := service.cfg.AddKeys(providerName, keys); err != nil {
+	if _, err := service.service.AddKeys(providerName, keys); err != nil {
 		return nil, err
 	}
 	logAdminAudit("provider_keys_import",
@@ -79,21 +67,11 @@ func (service *ProviderService) AddKeys(providerName string, keys []string) ([]A
 }
 
 func (service *ProviderService) DeleteKey(providerName string, identifier string) error {
-	keyValue := service.ResolveKeyIdentifier(providerName, identifier)
-	if keyValue == "" {
-		return os.ErrNotExist
-	}
-	return service.cfg.DeleteKey(providerName, keyValue)
+	return service.service.DeleteKey(providerName, identifier)
 }
 
 func (service *ProviderService) ClearProviderCache(providerName string) error {
-	if provider, _ := service.cfg.Provider(providerName); provider == nil {
-		return os.ErrNotExist
-	}
-	if service.cache == nil {
-		return ErrCacheServiceUnavailable
-	}
-	if err := service.cache.ClearProvider(providerName); err != nil {
+	if err := service.service.ClearProviderCache(providerName); err != nil {
 		return err
 	}
 	logAdminAudit("provider_cache_clear", "provider", providerName)
@@ -101,55 +79,17 @@ func (service *ProviderService) ClearProviderCache(providerName string) error {
 }
 
 func (service *ProviderService) DeleteProvider(providerName string) error {
-	if provider, _ := service.cfg.Provider(providerName); provider == nil {
-		return os.ErrNotExist
-	}
-	if service.cache != nil {
-		if err := service.cache.ClearProvider(providerName); err != nil {
-			return err
-		}
-	}
-	if err := service.cfg.DeleteProvider(providerName); err != nil {
+	if err := service.service.DeleteProvider(providerName); err != nil {
 		return err
-	}
-	if service.stats != nil {
-		service.stats.RemoveProvider(providerName)
 	}
 	logAdminAudit("provider_delete", "provider", providerName)
 	return nil
 }
 
 func (service *ProviderService) ResolveKeyIdentifiers(providerName string, identifiers []string) []string {
-	provider, _ := service.cfg.Provider(providerName)
-	if provider == nil {
-		return identifiers
-	}
-
-	resolvedValues := make([]string, 0, len(identifiers))
-	seenValues := make(map[string]struct{}, len(identifiers))
-	for _, identifier := range identifiers {
-		resolvedValue := service.ResolveKeyIdentifier(providerName, identifier)
-		if resolvedValue == "" {
-			continue
-		}
-		if _, exists := seenValues[resolvedValue]; exists {
-			continue
-		}
-		seenValues[resolvedValue] = struct{}{}
-		resolvedValues = append(resolvedValues, resolvedValue)
-	}
-	return resolvedValues
+	return service.service.ResolveKeyIdentifiers(providerName, identifiers)
 }
 
 func (service *ProviderService) ResolveKeyIdentifier(providerName string, identifier string) string {
-	provider, _ := service.cfg.Provider(providerName)
-	if provider == nil {
-		return ""
-	}
-	for _, key := range provider.Keys {
-		if key.Value == identifier || buildSecretRef(key.Value) == identifier {
-			return key.Value
-		}
-	}
-	return ""
+	return service.service.ResolveKeyIdentifier(providerName, identifier)
 }

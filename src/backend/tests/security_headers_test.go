@@ -35,8 +35,33 @@ func TestApplySecurityHeadersSetsAdditionalSecurityPolicies(t *testing.T) {
 	if got := rec.Header().Get("Permissions-Policy"); got != "()" {
 		t.Fatalf("期望 Permissions-Policy=()，实际是 %q", got)
 	}
-	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
-		t.Fatalf("期望设置 HSTS，实际是 %q", got)
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("HTTP 请求不应下发 HSTS，实际是 %q", got)
+	}
+}
+
+func TestApplySecurityHeadersSetsHSTSOnlyForHTTPSRequests(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := middleware.ApplySecurityHeaders(next, nil)
+
+	httpsReq := httptest.NewRequest(http.MethodGet, "https://example.com/status", nil)
+	httpsRec := httptest.NewRecorder()
+	handler.ServeHTTP(httpsRec, httpsReq)
+
+	if got := httpsRec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("HTTPS 请求期望设置 HSTS，实际是 %q", got)
+	}
+
+	forwardedReq := httptest.NewRequest(http.MethodGet, "http://example.com/status", nil)
+	forwardedReq.Header.Set("X-Forwarded-Proto", "https")
+	forwardedRec := httptest.NewRecorder()
+	handler.ServeHTTP(forwardedRec, forwardedReq)
+
+	if got := forwardedRec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("转发 HTTPS 请求期望设置 HSTS，实际是 %q", got)
 	}
 }
 

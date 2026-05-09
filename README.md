@@ -26,6 +26,8 @@
 - 多模态输入直接透传，数组内容允许任意结构
 - 缓存键兼容多模态消息结构
 - 流式与非流式请求分别使用独立缓存条目
+- 状态使用单 SQLite 数据库，缓存按 provider 独立 SQLite 数据库
+- 前端源码使用 `Preact + signals + wouter-preact + valibot`，交付仍是单 bundle
 - 前后端同容器交付
 - 默认端口：`18080`
 - 默认 `GOMEMLIMIT`：`32MiB`
@@ -34,5 +36,13 @@
 
 - [部署指南](docs/deployment.md)
 - [使用指南](docs/usage.md)
+- [架构说明](docs/architecture.md)
 - [缓存与统计说明](docs/cache-and-statistics.md)
+- [开发与测试](docs/development.md)
+- [提供商扩展指南](docs/provider-extension.md)
+
+如果你准备新增 provider 或扩展管理能力，优先阅读：
+
+- [架构说明](docs/architecture.md)
+- [提供商扩展指南](docs/provider-extension.md)
 - [开发与测试](docs/development.md)

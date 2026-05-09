@@ -1,10 +1,9 @@
 package adminapi
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-
+	"simple-api-pool/applog"
 	"simple-api-pool/config"
+	"simple-api-pool/domain"
 )
 
 type AdminKeySnapshot struct {
@@ -57,24 +56,9 @@ func buildAdminProviderSnapshot(provider config.Provider) AdminProviderSnapshot 
 
 func buildAdminKeySnapshot(key config.Key) AdminKeySnapshot {
 	return AdminKeySnapshot{
-		Ref:              buildSecretRef(key.Value),
-		Value:            maskSecretValue(key.Value),
+		Ref:              domain.BuildSecretRef(key.Value),
+		Value:            applog.MaskSecret(key.Value),
 		DisabledUntil:    key.DisabledUntil,
 		ConsecutiveFails: key.ConsecutiveFails,
 	}
-}
-
-func buildSecretRef(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:8])
-}
-
-func maskSecretValue(secret string) string {
-	if secret == "" {
-		return ""
-	}
-	if len(secret) <= 4 {
-		return "****"
-	}
-	return "****" + secret[len(secret)-4:]
 }

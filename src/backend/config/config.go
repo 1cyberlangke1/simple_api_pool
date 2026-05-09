@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 
+	"simple-api-pool/domain"
 	"simple-api-pool/store"
 )
 
@@ -21,8 +21,6 @@ const (
 	Claude          ProviderType = "claude"
 	Gemini          ProviderType = "gemini"
 )
-
-var ReservedNames = map[string]bool{"api": true, "cache": true, "status": true, "admin": true, "assets": true}
 
 const KeyPermanentlyDisabled int64 = math.MaxInt64
 
@@ -56,21 +54,15 @@ type Config struct {
 	mu    sync.RWMutex
 	st    *store.Store
 	state FileConfig
+	err   error
 }
 
 func DefaultBaseURL(t ProviderType) string {
-	switch t {
-	case OpenAIChat:
-		return "https://api.openai.com"
-	case OpenAIResponses:
-		return "https://api.openai.com"
-	case Claude:
-		return "https://api.anthropic.com"
-	case Gemini:
-		return "https://generativelanguage.googleapis.com"
-	default:
-		return ""
-	}
+	return domain.DefaultBaseURL(string(t))
+}
+
+func IsReservedName(name string) bool {
+	return domain.IsReservedProviderName(name)
 }
 
 func New(st *store.Store) *Config {
@@ -84,10 +76,20 @@ func New(st *store.Store) *Config {
 	if err := st.Load("config.json", &c.state); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			log.Printf("load config.json failed: %v", err)
+			c.err = err
 		}
 	}
 
 	return c
+}
+
+func (c *Config) Err() error {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.err
 }
 
 func (c *Config) ApplyEnvOverrides() {
@@ -141,24 +143,14 @@ func (c *Config) Provider(name string) (*Provider, int) {
 }
 
 func (c *Config) SaveProvider(p Provider) error {
-	normalizedProvider, err := normalizeProviderForPersistence(p)
-	if err != nil {
-		return err
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for i, existing := range c.state.Providers {
-		if existing.Name == normalizedProvider.Name {
-			c.state.Providers[i] = normalizedProvider
-			return c.save()
-		}
-	}
-	c.state.Providers = append(c.state.Providers, normalizedProvider)
-	return c.save()
+	return c.upsertProvider(p, false)
 }
 
 func (c *Config) UpdateProviderSettings(p Provider) error {
+	return c.upsertProvider(p, true)
+}
+
+func (c *Config) upsertProvider(p Provider, preserveKeys bool) error {
 	normalizedProvider, err := normalizeProviderForPersistence(p)
 	if err != nil {
 		return err
@@ -168,7 +160,9 @@ func (c *Config) UpdateProviderSettings(p Provider) error {
 	defer c.mu.Unlock()
 	for i, existing := range c.state.Providers {
 		if existing.Name == normalizedProvider.Name {
-			normalizedProvider.Keys = append([]Key(nil), existing.Keys...)
+			if preserveKeys {
+				normalizedProvider.Keys = append([]Key(nil), existing.Keys...)
+			}
 			c.state.Providers[i] = normalizedProvider
 			return c.save()
 		}
@@ -242,24 +236,14 @@ func (c *Config) DeleteKey(providerName, keyValue string) error {
 }
 
 func (c *Config) ApplyKeyAction(providerName, action string, keys []string) error {
-	switch action {
-	case "delete":
-		return c.ApplyStructuredKeyAction(providerName, KeyActionRequest{
-			Action: KeyActionDelete,
-			Keys:   keys,
-		})
-	case "disable":
-		return c.ApplyStructuredKeyAction(providerName, KeyActionRequest{
-			Action: KeyActionDisableForever,
-			Keys:   keys,
-		})
-	case "enable":
-		return c.ApplyStructuredKeyAction(providerName, KeyActionRequest{
-			Action: KeyActionEnable,
-			Keys:   keys,
-		})
+	keyAction, ok := parseLegacyKeyAction(action)
+	if !ok {
+		return os.ErrInvalid
 	}
-	return os.ErrInvalid
+	return c.ApplyStructuredKeyAction(providerName, KeyActionRequest{
+		Action: keyAction,
+		Keys:   keys,
+	})
 }
 
 func (c *Config) UpdateKeyState(providerName, keyValue string, disabledUntil int64, fails int) error {
@@ -352,25 +336,5 @@ func cloneProvider(p Provider) Provider {
 }
 
 func normalizeProviderBaseURL(rawValue string) (string, error) {
-	trimmedValue := strings.TrimSpace(rawValue)
-	if trimmedValue == "" {
-		return "", os.ErrInvalid
-	}
-
-	parsedURL, err := url.Parse(trimmedValue)
-	if err != nil {
-		return "", os.ErrInvalid
-	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", os.ErrInvalid
-	}
-	if parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
-		return "", os.ErrInvalid
-	}
-
-	normalizedValue := strings.TrimRight(parsedURL.String(), "/")
-	if normalizedValue == "" {
-		return "", os.ErrInvalid
-	}
-	return normalizedValue, nil
+	return domain.NormalizeProviderBaseURL(rawValue)
 }

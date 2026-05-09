@@ -1,45 +1,29 @@
 package config
 
-import "os"
+import "simple-api-pool/domain"
 
 func normalizeProviderForPersistence(provider Provider) (Provider, error) {
-	if ReservedNames[provider.Name] {
-		return Provider{}, os.ErrInvalid
-	}
-	if provider.BaseURL == "" {
-		provider.BaseURL = DefaultBaseURL(provider.Type)
-	}
-
-	normalizedBaseURL, err := normalizeProviderBaseURL(provider.BaseURL)
+	normalizedSettings, err := domain.NormalizeProviderSettings(domain.ProviderSettings{
+		Name:            provider.Name,
+		ProviderType:    string(provider.Type),
+		BaseURL:         provider.BaseURL,
+		KeyStrategy:     provider.KeyStrategy,
+		FailThreshold:   provider.FailThreshold,
+		MinDisableSecs:  provider.MinDisableSecs,
+		MaxDisableSecs:  provider.MaxDisableSecs,
+		CacheMaxEntries: provider.CacheMaxEntries,
+	})
 	if err != nil {
 		return Provider{}, err
 	}
-	provider.BaseURL = normalizedBaseURL
-
-	applyProviderDefaults(&provider)
-	return provider, nil
-}
-
-func applyProviderDefaults(provider *Provider) {
-	if provider == nil {
-		return
-	}
-	if provider.KeyStrategy == "" {
-		provider.KeyStrategy = "round_robin"
-	}
-	if provider.FailThreshold == 0 {
-		provider.FailThreshold = 3
-	}
-	if provider.MinDisableSecs == 0 {
-		provider.MinDisableSecs = 30
-	}
-	if provider.MaxDisableSecs == 0 {
-		provider.MaxDisableSecs = 43200
-	}
-	if provider.CacheMaxEntries == 0 {
-		provider.CacheMaxEntries = 1000
-	}
+	provider.BaseURL = normalizedSettings.BaseURL
+	provider.KeyStrategy = normalizedSettings.KeyStrategy
+	provider.FailThreshold = normalizedSettings.FailThreshold
+	provider.MinDisableSecs = normalizedSettings.MinDisableSecs
+	provider.MaxDisableSecs = normalizedSettings.MaxDisableSecs
+	provider.CacheMaxEntries = normalizedSettings.CacheMaxEntries
 	if provider.Keys == nil {
 		provider.Keys = make([]Key, 0)
 	}
+	return provider, nil
 }

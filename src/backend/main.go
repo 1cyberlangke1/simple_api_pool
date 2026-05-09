@@ -1,8 +1,10 @@
+// simple-api-pool starts the backend runtime and HTTP server.
 package main
 
 import (
 	"context"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,8 +22,8 @@ import (
 )
 
 func main() {
-	applyProcessMemoryLimit()
 	applog.InitFromEnv()
+	applyProcessMemoryLimit()
 
 	runtimeInstance, err := app.NewRuntime(app.Options{})
 	if err != nil {
@@ -30,18 +32,13 @@ func main() {
 	defer runtimeInstance.Close()
 
 	addr := config.ListenAddr()
-	server := &http.Server{
-		Addr:    addr,
-		Handler: runtimeInstance.Handler,
-	}
+	server := app.NewHTTPServer(addr, runtimeInstance.Handler)
 	shutdownCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	go func() {
 		<-shutdownCtx.Done()
-		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(drainCtx); err != nil {
+		if err := app.ShutdownHTTPServer(server, 10*time.Second); err != nil {
 			log.Printf("server shutdown error: %v", err)
 		}
 	}()
@@ -80,7 +77,7 @@ func parseMemoryLimitBytes(rawValue string) (int64, bool) {
 	}
 
 	bytesValue, err := humanize.ParseBytes(rawValue)
-	if err != nil || bytesValue == 0 || bytesValue > uint64(^uint(0)>>1) {
+	if err != nil || bytesValue == 0 || bytesValue > math.MaxInt64 {
 		return 0, false
 	}
 	return int64(bytesValue), true

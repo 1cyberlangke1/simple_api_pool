@@ -27,6 +27,7 @@ Thumbs.db
 data/
 backend/data/
 local-logs/
+src/frontend/node_modules/
 
 # Coverage
 backend/coverage

@@ -9,6 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+
 	"simple-api-pool/auth"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
@@ -24,11 +28,21 @@ type Handler struct {
 	providerSvc  *ProviderService
 	configSvc    *ConfigService
 	authSvc      *AuthService
+	validate     *validator.Validate
+	router       chi.Router
+}
+
+type loginInput struct {
+	AdminKey string `json:"admin_key" validate:"required"`
+}
+
+type importKeysInput struct {
+	Keys json.RawMessage `json:"keys" validate:"required"`
 }
 
 func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler {
 	limiter := auth.NewFailureLimiter(10, time.Minute, 10*time.Minute)
-	return &Handler{
+	handler := &Handler{
 		cfg:          cfg,
 		stats:        sm,
 		cache:        cs,
@@ -36,76 +50,54 @@ func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler
 		providerSvc:  NewProviderService(cfg, sm, cs),
 		configSvc:    NewConfigService(cfg),
 		authSvc:      NewAuthService(cfg, limiter),
+		validate:     validator.New(validator.WithRequiredStructEnabled()),
 	}
+	handler.router = handler.newRouter()
+	return handler
 }
 
 func (ah *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	route, err := ParseRoute(r.Method, r.URL.Path)
-	if err != nil {
-		httpapi.WriteErrorResponse(w, http.StatusNotFound, "接口不存在")
-		return
-	}
+	ah.router.ServeHTTP(w, r)
+}
 
-	switch route.Operation {
-	case RouteOperationLogin:
-		if r.Method != http.MethodPost {
-			httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
-			return
-		}
-		ah.handleLogin(w, r)
-	case RouteOperationLogout:
-		if r.Method != http.MethodPost {
-			httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
-			return
-		}
-		ah.handleLogout(w, r)
-	case RouteOperationOverview:
-		if r.Method != http.MethodGet {
-			httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
-			return
-		}
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleOverview(w, r)
-	case RouteOperationProviders:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleProviders(w, r)
-	case RouteOperationProviderKeysBulk:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleProviderKeyBulkAction(w, r, route)
-	case RouteOperationProviderKeys:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleProviderKeys(w, r, route)
-	case RouteOperationProviderCache:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleProviderCache(w, r, route)
-	case RouteOperationProviderKey:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleProviderKeys(w, r, route)
-	case RouteOperationProvider:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleSingleProvider(w, r, route)
-	case RouteOperationConfig:
-		if !ah.authorizeAdminRequest(w, r) {
-			return
-		}
-		ah.handleConfig(w, r)
-	default:
+func (ah *Handler) newRouter() chi.Router {
+	router := chi.NewRouter()
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErrorResponse(w, http.StatusNotFound, "接口不存在")
-	}
+	})
+	router.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+	})
+
+	router.Post("/api/admin/login", ah.handleLogin)
+	router.Post("/api/admin/logout", ah.handleLogout)
+
+	router.Group(func(r chi.Router) {
+		r.Use(ah.requireAdmin)
+		r.Get("/api/admin/overview", ah.handleOverview)
+		r.Get("/api/admin/config", ah.handleConfig)
+		r.Put("/api/admin/config", ah.handleConfig)
+
+		r.Get("/api/admin/providers", ah.handleProviders)
+		r.Post("/api/admin/providers", ah.handleProviders)
+		r.Get("/api/admin/providers/{provider}", ah.handleSingleProvider)
+		r.Delete("/api/admin/providers/{provider}", ah.handleSingleProvider)
+		r.Post("/api/admin/providers/{provider}/keys", ah.handleProviderKeys)
+		r.Post("/api/admin/providers/{provider}/keys/bulk", ah.handleProviderKeyBulkAction)
+		r.Delete("/api/admin/providers/{provider}/cache", ah.handleProviderCache)
+		r.Delete("/api/admin/providers/{provider}/{key}", ah.handleProviderKeys)
+	})
+
+	return router
+}
+
+func (ah *Handler) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ah.authorizeAdminRequest(w, r) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (ah *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
@@ -128,11 +120,8 @@ func (ah *Handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (ah *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		AdminKey string `json:"admin_key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+	var body loginInput
+	if !ah.decodeAndValidateJSON(w, r, &body) {
 		return
 	}
 	if err := ah.authSvc.Login(w, r, body.AdminKey); err != nil {
@@ -159,12 +148,11 @@ func (ah *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		httpapi.WriteJSONResponse(w, http.StatusOK, ah.providerSvc.ListSnapshots())
 	case http.MethodPost:
-		var p config.Provider
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		var provider config.Provider
+		if !ah.decodeJSON(w, r, &provider) {
 			return
 		}
-		snapshot, _, err := ah.providerSvc.SaveProvider(p)
+		snapshot, _, err := ah.providerSvc.SaveProvider(provider)
 		if err != nil {
 			if errors.Is(err, os.ErrInvalid) {
 				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商名称非法或为保留名称")
@@ -179,10 +167,11 @@ func (ah *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request, route Route) {
+func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "provider")
 	switch r.Method {
 	case http.MethodDelete:
-		if err := ah.providerSvc.DeleteProvider(route.ProviderName); err != nil {
+		if err := ah.providerSvc.DeleteProvider(providerName); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 				return
@@ -192,7 +181,7 @@ func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request, 
 		}
 		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
-		snapshot, err := ah.providerSvc.GetSnapshot(route.ProviderName)
+		snapshot, err := ah.providerSvc.GetSnapshot(providerName)
 		if err != nil {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
@@ -201,14 +190,12 @@ func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request, route Route) {
+func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "provider")
 	switch r.Method {
 	case http.MethodPost:
-		var body struct {
-			Keys json.RawMessage `json:"keys"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		var body importKeysInput
+		if !ah.decodeAndValidateJSON(w, r, &body) {
 			return
 		}
 		keys, err := parseImportedKeysPayload(body.Keys)
@@ -216,23 +203,24 @@ func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request, ro
 			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "密钥导入格式无效")
 			return
 		}
-		keySnapshots, err := ah.providerSvc.AddKeys(route.ProviderName, keys)
+		keySnapshots, err := ah.providerSvc.AddKeys(providerName, keys)
 		if err != nil {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
 		httpapi.WriteJSONResponse(w, http.StatusOK, keySnapshots)
 	case http.MethodDelete:
-		if strings.TrimSpace(route.KeyName) == "" {
+		keyName := chi.URLParam(r, "key")
+		if strings.TrimSpace(keyName) == "" {
 			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "缺少要删除的密钥")
 			return
 		}
-		keyValue, err := url.PathUnescape(route.KeyName)
+		keyValue, err := url.PathUnescape(keyName)
 		if err != nil {
 			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "密钥标识无效")
 			return
 		}
-		if err := ah.providerSvc.DeleteKey(route.ProviderName, keyValue); err != nil {
+		if err := ah.providerSvc.DeleteKey(providerName, keyValue); err != nil {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
 			return
 		}
@@ -242,13 +230,14 @@ func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request, ro
 	}
 }
 
-func (ah *Handler) handleProviderCache(w http.ResponseWriter, r *http.Request, route Route) {
+func (ah *Handler) handleProviderCache(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "provider")
 	if r.Method != http.MethodDelete {
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 		return
 	}
 
-	if err := ah.providerSvc.ClearProviderCache(route.ProviderName); err != nil {
+	if err := ah.providerSvc.ClearProviderCache(providerName); err != nil {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
@@ -269,8 +258,7 @@ func (ah *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteJSONResponse(w, http.StatusOK, ah.configSvc.Snapshot())
 	case http.MethodPut:
 		var body GlobalConfigUpdateInput
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		if !ah.decodeJSON(w, r, &body) {
 			return
 		}
 		adminKeyChanged, err := ah.configSvc.Update(body)
@@ -294,19 +282,19 @@ func (ah *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (ah *Handler) handleProviderKeyBulkAction(w http.ResponseWriter, r *http.Request, route Route) {
+func (ah *Handler) handleProviderKeyBulkAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 		return
 	}
 
+	providerName := chi.URLParam(r, "provider")
 	var body KeyActionInput
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+	if !ah.decodeAndValidateJSON(w, r, &body) {
 		return
 	}
-	body.Keys = ah.providerSvc.ResolveKeyIdentifiers(route.ProviderName, body.Keys)
-	if err := ah.keyActionSvc.Apply(route.ProviderName, body); err != nil {
+	body.Keys = ah.providerSvc.ResolveKeyIdentifiers(providerName, body.Keys)
+	if err := ah.keyActionSvc.Apply(providerName, body); err != nil {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
@@ -318,12 +306,31 @@ func (ah *Handler) handleProviderKeyBulkAction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	keySnapshots, err := ah.providerSvc.GetKeySnapshots(route.ProviderName)
+	keySnapshots, err := ah.providerSvc.GetKeySnapshots(providerName)
 	if err != nil {
 		httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
 	httpapi.WriteJSONResponse(w, http.StatusOK, keySnapshots)
+}
+
+func (ah *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := render.DecodeJSON(r.Body, dst); err != nil {
+		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		return false
+	}
+	return true
+}
+
+func (ah *Handler) decodeAndValidateJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if !ah.decodeJSON(w, r, dst) {
+		return false
+	}
+	if err := ah.validate.Struct(dst); err != nil {
+		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "请求体无效")
+		return false
+	}
+	return true
 }
 
 func parseImportedKeys(raw string) []string {

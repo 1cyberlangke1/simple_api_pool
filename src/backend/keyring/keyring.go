@@ -4,12 +4,12 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
-	"math"
 	"sync"
 	"time"
 
 	"simple-api-pool/applog"
 	"simple-api-pool/config"
+	"simple-api-pool/domain"
 )
 
 type roundRobinState struct {
@@ -96,23 +96,13 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 
 	for _, kk := range p.Keys {
 		if kk.Value == keyValue {
-			fails := kk.ConsecutiveFails + 1
-			if fails >= p.FailThreshold {
-				disableStartFails := p.FailThreshold
-				if disableStartFails < 1 {
-					disableStartFails = 1
-				}
-				delay := float64(p.MinDisableSecs) * math.Pow(2, float64(fails-disableStartFails))
-				if delay > float64(p.MaxDisableSecs) {
-					delay = float64(p.MaxDisableSecs)
-				}
-				if err := k.cfg.UpdateKeyState(providerName, keyValue, time.Now().Unix()+int64(delay), fails); err != nil {
-					slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
-				}
-			} else {
-				if err := k.cfg.UpdateKeyState(providerName, keyValue, 0, fails); err != nil {
-					slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
-				}
+			nextState := domain.NextFailureState(time.Now().Unix(), kk.ConsecutiveFails, domain.DisablePolicy{
+				FailThreshold:  p.FailThreshold,
+				MinDisableSecs: p.MinDisableSecs,
+				MaxDisableSecs: p.MaxDisableSecs,
+			})
+			if err := k.cfg.UpdateKeyState(providerName, keyValue, nextState.DisabledUntil, nextState.ConsecutiveFails); err != nil {
+				slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
 			}
 			return
 		}

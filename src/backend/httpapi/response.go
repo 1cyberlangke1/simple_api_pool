@@ -7,17 +7,29 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/render"
 )
 
 func WriteJSONResponse(w http.ResponseWriter, statusCode int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
 	if payload == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
+
+	encodedPayload, err := json.Marshal(payload)
+	if err != nil {
 		log.Printf("write json response failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		render.JSON(w, &http.Request{}, map[string]string{"error": "生成 JSON 响应失败"})
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_, _ = w.Write(encodedPayload)
 }
 
 func WriteErrorResponse(w http.ResponseWriter, statusCode int, message string) {
@@ -47,7 +59,7 @@ func WriteOverviewResponse(w http.ResponseWriter, r *http.Request, payload any) 
 
 func BuildEntityTag(encodedPayload []byte) string {
 	digest := sha256.Sum256(encodedPayload)
-	return `"` + hex.EncodeToString(digest[:16]) + `"`
+	return `"` + hex.EncodeToString(digest[:]) + `"`
 }
 
 func MatchesEntityTag(rawHeader string, currentTag string) bool {

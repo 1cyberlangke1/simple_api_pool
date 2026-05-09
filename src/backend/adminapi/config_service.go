@@ -1,49 +1,45 @@
 package adminapi
 
 import (
-	"errors"
-	"strings"
-
 	"simple-api-pool/config"
+	svc "simple-api-pool/service"
 )
 
-var ErrAdminKeyRequired = errors.New("admin key required")
+var ErrAdminKeyRequired = svc.ErrAdminKeyRequired
 
 type ConfigService struct {
-	cfg *config.Config
+	globalConfigService *svc.GlobalConfigService
 }
 
 func NewConfigService(cfg *config.Config) *ConfigService {
-	return &ConfigService{cfg: cfg}
+	return &ConfigService{globalConfigService: svc.NewGlobalConfigService(cfg)}
 }
 
 type GlobalConfigUpdateInput struct {
-	AdminKey               *string   `json:"admin_key"`
-	TokenEstimationEnabled *bool     `json:"token_estimation_enabled"`
-	ClientKeys             *[]string `json:"client_keys"`
+	AdminKey               *string   `json:"admin_key" validate:"omitempty"`
+	TokenEstimationEnabled *bool     `json:"token_estimation_enabled" validate:"omitempty"`
+	ClientKeys             *[]string `json:"client_keys" validate:"omitempty,dive,required"`
 }
 
 func (service *ConfigService) Snapshot() GlobalConfigSnapshot {
-	globalConfig := service.cfg.AdminSettings()
-	return GlobalConfigSnapshot{
-		AdminKeyConfigured:     globalConfig.AdminKey != "",
-		TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
-		ClientKeyCount:         len(globalConfig.ClientKeys),
-	}
+	snapshot := service.globalConfigService.Snapshot()
+	return GlobalConfigSnapshot(snapshot)
 }
 
 func (service *ConfigService) Update(input GlobalConfigUpdateInput) (bool, error) {
-	if input.AdminKey != nil && strings.TrimSpace(*input.AdminKey) == "" {
-		return false, ErrAdminKeyRequired
-	}
-	if err := service.cfg.PatchGlobalConfig(input.AdminKey, input.TokenEstimationEnabled, input.ClientKeys); err != nil {
+	changedAdminKey, err := service.globalConfigService.Update(svc.GlobalConfigUpdateInput{
+		AdminKey:               input.AdminKey,
+		TokenEstimationEnabled: input.TokenEstimationEnabled,
+		ClientKeys:             input.ClientKeys,
+	})
+	if err != nil {
 		return false, err
 	}
-	snapshot := service.cfg.GlobalConfig()
+	snapshot := service.globalConfigService.Snapshot()
 	logAdminAudit("global_config_update",
-		"admin_key_changed", input.AdminKey != nil,
+		"admin_key_changed", changedAdminKey,
 		"token_estimation_enabled", snapshot.TokenEstimationEnabled,
-		"client_key_count", len(snapshot.ClientKeys),
+		"client_key_count", snapshot.ClientKeyCount,
 	)
-	return input.AdminKey != nil, nil
+	return changedAdminKey, nil
 }

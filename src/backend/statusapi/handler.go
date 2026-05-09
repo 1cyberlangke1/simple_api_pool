@@ -3,37 +3,42 @@ package statusapi
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"simple-api-pool/config"
 	"simple-api-pool/httpapi"
+	"simple-api-pool/service"
 	"simple-api-pool/stats"
 )
 
 type Handler struct {
-	cfg   *config.Config
-	stats *stats.Manager
+	cfg    *config.Config
+	stats  *stats.Manager
+	router chi.Router
 }
 
-type Snapshot struct {
-	SuccessCount  int64            `json:"success_count"`
-	ErrorCount    int64            `json:"error_count"`
-	InputTokens   int64            `json:"input_tokens"`
-	OutputTokens  int64            `json:"output_tokens"`
-	CacheTokens   int64            `json:"cache_tokens"`
-	CacheHits     int64            `json:"cache_hits"`
-	ErrorTypes    map[string]int64 `json:"error_types,omitempty"`
-	AvailableKeys int64            `json:"available_keys"`
-	TotalKeys     int64            `json:"total_keys"`
-}
+type Snapshot = service.ProviderStatusSnapshot
 
 func NewHandler(cfg *config.Config, sm *stats.Manager) *Handler {
-	return &Handler{cfg: cfg, stats: sm}
+	handler := &Handler{cfg: cfg, stats: sm}
+	handler.router = handler.newRouter()
+	return handler
 }
 
 func (sh *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/status/overview" {
-		httpapi.WriteOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
-		return
-	}
+	sh.router.ServeHTTP(w, r)
+}
 
-	httpapi.WriteJSONResponse(w, http.StatusOK, CollectProviderStatusSnapshots(sh.cfg, sh.stats))
+func (sh *Handler) newRouter() chi.Router {
+	router := chi.NewRouter()
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteErrorResponse(w, http.StatusNotFound, "接口不存在")
+	})
+	router.Get("/api/status/overview", func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
+	})
+	router.Get("/api/status/stats", func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteJSONResponse(w, http.StatusOK, CollectProviderStatusSnapshots(sh.cfg, sh.stats))
+	})
+	return router
 }
