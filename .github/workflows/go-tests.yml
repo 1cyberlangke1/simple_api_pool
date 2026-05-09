@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: backend
+        working-directory: src/backend
         shell: bash
     steps:
       - name: 检出代码
@@ -18,15 +18,15 @@ jobs:
       - name: 安装 Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          go-version-file: src/backend/go.mod
+          cache-dependency-path: src/backend/go.sum
 
       - name: 运行基础测试
         run: go test ./...
 
       - name: 输出覆盖率摘要
         run: |
-          go test ./tests -coverpkg='simple-api-pool/auth,simple-api-pool/cache,simple-api-pool/config,simple-api-pool/handler,simple-api-pool/keyring,simple-api-pool/stats,simple-api-pool/store,simple-api-pool/token' -coverprofile=coverage_profile
+          go test ./tests -coverpkg='./adminapi,./app,./auth,./cache,./config,./keyring,./providerapi,./proxyapi,./stats,./store,./token,./webui' -coverprofile=coverage_profile
           go tool cover -func=coverage_profile
 
       - name: 校验覆盖率下限

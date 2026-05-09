@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: backend
+        working-directory: src/backend
         shell: bash
     steps:
       - name: 检出代码
@@ -18,8 +18,8 @@ jobs:
       - name: 安装 Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          go-version-file: src/backend/go.mod
+          cache-dependency-path: src/backend/go.sum
 
       - name: 运行后端测试
         run: go test ./...
