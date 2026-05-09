@@ -15,7 +15,7 @@ ENV PATH=/usr/local/go/bin:${PATH}
 
 RUN apk add --no-cache ca-certificates tar wget
 
-WORKDIR /src/backend
+WORKDIR /src/src/backend
 
 RUN case "${BUILDARCH}" in \
         amd64) expected_sha256="${GO_TARBALL_SHA256:-031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a}" ;; \
@@ -28,16 +28,16 @@ RUN case "${BUILDARCH}" in \
     && tar -C /usr/local -xzf /tmp/go.tgz \
     && rm /tmp/go.tgz
 
-COPY backend/go.mod backend/go.sum ./
+COPY src/backend/go.mod src/backend/go.sum ./
 RUN go mod download
 
-COPY backend/ ./
-COPY frontend/ /src/frontend/
+COPY src/backend/ ./
+COPY src/frontend/ /src/src/frontend/
 COPY scripts/ /src/scripts/
 
 RUN go run /src/scripts/build_frontend.go -root /src \
     && mkdir -p /out/frontend \
-    && cp -R /src/frontend/. /out/frontend/ \
+    && cp -R /src/src/frontend/. /out/frontend/ \
     && sed -i \
         -e "s|__APP_VERSION__|${APP_VERSION}|g" \
         -e "s|__APP_REVISION__|${APP_REVISION}|g" \

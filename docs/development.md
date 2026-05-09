@@ -5,10 +5,10 @@
 ## 目录结构
 
 ```text
-backend/        Go 后端
-backend/tests/  后端测试
-frontend/       前端产物目录
-frontend/src/   前端模板、样式、脚本和 i18n 源文件
+src/backend/        Go 后端
+src/backend/tests/  后端测试
+src/frontend/       前端产物目录
+src/frontend/src/   前端模板、样式、脚本和 i18n 源文件
 scripts/        检查脚本与前端构建脚本
 data/           运行时数据目录
 ```
@@ -18,10 +18,10 @@ data/           运行时数据目录
 前端最终交付文件是：
 
 ```text
-frontend/index.html
+src/frontend/index.html
 ```
 
-源码位于 `frontend/src/`。如果你改了模板、样式或脚本，需要重新生成产物：
+源码位于 `src/frontend/src/`。如果你改了模板、样式或脚本，需要重新生成产物：
 
 ```bash
 go run ./scripts/build_frontend.go -root .
@@ -31,7 +31,7 @@ Docker 构建会自动执行这一步。
 
 ## 测试
 
-测试统一放在 `backend/tests/`。
+测试统一放在 `src/backend/tests/`。
 
 当前覆盖重点包括：
 
@@ -50,7 +50,7 @@ Docker 构建会自动执行这一步。
 运行全部测试：
 
 ```bash
-cd backend
+cd src/backend
 go test ./...
 ```
 

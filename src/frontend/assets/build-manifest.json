@@ -1,0 +1,33 @@
+{
+  "version": "v0.1.32-dirty",
+  "revision": "13a05e8",
+  "build_time": "2026-05-09T07:12:10Z",
+  "asset_version": "13a05e8-2026-05-09T07-12-10Z",
+  "frontend_root": "src/frontend",
+  "source_dir": "src/frontend/src",
+  "assets": [
+    "/assets/actions/polling_actions.js",
+    "/assets/api.js",
+    "/assets/app.js",
+    "/assets/boot.js",
+    "/assets/core.js",
+    "/assets/features/providers/config_panel_view.js",
+    "/assets/features/providers/disable_duration_model.js",
+    "/assets/features/providers/key_panel_view.js",
+    "/assets/features/providers/provider_actions.js",
+    "/assets/features/providers/provider_events.js",
+    "/assets/features/providers/provider_form_state.js",
+    "/assets/features/providers/provider_renderer.js",
+    "/assets/i18n.js",
+    "/assets/services/admin_service.js",
+    "/assets/services/status_service.js",
+    "/assets/state.js",
+    "/assets/store/app_store.js",
+    "/assets/store/provider_store.js",
+    "/assets/store/ui_store.js",
+    "/assets/styles.css",
+    "/assets/views/logs_view.js",
+    "/assets/views/provider_view.js",
+    "/assets/views/status_view.js"
+  ]
+}

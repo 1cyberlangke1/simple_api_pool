@@ -32,6 +32,9 @@ local-logs/
 backend/coverage
 backend/coverage.out
 backend/coverage_profile
+src/backend/coverage
+src/backend/coverage.out
+src/backend/coverage_profile
 
 # Env
 .env
@@ -39,3 +42,6 @@ backend/coverage_profile
 
 # Local planning docs
 docs/superpowers/
+task_plan.md
+findings.md
+progress.md

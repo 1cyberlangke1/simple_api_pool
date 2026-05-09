@@ -326,7 +326,7 @@ docker compose up -d
 ### 1. 进入后端目录
 
 ```bash
-cd backend
+cd src/backend
 ```
 
 ### 2. 设置环境变量
