@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Edit3,
@@ -26,8 +27,9 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AdminKeySnapshot, AdminProviderSnapshot } from "@/lib/admin";
+import { buildBulkDisableRequest, collectProviderRecentErrors } from "@/lib/admin";
 import { formatDateTime, formatDisabledUntil, formatErrorRate, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
-import { useAdminOverview, type AdminTab, type BulkMode } from "@/hooks/useAdminOverview";
+import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
 import { useAppStore } from "@/store/appStore";
 
 const providerTypeOptions = ["openai_chat", "openai_responses", "claude", "gemini"] as const;
@@ -47,7 +49,10 @@ const sectionVariants = {
 function getProviderTone(
   providerStats: Record<string, number> | undefined,
   providerSnapshot: AdminProviderSnapshot | null
-) {
+): {
+  badgeVariant: "destructive" | "success" | "warning";
+  statusLabel: "error" | "ok" | "warning";
+} {
   const availableKeys = Number(providerStats?.available_keys || 0);
   const totalKeys = Number(providerStats?.total_keys || providerSnapshot?.keys?.length || 0);
   const successCount = Number(providerStats?.success_count || 0);
@@ -77,6 +82,63 @@ function readLogLevel(entry: Record<string, unknown>) {
     return level;
   }
   return "INFO";
+}
+
+function toDateTimeLocalValue(timestampMs: number) {
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function formatDurationLabel(totalSeconds: number) {
+  if (totalSeconds % 3600 === 0) {
+    return `${totalSeconds / 3600}h`;
+  }
+  if (totalSeconds % 60 === 0) {
+    return `${totalSeconds / 60}m`;
+  }
+  return `${totalSeconds}s`;
+}
+
+function createDisablePresetSeconds(bounds: { max: number; min: number }) {
+  const presetCandidates = [bounds.min, 300, 600, 1800, 3600, 21600, bounds.max];
+  const presetValues = new Set<number>();
+  for (let index = 0; index < presetCandidates.length; index += 1) {
+    const value = presetCandidates[index];
+    if (value < bounds.min || value > bounds.max) {
+      continue;
+    }
+    presetValues.add(value);
+  }
+  return Array.from(presetValues).sort(function sortDisablePreset(left, right) {
+    return left - right;
+  });
+}
+
+function ProviderStatusCapsule(props: {
+  status: "error" | "ok" | "warning";
+}) {
+  const className =
+    props.status === "error"
+      ? "border-destructive/30 bg-destructive/12 text-destructive"
+      : props.status === "warning"
+        ? "border-warning/40 bg-warning/15 text-warning"
+        : "border-emerald-500/25 bg-emerald-500/12 text-emerald-600 dark:text-emerald-300";
+
+  return (
+    <div
+      className={`inline-flex h-8 w-[92px] items-center justify-center rounded-full border text-center text-[11px] font-semibold uppercase tracking-[0.24em] ${className}`}
+    >
+      {props.status}
+    </div>
+  );
 }
 
 function ProviderField(props: {
@@ -249,6 +311,10 @@ function ProviderDialogBody(props: {
 }
 
 export function AdminPage() {
+  const [bulkDisableDialogOpen, setBulkDisableDialogOpen] = useState(false);
+  const [bulkDisableMode, setBulkDisableMode] = useState<"duration" | "forever" | "until">("duration");
+  const [bulkDisableSeconds, setBulkDisableSeconds] = useState(3600);
+  const [bulkDisableUntil, setBulkDisableUntil] = useState("");
   const language = useAppStore(function selectLanguage(state) {
     return state.language;
   });
@@ -266,11 +332,28 @@ export function AdminPage() {
     ? state.globalDraft.client_keys.length
     : Number(state.overview.global_config.client_key_count || 0);
   const canSaveAdminKey = state.globalAdminKeyDirty && String(state.globalDraft.admin_key || "").trim() !== "";
-  const canSaveClientKeys = state.globalConfigLoaded && state.globalSettingsDirty && !state.globalConfigPending;
   const activeKeyCount = formatNumber(derived.selectedProviderStats.available_keys || 0);
   const totalKeyCount = formatNumber(derived.selectedProviderStats.total_keys || selectedProviderKeys.length);
   const logPreview = derived.filteredLogs.slice(Math.max(derived.filteredLogs.length - 10, 0));
   const providerDialogDraft = state.providerDialogMode === "create" ? state.createProviderDraft : state.providerDraft;
+  const disablePresetSeconds = useMemo(function computeDisablePresetSeconds() {
+    return createDisablePresetSeconds(derived.disableBounds);
+  }, [derived.disableBounds]);
+  const providerRecentErrors = useMemo(function computeProviderRecentErrors() {
+    const sourceLogs = state.overview.recent_logs || [];
+    const errorMap: Record<string, ReturnType<typeof collectProviderRecentErrors>> = {};
+    for (let index = 0; index < state.overview.providers.length; index += 1) {
+      const providerName = state.overview.providers[index].name;
+      errorMap[providerName] = collectProviderRecentErrors(sourceLogs, providerName, 2);
+    }
+    return errorMap;
+  }, [state.overview.providers, state.overview.recent_logs]);
+
+  useEffect(function syncBulkDisableDraft() {
+    const nextSeconds = Math.min(Math.max(3600, derived.disableBounds.min), derived.disableBounds.max);
+    setBulkDisableSeconds(nextSeconds);
+    setBulkDisableUntil(toDateTimeLocalValue(Date.now() + nextSeconds * 1000));
+  }, [derived.disableBounds.max, derived.disableBounds.min, selectedProviderName]);
 
   if (!state.checkedAuth && state.pending) {
     return (
@@ -437,11 +520,17 @@ export function AdminPage() {
 
               <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
                 <div className="space-y-0.5">
-                  <Label className="text-base">{translate("admin.tokenEstimation")}</Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-base">{translate("admin.tokenEstimation")}</Label>
+                    {state.tokenEstimationPending ? (
+                      <Badge variant="outline">{translate("message.saving")}</Badge>
+                    ) : null}
+                  </div>
                   <p className="text-sm text-muted-foreground">{translate("admin.globalTokenHint")}</p>
                 </div>
                 <Switch
                   checked={Boolean(state.globalDraft.token_estimation_enabled)}
+                  disabled={state.tokenEstimationPending}
                   onCheckedChange={function handleTokenEstimationChange(checked) {
                     actions.setTokenEstimationEnabled(checked);
                   }}
@@ -455,7 +544,7 @@ export function AdminPage() {
                     <p className="text-sm text-muted-foreground">{translate("admin.clientKeysHint")}</p>
                   </div>
                   <Button
-                    disabled={state.globalConfigPending && !state.globalConfigLoaded}
+                    disabled={state.globalConfigPending && !state.globalConfigLoaded || state.clientKeysPending}
                     onClick={actions.addClientKey}
                     size="sm"
                     type="button"
@@ -486,6 +575,7 @@ export function AdminPage() {
                           <div className="flex items-center gap-2" key={`client-key-${index}`}>
                             <Input
                               autoComplete="off"
+                              disabled={state.clientKeysPending}
                               onChange={function handleClientKeyChange(event) {
                                 actions.updateClientKey(index, event.target.value);
                               }}
@@ -494,6 +584,7 @@ export function AdminPage() {
                             />
                             <Button
                               aria-label={translate("action.delete")}
+                              disabled={state.clientKeysPending}
                               onClick={function handleClientKeyDelete() {
                                 actions.removeClientKey(index);
                               }}
@@ -510,18 +601,11 @@ export function AdminPage() {
                   </>
                 ) : null}
 
-                <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-muted-foreground">{translate("admin.clientKeysSaveHint")}</p>
-                  <Button
-                    disabled={!canSaveClientKeys}
-                    onClick={function handleSaveGlobalSettings() {
-                      void actions.saveGlobalSettings();
-                    }}
-                    type="button"
-                  >
-                    {translate("admin.saveClientKeys")}
-                  </Button>
-                </div>
+                {state.clientKeysPending ? (
+                  <div className="flex items-center justify-end border-t pt-4">
+                    <Badge variant="outline">{translate("message.saving")}</Badge>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-4 md:flex-row md:items-center md:justify-between">
@@ -583,6 +667,7 @@ export function AdminPage() {
                 const isSelected = providerSnapshot.name === selectedProviderName;
                 const totalKeys = Number(stats.total_keys || providerSnapshot.keys.length);
                 const availableKeys = Number(stats.available_keys || 0);
+                const recentErrors = providerRecentErrors[providerSnapshot.name] || [];
 
                 return (
                   <Card className={isSelected ? "border-primary/50 shadow-md" : undefined} key={providerSnapshot.name}>
@@ -598,7 +683,7 @@ export function AdminPage() {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant={tone.badgeVariant}>{tone.statusLabel}</Badge>
+                          <ProviderStatusCapsule status={tone.statusLabel} />
                           <Button
                             onClick={function handleKeysNavigate() {
                               actions.selectProvider(providerSnapshot.name);
@@ -748,6 +833,38 @@ export function AdminPage() {
                           </strong>
                         </div>
                       </div>
+                      <div className="mt-4 rounded-xl border bg-background/70 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {translate("provider.recentErrors")}
+                          </span>
+                          {recentErrors.length > 0 ? (
+                            <span className="font-mono text-xs text-muted-foreground">{formatNumber(recentErrors.length)}</span>
+                          ) : null}
+                        </div>
+                        {recentErrors.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">{translate("provider.noRecentErrors")}</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {recentErrors.map(function renderProviderError(entry) {
+                              return (
+                                <div className="rounded-lg border bg-muted/30 px-3 py-2" key={`${entry.time}-${entry.path}-${entry.status}`}>
+                                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                    <span>{entry.time ? formatDateTime(entry.time, language) : "-"}</span>
+                                    {entry.status > 0 ? (
+                                      <Badge variant="destructive">{entry.status}</Badge>
+                                    ) : null}
+                                    {entry.path ? (
+                                      <code className="rounded bg-background px-1.5 py-0.5 text-[11px] text-foreground">{entry.path}</code>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-2 text-sm text-foreground">{entry.message || "-"}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 );
@@ -841,32 +958,6 @@ export function AdminPage() {
                       >
                         {translate("action.clearSelected")}
                       </Button>
-                      <Select
-                        onValueChange={function handleBulkModeChange(value) {
-                          actions.setBulkMode(value as BulkMode);
-                        }}
-                        value={state.bulkMode}
-                      >
-                        <SelectTrigger className="bulk-disable-mode w-[180px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="disable_until">{translate("admin.bulkModeTimed")}</SelectItem>
-                          <SelectItem value="disable_forever">{translate("admin.bulkModeForever")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {state.bulkMode === "disable_until" ? (
-                        <Input
-                          className="bulk-disable-seconds w-[140px]"
-                          max={derived.disableBounds.max}
-                          min={derived.disableBounds.min}
-                          onChange={function handleBulkSecondsChange(event) {
-                            actions.setBulkSeconds(Number(event.target.value || 0));
-                          }}
-                          type="number"
-                          value={String(state.bulkSeconds)}
-                        />
-                      ) : null}
                       <Button
                         disabled={state.selectedKeyRefs.length === 0}
                         onClick={function handleBulkEnable() {
@@ -878,8 +969,12 @@ export function AdminPage() {
                       </Button>
                       <Button
                         disabled={state.selectedKeyRefs.length === 0}
-                        onClick={function handleBulkDisable() {
-                          void actions.applyBulkAction("disable");
+                        onClick={function handleBulkDisableDialogOpen() {
+                          const nextSeconds = Math.min(Math.max(3600, derived.disableBounds.min), derived.disableBounds.max);
+                          setBulkDisableMode("duration");
+                          setBulkDisableSeconds(nextSeconds);
+                          setBulkDisableUntil(toDateTimeLocalValue(Date.now() + nextSeconds * 1000));
+                          setBulkDisableDialogOpen(true);
                         }}
                         size="sm"
                         variant="secondary"
@@ -901,11 +996,6 @@ export function AdminPage() {
 
                   <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
                     {translate("provider.selectedCount", { count: state.selectedKeyRefs.length })}
-                    {" · "}
-                    {translate("admin.bulkDisableRange", {
-                      max: derived.disableBounds.max,
-                      min: derived.disableBounds.min
-                    })}
                   </div>
 
                   <div className="overflow-x-auto rounded-lg border">
@@ -1211,6 +1301,149 @@ export function AdminPage() {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        onOpenChange={function handleBulkDisableDialogChange(open) {
+          setBulkDisableDialogOpen(open);
+        }}
+        open={bulkDisableDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{translate("admin.bulkDisableTitle")}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="bulk-disable-mode grid gap-2 sm:grid-cols-3">
+              <Button
+                onClick={function handleSelectDurationMode() {
+                  setBulkDisableMode("duration");
+                }}
+                type="button"
+                variant={bulkDisableMode === "duration" ? "default" : "outline"}
+              >
+                {translate("admin.bulkModeTimed")}
+              </Button>
+              <Button
+                onClick={function handleSelectUntilMode() {
+                  setBulkDisableMode("until");
+                }}
+                type="button"
+                variant={bulkDisableMode === "until" ? "default" : "outline"}
+              >
+                {translate("admin.bulkModeUntil")}
+              </Button>
+              <Button
+                onClick={function handleSelectForeverMode() {
+                  setBulkDisableMode("forever");
+                }}
+                type="button"
+                variant={bulkDisableMode === "forever" ? "default" : "outline"}
+              >
+                {translate("admin.bulkModeForever")}
+              </Button>
+            </div>
+
+            {bulkDisableMode === "duration" ? (
+              <div className="space-y-4 rounded-xl border bg-muted/20 p-4">
+                <div className="flex flex-wrap gap-2">
+                  {disablePresetSeconds.map(function renderDisablePreset(seconds) {
+                    return (
+                      <Button
+                        key={seconds}
+                        onClick={function handlePresetClick() {
+                          setBulkDisableSeconds(seconds);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant={bulkDisableSeconds === seconds ? "default" : "outline"}
+                      >
+                        {formatDurationLabel(seconds)}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-3">
+                  <input
+                    className="bulk-disable-seconds w-full accent-primary"
+                    max={derived.disableBounds.max}
+                    min={derived.disableBounds.min}
+                    onChange={function handleDisableSecondsChange(event) {
+                      setBulkDisableSeconds(Number(event.target.value || derived.disableBounds.min));
+                    }}
+                    step={Math.max(1, Math.floor((derived.disableBounds.max - derived.disableBounds.min) / 48))}
+                    type="range"
+                    value={bulkDisableSeconds}
+                  />
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{translate("admin.bulkDisableFor")}</span>
+                    <strong className="font-mono">{formatDurationLabel(bulkDisableSeconds)}</strong>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {bulkDisableMode === "until" ? (
+              <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                <Label htmlFor="bulk-disable-until">{translate("admin.bulkDisableAt")}</Label>
+                <Input
+                  id="bulk-disable-until"
+                  onChange={function handleBulkDisableUntilChange(event) {
+                    setBulkDisableUntil(event.target.value);
+                  }}
+                  type="datetime-local"
+                  value={bulkDisableUntil}
+                />
+              </div>
+            ) : null}
+
+            {bulkDisableMode === "forever" ? (
+              <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+                {translate("provider.permanent")}
+              </div>
+            ) : null}
+
+            <div className="rounded-lg border bg-background px-4 py-3 text-sm text-muted-foreground">
+              {translate("provider.selectedCount", { count: state.selectedKeyRefs.length })}
+              {" · "}
+              {translate("admin.bulkDisableRange", {
+                max: derived.disableBounds.max,
+                min: derived.disableBounds.min
+              })}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={function handleCloseBulkDisableDialog() {
+                setBulkDisableDialogOpen(false);
+              }}
+              type="button"
+              variant="outline"
+            >
+              {translate("action.cancel")}
+            </Button>
+            <Button
+              disabled={bulkDisableMode === "until" && !bulkDisableUntil}
+              onClick={function handleConfirmBulkDisable() {
+                const disablePayload = buildBulkDisableRequest(
+                  bulkDisableMode === "forever"
+                    ? { mode: "forever" }
+                    : bulkDisableMode === "until"
+                      ? { mode: "until", until: bulkDisableUntil }
+                      : { mode: "duration", seconds: bulkDisableSeconds },
+                  state.providerDraft || selectedProvider
+                );
+                setBulkDisableDialogOpen(false);
+                void actions.applyBulkAction("disable", disablePayload);
+              }}
+              type="button"
+            >
+              {translate("action.disableSelected")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </motion.div>

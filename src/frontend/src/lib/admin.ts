@@ -33,6 +33,18 @@ export interface AdminOverview {
   recent_logs: Array<Record<string, unknown>>;
 }
 
+export interface ProviderRecentError {
+  message: string;
+  path: string;
+  status: number;
+  time: string;
+}
+
+export type BulkDisableDraft =
+  | { mode: "forever" }
+  | { mode: "duration"; seconds: number }
+  | { mode: "until"; until: string };
+
 export function createEmptyAdminOverview(): AdminOverview {
   return {
     health: { status: "unknown" },
@@ -120,6 +132,75 @@ export function normalizeBulkSeconds(bulkSeconds: unknown, providerDraft: Partia
   const bounds = getDisableBounds(providerDraft);
   const fallbackValue = clamp(3600, bounds.min, bounds.max);
   return clamp(toInteger(bulkSeconds, fallbackValue), bounds.min, bounds.max);
+}
+
+export function buildBulkDisableRequest(
+  draft: BulkDisableDraft,
+  providerDraft: Partial<AdminProviderSnapshot> | null,
+  nowMs = Date.now()
+) {
+  if (draft.mode === "forever") {
+    return {
+      action: "disable_forever"
+    };
+  }
+
+  if (draft.mode === "duration") {
+    return {
+      action: "disable_until",
+      disable_seconds: normalizeBulkSeconds(draft.seconds, providerDraft)
+    };
+  }
+
+  const targetMs = Date.parse(String(draft.until || ""));
+  const fallbackSeconds = getDisableBounds(providerDraft).min;
+  const disableSeconds = Number.isFinite(targetMs)
+    ? Math.ceil((targetMs - nowMs) / 1000)
+    : fallbackSeconds;
+
+  return {
+    action: "disable_until",
+    disable_seconds: normalizeBulkSeconds(disableSeconds, providerDraft)
+  };
+}
+
+export function collectProviderRecentErrors(
+  logs: Array<Record<string, unknown>>,
+  providerName: string,
+  limit = 2
+): ProviderRecentError[] {
+  if (!providerName || !Array.isArray(logs) || limit <= 0) {
+    return [];
+  }
+
+  const normalizedProviderName = providerName.trim().toLowerCase();
+  const matchedErrors: ProviderRecentError[] = [];
+
+  for (let index = 0; index < logs.length; index += 1) {
+    const entry = logs[index];
+    if (!entry || String(entry.level || "").toUpperCase() !== "ERROR") {
+      continue;
+    }
+
+    const attrs = typeof entry.attrs === "object" && entry.attrs ? entry.attrs as Record<string, unknown> : {};
+    const entryProviderName = String(attrs.provider || attrs.provider_name || "").trim().toLowerCase();
+    if (entryProviderName !== normalizedProviderName) {
+      continue;
+    }
+
+    matchedErrors.push({
+      message: String(attrs.error || entry.msg || "").trim(),
+      path: String(attrs.path || ""),
+      status: toInteger(attrs.upstream_status ?? attrs.status, 0),
+      time: String(entry.time || "")
+    });
+
+    if (matchedErrors.length >= limit) {
+      return matchedErrors;
+    }
+  }
+
+  return matchedErrors;
 }
 
 export function isPanelRequestLog(entry: Record<string, unknown> | null | undefined) {

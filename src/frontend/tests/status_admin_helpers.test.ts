@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { normalizeErrorMessage, shouldIgnoreRuntimeFailure } from "@/api.js";
 import {
+  buildBulkDisableRequest,
   chooseSelectedProviderName,
+  collectProviderRecentErrors,
   filterSelectedRefs,
   getDisableBounds,
   isPanelRequestLog,
@@ -66,11 +68,13 @@ describe("status helpers", function () {
     expect(cards[0].type).toBe("claude");
   });
 
-  it("会把常见供应商标识映射到 tmp/zip 同款 icon key，并支持模糊匹配与协议兜底", function () {
+  it("会优先按 @lobehub/icons 支持集匹配供应商 icon，再做模糊匹配与协议兜底", function () {
     expect(resolveProviderIconName(["openai_chat", "OpenAI GPT-4"])).toBe("openai");
     expect(resolveProviderIconName(["responses", "OpenAI Responses"])).toBe("openai");
     expect(resolveProviderIconName(["claude", "Anthropic Claude"])).toBe("anthropic");
     expect(resolveProviderIconName(["gemini", "Google Gemini"])).toBe("google");
+    expect(resolveProviderIconName(["custom", "longcat"])).toBe("longcat");
+    expect(resolveProviderIconName(["custom", "Long Cat Mirror"])).toBe("longcat");
     expect(resolveProviderIconName(["custom", "Claude Sonnet 4 Mirror"])).toBe("anthropic");
     expect(resolveProviderIconName(["openai_responses", "Acme Router"])).toBe("openai");
   });
@@ -128,6 +132,89 @@ describe("admin helpers", function () {
       max_disable_secs: 120,
       min_disable_secs: 30
     } as never)).toBe(30);
+  });
+
+  it("会为永久、时长和指定时间三种禁用方式构造请求载荷", function () {
+    expect(buildBulkDisableRequest({
+      mode: "forever"
+    }, {
+      max_disable_secs: 3600,
+      min_disable_secs: 60
+    } as never, Date.UTC(2026, 4, 10, 12, 0, 0))).toEqual({
+      action: "disable_forever"
+    });
+
+    expect(buildBulkDisableRequest({
+      mode: "duration",
+      seconds: 99999
+    }, {
+      max_disable_secs: 3600,
+      min_disable_secs: 60
+    } as never, Date.UTC(2026, 4, 10, 12, 0, 0))).toEqual({
+      action: "disable_until",
+      disable_seconds: 3600
+    });
+
+    expect(buildBulkDisableRequest({
+      mode: "until",
+      until: "2026-05-10T12:45"
+    }, {
+      max_disable_secs: 7200,
+      min_disable_secs: 60
+    } as never, new Date("2026-05-10T12:00:00").getTime())).toEqual({
+      action: "disable_until",
+      disable_seconds: 2700
+    });
+  });
+
+  it("会按提供商提取最近错误记录", function () {
+    const errors = collectProviderRecentErrors([
+      {
+        attrs: {
+          error: "quota exceeded",
+          path: "/openai/v1/chat/completions",
+          provider: "openai",
+          upstream_status: 429
+        },
+        level: "ERROR",
+        msg: "proxy_request",
+        time: "2026-05-10T12:02:00Z"
+      },
+      {
+        attrs: {
+          provider: "gemini"
+        },
+        level: "INFO",
+        msg: "proxy_request",
+        time: "2026-05-10T12:01:00Z"
+      },
+      {
+        attrs: {
+          error: "upstream timeout",
+          path: "/openai/v1/models",
+          provider: "openai",
+          status: 504
+        },
+        level: "ERROR",
+        msg: "proxy_request",
+        time: "2026-05-10T12:00:00Z"
+      }
+    ], "openai", 2);
+
+    expect(errors).toEqual([
+      {
+        message: "quota exceeded",
+        path: "/openai/v1/chat/completions",
+        status: 429,
+        time: "2026-05-10T12:02:00Z"
+      },
+      {
+        message: "upstream timeout",
+        path: "/openai/v1/models",
+        status: 504,
+        time: "2026-05-10T12:00:00Z"
+      }
+    ]);
   });
 
   it("会识别面板自身请求日志", function () {

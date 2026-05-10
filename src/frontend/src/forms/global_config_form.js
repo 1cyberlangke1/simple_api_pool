@@ -7,7 +7,10 @@ const adminKeySchema = v.object({
 });
 
 const globalSettingsSchema = v.object({
-  client_keys: v.array(v.string()),
+  client_keys: v.array(v.string())
+});
+
+const tokenEstimationSchema = v.object({
   token_estimation_enabled: v.boolean()
 });
 
@@ -34,9 +37,21 @@ export function buildAdminKeyPayload(globalDraft) {
   });
 }
 
-export function buildGlobalSettingsPayload(globalDraft) {
+export function buildClientKeysPayload(globalDraft) {
   return v.parse(globalSettingsSchema, {
-    client_keys: normalizeClientKeys(globalDraft.client_keys),
+    client_keys: normalizeClientKeys(globalDraft.client_keys)
+  });
+}
+
+export function buildTokenEstimationPayload(globalDraft) {
+  return v.parse(tokenEstimationSchema, {
     token_estimation_enabled: Boolean(globalDraft.token_estimation_enabled)
   });
+}
+
+export function buildGlobalSettingsPayload(globalDraft) {
+  return {
+    ...buildClientKeysPayload(globalDraft),
+    ...buildTokenEstimationPayload(globalDraft)
+  };
 }

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAdminKeyPayload,
-  buildGlobalSettingsPayload,
+  buildClientKeysPayload,
+  buildTokenEstimationPayload,
   createGlobalDraft
 } from "@/forms/global_config_form.js";
 
@@ -30,20 +31,24 @@ describe("global config form helpers", function () {
     });
   });
 
-  it("会构造客户端密钥与 token 估算的保存载荷，并允许清空旧 key", function () {
-    expect(buildGlobalSettingsPayload({
+  it("会单独构造客户端密钥保存载荷，并允许清空旧 key", function () {
+    expect(buildClientKeysPayload({
       client_keys: [" alpha ", "", "beta", "alpha"],
-      token_estimation_enabled: false
     })).toEqual({
-      client_keys: ["alpha", "beta"],
-      token_estimation_enabled: false
+      client_keys: ["alpha", "beta"]
     });
 
-    expect(buildGlobalSettingsPayload({
-      client_keys: [],
+    expect(buildClientKeysPayload({
+      client_keys: []
+    })).toEqual({
+      client_keys: []
+    });
+  });
+
+  it("会单独构造 token 估算开关保存载荷", function () {
+    expect(buildTokenEstimationPayload({
       token_estimation_enabled: true
     })).toEqual({
-      client_keys: [],
       token_estimation_enabled: true
     });
   });
