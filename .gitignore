@@ -36,6 +36,7 @@ backend/coverage_profile
 src/backend/coverage
 src/backend/coverage.out
 src/backend/coverage_profile
+test-results/
 
 # Env
 .env
