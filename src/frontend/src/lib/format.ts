@@ -1,3 +1,5 @@
+import { permanentDisabledUntilThreshold } from "@/lib/admin";
+
 export function formatNumber(value: unknown) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
 }
@@ -49,13 +51,14 @@ export function isPermanentDisableValue(rawValue: unknown) {
   if (!Number.isFinite(numericValue)) {
     return false;
   }
-  return numericValue >= 32503680000;
+  return numericValue >= permanentDisabledUntilThreshold;
 }
 
 export function formatDisabledUntil(
   rawValue: unknown,
   language: "en" | "zh",
-  translate: (key: string, params?: Record<string, unknown>) => string
+  translate: (key: string, params?: Record<string, unknown>) => string,
+  nowMs = Date.now()
 ) {
   if (rawValue === null || rawValue === undefined || rawValue === "" || Number(rawValue) <= 0) {
     return translate("provider.notDisabled");
@@ -66,6 +69,9 @@ export function formatDisabledUntil(
   const date = new Date(Number(rawValue) * 1000);
   if (Number.isNaN(date.getTime())) {
     return translate("provider.invalidDisabledUntil");
+  }
+  if (date.getTime() <= nowMs) {
+    return translate("provider.notDisabled");
   }
   return date.toLocaleString(language === "en" ? "en-US" : "zh-CN", { hour12: false });
 }

@@ -110,3 +110,7 @@ export function buildErrorTypeSummaries(snapshot: ProviderStatusSnapshot, limit 
       return `${entry.code} × ${entry.count}`;
     });
 }
+
+export function buildErrorTypeSummaryClassName() {
+  return "inline-flex min-h-7 items-center rounded-full border border-destructive/25 bg-destructive/10 px-2.5 py-1 font-mono text-xs text-destructive dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+}

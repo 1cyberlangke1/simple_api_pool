@@ -73,6 +73,7 @@ export type BulkDisableDraft =
 
 export const adminLogCacheStorageKey = "admin-log-cache-v1";
 export const adminLogCacheMaxEntries = 100;
+export const permanentDisabledUntilThreshold = 32503680000;
 
 export function createEmptyAdminOverview(): AdminOverview {
   return {
@@ -138,6 +139,146 @@ export function filterSelectedRefs(selectedRefs: string[], providerSnapshot: Adm
   return selectedRefs.filter(function keepExistingRef(keyRef) {
     return validRefs.has(keyRef);
   });
+}
+
+export function isKeyDisabledAt(rawValue: unknown, nowUnix = Math.floor(Date.now() / 1000)) {
+  if (rawValue === null || rawValue === undefined || rawValue === "") {
+    return false;
+  }
+
+  const disabledUntil = Number(rawValue);
+  if (!Number.isFinite(disabledUntil) || disabledUntil <= 0) {
+    return false;
+  }
+  if (disabledUntil >= permanentDisabledUntilThreshold) {
+    return true;
+  }
+  return disabledUntil > nowUnix;
+}
+
+export function countAvailableProviderKeys(keys: AdminKeySnapshot[], nowUnix = Math.floor(Date.now() / 1000)) {
+  let availableKeyCount = 0;
+  for (let index = 0; index < keys.length; index += 1) {
+    if (!isKeyDisabledAt(keys[index].disabled_until, nowUnix)) {
+      availableKeyCount += 1;
+    }
+  }
+  return availableKeyCount;
+}
+
+export function replaceProviderKeysInOverview(
+  overview: AdminOverview,
+  providerName: string,
+  nextKeys: AdminKeySnapshot[],
+  nowUnix = Math.floor(Date.now() / 1000)
+) {
+  let matchedProvider = false;
+  const providers = (overview.providers || []).map(function replaceProviderKeys(providerSnapshot) {
+    if (providerSnapshot.name !== providerName) {
+      return providerSnapshot;
+    }
+    matchedProvider = true;
+    return {
+      ...providerSnapshot,
+      keys: nextKeys.slice()
+    };
+  });
+
+  if (!matchedProvider) {
+    return overview;
+  }
+
+  return {
+    ...overview,
+    providers,
+    provider_stats: {
+      ...overview.provider_stats,
+      [providerName]: {
+        ...(overview.provider_stats[providerName] || {}),
+        available_keys: countAvailableProviderKeys(nextKeys, nowUnix),
+        total_keys: nextKeys.length
+      }
+    }
+  };
+}
+
+export function removeProviderKeyFromOverview(
+  overview: AdminOverview,
+  providerName: string,
+  keyRef: string,
+  nowUnix = Math.floor(Date.now() / 1000)
+) {
+  const providerSnapshot = getProviderByName(overview.providers || [], providerName);
+  if (!providerSnapshot) {
+    return overview;
+  }
+
+  return replaceProviderKeysInOverview(
+    overview,
+    providerName,
+    (providerSnapshot.keys || []).filter(function keepProviderKey(keySnapshot) {
+      return keySnapshot.ref !== keyRef;
+    }),
+    nowUnix
+  );
+}
+
+export function syncProviderKeyAvailability(overview: AdminOverview, nowUnix = Math.floor(Date.now() / 1000)) {
+  let statsChanged = false;
+  const nextProviderStats = { ...overview.provider_stats };
+  const providers = overview.providers || [];
+
+  for (let index = 0; index < providers.length; index += 1) {
+    const providerSnapshot = providers[index];
+    const nextAvailableKeyCount = countAvailableProviderKeys(providerSnapshot.keys || [], nowUnix);
+    const nextTotalKeyCount = (providerSnapshot.keys || []).length;
+    const previousProviderStats = nextProviderStats[providerSnapshot.name] || {};
+
+    if (
+      previousProviderStats.available_keys === nextAvailableKeyCount &&
+      previousProviderStats.total_keys === nextTotalKeyCount
+    ) {
+      continue;
+    }
+
+    nextProviderStats[providerSnapshot.name] = {
+      ...previousProviderStats,
+      available_keys: nextAvailableKeyCount,
+      total_keys: nextTotalKeyCount
+    };
+    statsChanged = true;
+  }
+
+  if (!statsChanged) {
+    return overview;
+  }
+
+  return {
+    ...overview,
+    provider_stats: nextProviderStats
+  };
+}
+
+export function findNearestDisabledUntilMs(providers: AdminProviderSnapshot[], nowMs = Date.now()) {
+  const nowUnix = Math.floor(nowMs / 1000);
+  let nearestDisabledUntilMs = 0;
+
+  for (let providerIndex = 0; providerIndex < providers.length; providerIndex += 1) {
+    const keys = providers[providerIndex].keys || [];
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+      const disabledUntil = Number(keys[keyIndex].disabled_until || 0);
+      if (!Number.isFinite(disabledUntil) || disabledUntil <= nowUnix || disabledUntil >= permanentDisabledUntilThreshold) {
+        continue;
+      }
+
+      const candidateTimeMs = disabledUntil * 1000;
+      if (nearestDisabledUntilMs <= 0 || candidateTimeMs < nearestDisabledUntilMs) {
+        nearestDisabledUntilMs = candidateTimeMs;
+      }
+    }
+  }
+
+  return nearestDisabledUntilMs;
 }
 
 export function chooseSelectedProviderName(

@@ -3,14 +3,20 @@ import { describe, expect, it } from "vitest";
 import { normalizeErrorMessage, shouldIgnoreRuntimeFailure } from "@/api.js";
 import {
   buildBulkDisableRequest,
+  countAvailableProviderKeys,
   chooseSelectedProviderName,
   filterSelectedRefs,
+  findNearestDisabledUntilMs,
   getDisableBounds,
   isPanelRequestLog,
-  normalizeBulkSeconds
+  isKeyDisabledAt,
+  normalizeBulkSeconds,
+  replaceProviderKeysInOverview,
+  syncProviderKeyAvailability
 } from "@/lib/admin";
+import { formatDisabledUntil } from "@/lib/format";
 import { resolveProviderIconName } from "@/lib/provider_icons";
-import { buildErrorTypeSummaries, buildProviderCards, collectStatusSummary } from "@/lib/status";
+import { buildErrorTypeSummaries, buildErrorTypeSummaryClassName, buildProviderCards, collectStatusSummary } from "@/lib/status";
 
 describe("status helpers", function () {
   it("会累计所有提供商的请求和 token 统计", function () {
@@ -89,6 +95,14 @@ describe("status helpers", function () {
       }
     })).toEqual(["429 × 3", "404 × 2", "500 × 1"]);
   });
+
+  it("会给错误类型计数提供更适合深色模式的高对比度样式", function () {
+    const className = buildErrorTypeSummaryClassName();
+
+    expect(className).toContain("text-destructive");
+    expect(className).toContain("dark:text-red-200");
+    expect(className).toContain("dark:bg-red-500/20");
+  });
 });
 
 describe("error helpers", function () {
@@ -143,6 +157,109 @@ describe("admin helpers", function () {
       max_disable_secs: 120,
       min_disable_secs: 30
     } as never)).toBe(30);
+  });
+
+  it("会把已过期的 disabled_until 当成未禁用", function () {
+    const nowUnix = 1_746_892_800;
+    const translate = function translate(key: string) {
+      return key === "provider.notDisabled" ? "未禁用" : key;
+    };
+
+    expect(isKeyDisabledAt(nowUnix - 10, nowUnix)).toBe(false);
+    expect(isKeyDisabledAt(nowUnix + 10, nowUnix)).toBe(true);
+    expect(formatDisabledUntil(nowUnix - 10, "zh", translate, nowUnix * 1000)).toBe("未禁用");
+  });
+
+  it("会按当前时间统计可用 key，并忽略已过期禁用", function () {
+    const nowUnix = 1_746_892_800;
+
+    expect(countAvailableProviderKeys([
+      { disabled_until: 0, ref: "k1", value: "sk-1" },
+      { disabled_until: nowUnix - 5, ref: "k2", value: "sk-2" },
+      { disabled_until: nowUnix + 30, ref: "k3", value: "sk-3" }
+    ] as never, nowUnix)).toBe(2);
+  });
+
+  it("会找到最近一个未来禁用到期时间，并忽略永久禁用与已过期禁用", function () {
+    const nowMs = new Date("2026-05-10T23:17:38+08:00").getTime();
+
+    expect(findNearestDisabledUntilMs([
+      {
+        keys: [
+          { disabled_until: Math.floor(nowMs / 1000) - 10, ref: "expired", value: "sk-expired" },
+          { disabled_until: 32503680000, ref: "forever", value: "sk-forever" },
+          { disabled_until: Math.floor(nowMs / 1000) + 60, ref: "later", value: "sk-later" }
+        ],
+        name: "alpha"
+      },
+      {
+        keys: [
+          { disabled_until: Math.floor(nowMs / 1000) + 15, ref: "soon", value: "sk-soon" }
+        ],
+        name: "beta"
+      }
+    ] as never, nowMs)).toBe((Math.floor(nowMs / 1000) + 15) * 1000);
+  });
+
+  it("会在本地替换 provider 的 key 列表时同步更新可用 key 统计", function () {
+    const nowUnix = 1_746_892_800;
+    const overview = replaceProviderKeysInOverview({
+      global_config: {
+        admin_key_configured: false,
+        client_key_count: 0,
+        client_keys: [],
+        token_estimation_enabled: false
+      },
+      health: { status: "ok" },
+      provider_stats: {
+        alpha: {
+          available_keys: 0,
+          total_keys: 0
+        }
+      },
+      providers: [{
+        keys: [],
+        name: "alpha",
+        type: "openai_chat"
+      }]
+    } as never, "alpha", [
+      { disabled_until: 0, ref: "k1", value: "sk-1" },
+      { disabled_until: nowUnix + 30, ref: "k2", value: "sk-2" }
+    ] as never, nowUnix);
+
+    expect(overview.providers[0].keys).toHaveLength(2);
+    expect(overview.provider_stats.alpha.available_keys).toBe(1);
+    expect(overview.provider_stats.alpha.total_keys).toBe(2);
+  });
+
+  it("会在时间流逝后重算 provider 可用 key 统计", function () {
+    const nowUnix = 1_746_892_800;
+    const overview = syncProviderKeyAvailability({
+      global_config: {
+        admin_key_configured: false,
+        client_key_count: 0,
+        client_keys: [],
+        token_estimation_enabled: false
+      },
+      health: { status: "ok" },
+      provider_stats: {
+        alpha: {
+          available_keys: 0,
+          total_keys: 99
+        }
+      },
+      providers: [{
+        keys: [
+          { disabled_until: nowUnix - 1, ref: "expired", value: "sk-expired" },
+          { disabled_until: nowUnix + 60, ref: "future", value: "sk-future" }
+        ],
+        name: "alpha",
+        type: "openai_chat"
+      }]
+    } as never, nowUnix);
+
+    expect(overview.provider_stats.alpha.available_keys).toBe(1);
+    expect(overview.provider_stats.alpha.total_keys).toBe(2);
   });
 
   it("会为永久、时长和指定时间三种禁用方式构造请求载荷", function () {

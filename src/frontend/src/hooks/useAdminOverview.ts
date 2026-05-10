@@ -29,12 +29,17 @@ import {
   filterKeysBySearch,
   filterProvidersBySearch,
   filterSelectedRefs,
+  findNearestDisabledUntilMs,
   getDisableBounds,
   getProviderByName,
   isPanelRequestLog,
   normalizeBulkSeconds,
   persistAdminLogCache,
+  removeProviderKeyFromOverview,
+  replaceProviderKeysInOverview,
   restoreAdminLogCache,
+  syncProviderKeyAvailability,
+  type AdminKeySnapshot,
   type AdminLogCache,
   type AdminOverview,
   type AdminProviderSnapshot
@@ -56,6 +61,7 @@ interface AdminState {
   bulkMode: BulkMode;
   bulkSeconds: number;
   checkedAuth: boolean;
+  clockNow: number;
   clientKeysPending: boolean;
   createProviderDraft: ReturnType<typeof createDefaultProviderDraft>;
   flashMessage: MessageState;
@@ -119,6 +125,13 @@ function createMessage(kind: MessageState["kind"], text = ""): MessageState {
   return { kind, text };
 }
 
+function readKeySnapshotList(rawValue: unknown) {
+  if (!Array.isArray(rawValue)) {
+    return null;
+  }
+  return rawValue as AdminKeySnapshot[];
+}
+
 function createInitialAdminState(): AdminState {
   return {
     activeTab: "global",
@@ -126,6 +139,7 @@ function createInitialAdminState(): AdminState {
     bulkMode: "disable_until",
     bulkSeconds: 3600,
     checkedAuth: false,
+    clockNow: Date.now(),
     clientKeysPending: false,
     createProviderDraft: createDefaultProviderDraft(),
     flashMessage: createMessage(""),
@@ -164,6 +178,7 @@ function createUnauthorizedState(
     ...previousState,
     authenticated: false,
     checkedAuth: true,
+    clockNow: Date.now(),
     clientKeysPending: false,
     flashMessage: createMessage(""),
     globalAdminKeyDirty: false,
@@ -262,11 +277,13 @@ export function useAdminOverview(
         stateRef.current.logCache,
         adminLogCacheMaxEntries
       );
+      const nextNowMs = Date.now();
+      const nextOverview = syncProviderKeyAvailability(bootstrapSnapshot.overview, Math.floor(nextNowMs / 1000));
       cursorRef.current = bootstrapSnapshot.cursor;
       persistAdminLogCache(bootstrapSnapshot.logCache);
 
       setState(function mergeOverview(previousState) {
-        const providers = bootstrapSnapshot.overview.providers || [];
+        const providers = nextOverview.providers || [];
         const nextSelectedProviderName = chooseSelectedProviderName(
           previousState.selectedProviderName,
           providers,
@@ -280,6 +297,7 @@ export function useAdminOverview(
           ...previousState,
           authenticated: true,
           checkedAuth: true,
+          clockNow: nextNowMs,
           globalConfigLoaded: true,
           globalConfigPending: false,
           globalDraft: mergeGlobalDraft(previousState.globalDraft, bootstrapSnapshot.overview.global_config, {
@@ -288,9 +306,9 @@ export function useAdminOverview(
             preserveClientKeys: replaceGlobalDraft ? false : (previousState.globalSettingsDirty || previousState.clientKeysPending),
             preserveTokenEstimation: replaceGlobalDraft ? false : previousState.tokenEstimationPending
           }),
-          loadedAt: Date.now(),
+          loadedAt: nextNowMs,
           logCache: bootstrapSnapshot.logCache,
-          overview: bootstrapSnapshot.overview,
+          overview: nextOverview,
           pending: false,
           providerDraft: keepProviderDraft ? previousState.providerDraft : createProviderDraftFromSnapshot(nextSelectedProvider),
           providerDirty: keepProviderDraft,
@@ -310,6 +328,8 @@ export function useAdminOverview(
                 logCache: previousState.logCache,
                 overview: previousState.overview
               }, event, adminLogCacheMaxEntries);
+              const nextNowMs = Date.now();
+              const nextOverview = syncProviderKeyAvailability(result.snapshot.overview, Math.floor(nextNowMs / 1000));
 
               cursorRef.current = result.snapshot.cursor;
               if (event.type === "log_append") {
@@ -328,9 +348,10 @@ export function useAdminOverview(
 
               return {
                 ...previousState,
-                loadedAt: Date.now(),
+                clockNow: nextNowMs,
+                loadedAt: nextNowMs,
                 logCache: result.snapshot.logCache,
-                overview: result.snapshot.overview
+                overview: nextOverview
               };
             });
           }
@@ -400,6 +421,33 @@ export function useAdminOverview(
     };
   }, [state.keyImportDialogOpen, state.logModalOpen, state.providerDialogOpen]);
 
+  useEffect(function refreshExpiredKeyAvailability() {
+    if (!state.authenticated || !state.checkedAuth) {
+      return undefined;
+    }
+
+    const nearestDisabledUntilMs = findNearestDisabledUntilMs(state.overview.providers || [], state.clockNow || Date.now());
+    if (!nearestDisabledUntilMs) {
+      return undefined;
+    }
+
+    const delayMs = Math.min(Math.max(0, nearestDisabledUntilMs - Date.now() + 250), 2147483647);
+    const timerId = window.setTimeout(function syncExpiredKeyAvailability() {
+      setState(function updateExpiredKeyAvailability(previousState) {
+        const nextNowMs = Date.now();
+        return {
+          ...previousState,
+          clockNow: nextNowMs,
+          overview: syncProviderKeyAvailability(previousState.overview, Math.floor(nextNowMs / 1000))
+        };
+      });
+    }, delayMs);
+
+    return function cleanupExpiredKeyAvailabilityTimer() {
+      window.clearTimeout(timerId);
+    };
+  }, [state.authenticated, state.checkedAuth, state.clockNow, state.overview.providers]);
+
   const setActiveTab = useCallback(function setActiveTab(activeTab: AdminTab) {
     setState(function updateActiveTab(previousState) {
       return {
@@ -463,7 +511,7 @@ export function useAdminOverview(
         };
       });
     }
-  }, [loadOverview, translate]);
+  }, [translate]);
 
   const logout = useCallback(async function logout() {
     try {
@@ -706,17 +754,27 @@ export function useAdminOverview(
       return;
     }
     try {
-      await importProviderKeys(currentState.selectedProviderName, parseImportedKeys(currentState.importText));
+      const response = await importProviderKeys(currentState.selectedProviderName, parseImportedKeys(currentState.importText));
+      const nextKeySnapshots = readKeySnapshotList(response.data);
       setState(function markImportSuccess(previousState) {
+        const nextNowMs = Date.now();
         return {
           ...previousState,
           activeTab: "keys",
+          clockNow: nextNowMs,
           flashMessage: createMessage("ok", translate("admin.importSuccess")),
           importText: "",
-          keyImportDialogOpen: false
+          keyImportDialogOpen: false,
+          overview: nextKeySnapshots
+            ? replaceProviderKeysInOverview(
+              previousState.overview,
+              currentState.selectedProviderName,
+              nextKeySnapshots,
+              Math.floor(nextNowMs / 1000)
+            )
+            : previousState.overview
         };
       });
-      await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
     } catch (error) {
       setState(function markImportError(previousState) {
         return {
@@ -756,16 +814,26 @@ export function useAdminOverview(
     }
 
     try {
-      await applyProviderBulkAction(currentState.selectedProviderName, payload);
+      const response = await applyProviderBulkAction(currentState.selectedProviderName, payload);
+      const nextKeySnapshots = readKeySnapshotList(response.data);
       setState(function markBulkActionSuccess(previousState) {
+        const nextNowMs = Date.now();
         return {
           ...previousState,
           activeTab: "keys",
+          clockNow: nextNowMs,
           flashMessage: createMessage(""),
+          overview: nextKeySnapshots
+            ? replaceProviderKeysInOverview(
+              previousState.overview,
+              currentState.selectedProviderName,
+              nextKeySnapshots,
+              Math.floor(nextNowMs / 1000)
+            )
+            : previousState.overview,
           selectedKeyRefs: []
         };
       });
-      await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
     } catch (error) {
       setState(function markBulkActionError(previousState) {
         return {
@@ -774,7 +842,7 @@ export function useAdminOverview(
         };
       });
     }
-  }, [loadOverview, selectedProvider, translate]);
+  }, [selectedProvider, translate]);
 
   const deleteSingleKey = useCallback(async function deleteSingleKey(keyRef: string) {
     const currentState = stateRef.current;
@@ -787,15 +855,22 @@ export function useAdminOverview(
     try {
       await deleteProviderKey(currentState.selectedProviderName, keyRef);
       setState(function markDeleteSuccess(previousState) {
+        const nextNowMs = Date.now();
         return {
           ...previousState,
+          clockNow: nextNowMs,
           flashMessage: createMessage(""),
+          overview: removeProviderKeyFromOverview(
+            previousState.overview,
+            currentState.selectedProviderName,
+            keyRef,
+            Math.floor(nextNowMs / 1000)
+          ),
           selectedKeyRefs: previousState.selectedKeyRefs.filter(function keepRef(refValue) {
             return refValue !== keyRef;
           })
         };
       });
-      await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
     } catch (error) {
       setState(function markDeleteError(previousState) {
         return {
@@ -804,7 +879,7 @@ export function useAdminOverview(
         };
       });
     }
-  }, [loadOverview, translate]);
+  }, [translate]);
 
   return {
     actions: {

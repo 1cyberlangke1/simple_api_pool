@@ -14,7 +14,7 @@ import { ProviderBadgeIcon } from "@/components/provider/ProviderBadgeIcon";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatLocaleTime, formatNumber } from "@/lib/format";
-import { buildErrorTypeSummaries, buildProviderCards, collectStatusSummary } from "@/lib/status";
+import { buildErrorTypeSummaries, buildErrorTypeSummaryClassName, buildProviderCards, collectStatusSummary } from "@/lib/status";
 import { useStatusOverview } from "@/hooks/useStatusOverview";
 import { useAppStore } from "@/store/appStore";
 
@@ -211,6 +211,7 @@ export function StatusPage() {
           {providerCards.map(function renderProviderCard(providerCard) {
             const providerStatusPresentation = readStatusPresentation(providerCard.status);
             const errorTypeSummaries = buildErrorTypeSummaries(providerCard.snapshot);
+            const errorTypeSummaryClassName = buildErrorTypeSummaryClassName();
             return (
               <motion.div variants={item} key={providerCard.id}>
                 <Card className="h-full flex flex-col hover:shadow-md transition-shadow">
@@ -274,7 +275,7 @@ export function StatusPage() {
                           {errorTypeSummaries.map(function renderErrorTypeSummary(summary) {
                             return (
                               <span
-                                className="inline-flex min-h-7 items-center rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-1 font-mono text-xs text-destructive"
+                                className={errorTypeSummaryClassName}
                                 key={summary}
                               >
                                 {summary}

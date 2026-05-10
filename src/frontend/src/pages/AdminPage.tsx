@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AdminKeySnapshot, AdminLogEntry, AdminProviderSnapshot, AdminProviderStatsSnapshot } from "@/lib/admin";
-import { buildBulkDisableRequest } from "@/lib/admin";
+import { buildBulkDisableRequest, isKeyDisabledAt } from "@/lib/admin";
 import { formatDateTime, formatDisabledUntil, formatErrorRate, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
 import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
 import { useAppStore } from "@/store/appStore";
@@ -328,6 +328,8 @@ export function AdminPage() {
   const selectedProviderName = state.selectedProviderName;
   const hasSelectedProvider = Boolean(selectedProvider);
   const providerCount = state.overview.providers.length;
+  const currentTimeMs = state.clockNow || Date.now();
+  const currentTimeUnix = Math.floor(currentTimeMs / 1000);
   const clientKeyCount = state.globalConfigLoaded
     ? state.globalDraft.client_keys.length
     : Number(state.overview.global_config.client_key_count || 0);
@@ -977,7 +979,7 @@ export function AdminPage() {
                         ) : null}
                         {derived.visibleKeys.map(function renderKeyRow(keySnapshot: AdminKeySnapshot) {
                           const checked = state.selectedKeyRefs.includes(keySnapshot.ref);
-                          const isDisabled = Number(keySnapshot.disabled_until || 0) > 0;
+                          const isDisabled = isKeyDisabledAt(keySnapshot.disabled_until, currentTimeUnix);
                           return (
                             <tr className="transition-colors hover:bg-muted/30" key={keySnapshot.ref}>
                               <td className="px-4 py-3">
@@ -993,7 +995,7 @@ export function AdminPage() {
                               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{keySnapshot.ref}</td>
                               <td className="px-4 py-3">
                                 <Badge variant={isDisabled ? "warning" : "success"}>
-                                  {formatDisabledUntil(keySnapshot.disabled_until, language, translate)}
+                                  {formatDisabledUntil(keySnapshot.disabled_until, language, translate, currentTimeMs)}
                                 </Badge>
                               </td>
                               <td className="px-4 py-3">{formatNumber(keySnapshot.consecutive_fails)}</td>
