@@ -34,6 +34,8 @@ func (sh *Handler) newRouter() chi.Router {
 	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErrorResponse(w, http.StatusNotFound, "接口不存在")
 	})
+	router.Get("/api/status/bootstrap", sh.handleBootstrap)
+	router.Get("/api/status/stream", sh.handleStream)
 	router.Get("/api/status/overview", func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteOverviewResponse(w, r, newStatusOverviewResponse(sh.cfg, sh.stats))
 	})

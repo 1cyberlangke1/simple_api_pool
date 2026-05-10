@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"simple-api-pool/realtime"
 	"simple-api-pool/store"
 )
 
@@ -57,6 +58,9 @@ type Manager struct {
 	stats       map[string]*ProviderStats
 	stopCh      chan struct{}
 	flushSignal chan struct{}
+	eventSignal chan struct{}
+	dirtyMu     sync.Mutex
+	dirtyStats  map[string]struct{}
 	stopMu      sync.Once
 	wg          sync.WaitGroup
 }
@@ -67,6 +71,8 @@ func NewManager(st *store.Store) *Manager {
 		stats:       make(map[string]*ProviderStats),
 		stopCh:      make(chan struct{}),
 		flushSignal: make(chan struct{}, 1),
+		eventSignal: make(chan struct{}, 1),
+		dirtyStats:  make(map[string]struct{}),
 	}
 	m.load()
 	m.wg.Add(1)
@@ -110,7 +116,14 @@ func (m *Manager) flusher() {
 	if !debounceTimer.Stop() {
 		<-debounceTimer.C
 	}
-	var debounceC <-chan time.Time
+	eventTimer := time.NewTimer(time.Hour)
+	if !eventTimer.Stop() {
+		<-eventTimer.C
+	}
+	var (
+		debounceC <-chan time.Time
+		eventC    <-chan time.Time
+	)
 	for {
 		select {
 		case <-periodicTicker.C:
@@ -118,11 +131,19 @@ func (m *Manager) flusher() {
 		case <-m.flushSignal:
 			resetTimer(debounceTimer, time.Second)
 			debounceC = debounceTimer.C
+		case <-m.eventSignal:
+			resetTimer(eventTimer, 500*time.Millisecond)
+			eventC = eventTimer.C
 		case <-debounceC:
 			m.flush()
 			debounceC = nil
+		case <-eventC:
+			m.publishDirtyProviders()
+			eventC = nil
 		case <-m.stopCh:
 			stopTimer(debounceTimer)
+			stopTimer(eventTimer)
+			m.publishDirtyProviders()
 			m.flush()
 			return
 		}
@@ -166,7 +187,7 @@ func (m *Manager) RecordSuccess(provider string, input, output int64) {
 	s.SuccessCount.Add(1)
 	s.InputTokens.Add(input)
 	s.OutputTokens.Add(output)
-	m.markDirty()
+	m.markDirty(provider)
 }
 
 func (m *Manager) RecordCacheTokens(provider string, tokens int64) {
@@ -175,28 +196,28 @@ func (m *Manager) RecordCacheTokens(provider string, tokens int64) {
 	}
 	s := m.getOrCreate(provider)
 	s.CacheTokens.Add(tokens)
-	m.markDirty()
+	m.markDirty(provider)
 }
 
 func (m *Manager) RecordError(provider string, statusCode int) {
 	s := m.getOrCreate(provider)
 	s.ErrorCount.Add(1)
 	if statusCode <= 0 {
-		m.markDirty()
+		m.markDirty(provider)
 		return
 	}
 	code := strconv.Itoa(statusCode)
 	s.errorTypesMu.Lock()
 	s.ErrorTypes[code]++
 	s.errorTypesMu.Unlock()
-	m.markDirty()
+	m.markDirty(provider)
 }
 
 func (m *Manager) RecordCacheHit(provider string, tokens int64) {
 	s := m.getOrCreate(provider)
 	s.CacheHits.Add(1)
 	s.CacheTokens.Add(tokens)
-	m.markDirty()
+	m.markDirty(provider)
 }
 
 func (m *Manager) RemoveProvider(provider string) {
@@ -206,7 +227,7 @@ func (m *Manager) RemoveProvider(provider string) {
 		return
 	}
 	delete(m.stats, provider)
-	m.markDirty()
+	m.markDirty("")
 }
 
 func (m *Manager) Snapshot() map[string]Snapshot {
@@ -224,12 +245,41 @@ func (m *Manager) Snapshot() map[string]Snapshot {
 	return out
 }
 
-func (m *Manager) markDirty() {
+func (m *Manager) markDirty(provider string) {
+	if provider != "" {
+		m.dirtyMu.Lock()
+		m.dirtyStats[provider] = struct{}{}
+		m.dirtyMu.Unlock()
+		select {
+		case m.eventSignal <- struct{}{}:
+		default:
+		}
+	}
+
 	// Non-blocking send keeps hot paths lock-free enough for bursty counter
 	// updates; the flusher coalesces pending writes into one debounced flush.
 	select {
 	case m.flushSignal <- struct{}{}:
 	default:
+	}
+}
+
+func (m *Manager) publishDirtyProviders() {
+	m.dirtyMu.Lock()
+	if len(m.dirtyStats) == 0 {
+		m.dirtyMu.Unlock()
+		return
+	}
+
+	providers := make([]string, 0, len(m.dirtyStats))
+	for provider := range m.dirtyStats {
+		providers = append(providers, provider)
+	}
+	m.dirtyStats = make(map[string]struct{})
+	m.dirtyMu.Unlock()
+
+	for _, provider := range providers {
+		realtime.PublishStatsChanged(provider)
 	}
 }
 

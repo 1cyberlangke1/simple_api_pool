@@ -1,5 +1,9 @@
 import { requestJSON } from "../api.js";
 
+export async function fetchStatusBootstrap() {
+  return requestJSON("/api/status/bootstrap");
+}
+
 export async function fetchStatusOverview(options) {
   const requestOptions = options || {};
   const headers = {};

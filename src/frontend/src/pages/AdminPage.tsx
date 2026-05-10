@@ -26,8 +26,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { AdminKeySnapshot, AdminProviderSnapshot } from "@/lib/admin";
-import { buildBulkDisableRequest, collectProviderRecentErrors } from "@/lib/admin";
+import type { AdminKeySnapshot, AdminLogEntry, AdminProviderSnapshot, AdminProviderStatsSnapshot } from "@/lib/admin";
+import { buildBulkDisableRequest } from "@/lib/admin";
 import { formatDateTime, formatDisabledUntil, formatErrorRate, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
 import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
 import { useAppStore } from "@/store/appStore";
@@ -47,7 +47,7 @@ const sectionVariants = {
 };
 
 function getProviderTone(
-  providerStats: Record<string, number> | undefined,
+  providerStats: AdminProviderStatsSnapshot | undefined,
   providerSnapshot: AdminProviderSnapshot | null
 ): {
   badgeVariant: "destructive" | "success" | "warning";
@@ -76,7 +76,7 @@ function getProviderTone(
   };
 }
 
-function readLogLevel(entry: Record<string, unknown>) {
+function readLogLevel(entry: Pick<AdminLogEntry, "level"> | Record<string, unknown>) {
   const level = String(entry.level || "").toUpperCase();
   if (level === "ERROR" || level === "WARN" || level === "INFO" || level === "DEBUG") {
     return level;
@@ -334,21 +334,10 @@ export function AdminPage() {
   const canSaveAdminKey = state.globalAdminKeyDirty && String(state.globalDraft.admin_key || "").trim() !== "";
   const activeKeyCount = formatNumber(derived.selectedProviderStats.available_keys || 0);
   const totalKeyCount = formatNumber(derived.selectedProviderStats.total_keys || selectedProviderKeys.length);
-  const logPreview = derived.filteredLogs.slice(Math.max(derived.filteredLogs.length - 10, 0));
   const providerDialogDraft = state.providerDialogMode === "create" ? state.createProviderDraft : state.providerDraft;
   const disablePresetSeconds = useMemo(function computeDisablePresetSeconds() {
     return createDisablePresetSeconds(derived.disableBounds);
   }, [derived.disableBounds]);
-  const providerRecentErrors = useMemo(function computeProviderRecentErrors() {
-    const sourceLogs = state.overview.recent_logs || [];
-    const errorMap: Record<string, ReturnType<typeof collectProviderRecentErrors>> = {};
-    for (let index = 0; index < state.overview.providers.length; index += 1) {
-      const providerName = state.overview.providers[index].name;
-      errorMap[providerName] = collectProviderRecentErrors(sourceLogs, providerName, 2);
-    }
-    return errorMap;
-  }, [state.overview.providers, state.overview.recent_logs]);
-
   useEffect(function syncBulkDisableDraft() {
     const nextSeconds = Math.min(Math.max(3600, derived.disableBounds.min), derived.disableBounds.max);
     setBulkDisableSeconds(nextSeconds);
@@ -446,7 +435,9 @@ export function AdminPage() {
           className={`rounded-lg border px-4 py-3 text-sm ${
             state.flashMessage.kind === "error"
               ? "border-destructive/20 bg-destructive/10 text-destructive"
-              : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : state.flashMessage.kind === "warning"
+                ? "border-warning/20 bg-warning/10 text-warning"
+                : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
           }`}
         >
           {state.flashMessage.text}
@@ -667,8 +658,6 @@ export function AdminPage() {
                 const isSelected = providerSnapshot.name === selectedProviderName;
                 const totalKeys = Number(stats.total_keys || providerSnapshot.keys.length);
                 const availableKeys = Number(stats.available_keys || 0);
-                const recentErrors = providerRecentErrors[providerSnapshot.name] || [];
-
                 return (
                   <Card className={isSelected ? "border-primary/50 shadow-md" : undefined} key={providerSnapshot.name}>
                     <CardHeader className="py-4">
@@ -832,38 +821,6 @@ export function AdminPage() {
                             {formatNumber(stats.cache_hits || 0)}
                           </strong>
                         </div>
-                      </div>
-                      <div className="mt-4 rounded-xl border bg-background/70 p-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {translate("provider.recentErrors")}
-                          </span>
-                          {recentErrors.length > 0 ? (
-                            <span className="font-mono text-xs text-muted-foreground">{formatNumber(recentErrors.length)}</span>
-                          ) : null}
-                        </div>
-                        {recentErrors.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">{translate("provider.noRecentErrors")}</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {recentErrors.map(function renderProviderError(entry) {
-                              return (
-                                <div className="rounded-lg border bg-muted/30 px-3 py-2" key={`${entry.time}-${entry.path}-${entry.status}`}>
-                                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                    <span>{entry.time ? formatDateTime(entry.time, language) : "-"}</span>
-                                    {entry.status > 0 ? (
-                                      <Badge variant="destructive">{entry.status}</Badge>
-                                    ) : null}
-                                    {entry.path ? (
-                                      <code className="rounded bg-background px-1.5 py-0.5 text-[11px] text-foreground">{entry.path}</code>
-                                    ) : null}
-                                  </div>
-                                  <p className="mt-2 text-sm text-foreground">{entry.message || "-"}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1089,10 +1046,10 @@ export function AdminPage() {
                 />
               </div>
               <div className="h-[400px] overflow-auto rounded-md border bg-[#1e1e1e] p-4 font-mono text-xs text-[#d4d4d4]">
-                {logPreview.length === 0 ? (
+                {derived.filteredLogs.length === 0 ? (
                   <div className="py-8 text-center text-slate-400">{translate("admin.logsEmpty")}</div>
                 ) : (
-                  logPreview.map(function renderLogEntry(entry, index) {
+                  derived.filteredLogs.map(function renderLogEntry(entry, index) {
                     const level = readLogLevel(entry);
                     return (
                       <div className="mb-1.5 flex gap-4 opacity-90 hover:opacity-100" key={`${entry.time || "log"}-${index}`}>
@@ -1263,9 +1220,6 @@ export function AdminPage() {
           <div className="overflow-hidden rounded-lg border bg-[#1e1e1e] text-[#d4d4d4] shadow-xl">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <h3 className="text-lg font-semibold">{translate("admin.logsTitle")}</h3>
-              <Button onClick={actions.closeDialogs} variant="ghost">
-                {translate("action.close")}
-              </Button>
             </div>
             <div className="max-h-[70vh] overflow-auto p-6">
               <div className="space-y-1 rounded-md border border-white/10 bg-black/20 p-4 font-mono text-xs">

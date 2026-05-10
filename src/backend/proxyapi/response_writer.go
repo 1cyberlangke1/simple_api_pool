@@ -3,6 +3,7 @@ package proxyapi
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -25,13 +26,26 @@ func (h *ProxyHandler) handleUpstreamErrorResponse(w http.ResponseWriter, resp *
 	errorCapture := newLimitedLogBuffer(maxUpstreamErrorLogBytes)
 	responseBytes, copyErr := io.Copy(w, io.TeeReader(resp.Body, errorCapture))
 	logFields.ResponseBytes = int(responseBytes)
-	logFields.Error = errorCapture.String()
+	logFields.Error = fmt.Sprintf("上游返回 %d", resp.StatusCode)
 	if logFields.Model == "" {
 		preparation.analysis = ensureCacheAnalysis(preparation.analysis, proxyReq.provider.Type, proxyReq.parts.suffix, preparation.recordedRequestBody)
 		logFields.Model = preparation.analysis.model
 	}
-	if copyErr != nil && logFields.Error == "" {
-		logFields.Error = fmt.Sprintf("读取上游错误响应失败: %v", copyErr)
+	errorBody := errorCapture.String()
+	if errorBody != "" {
+		slog.Default().Error("upstream_error_body",
+			"provider", proxyReq.parts.provider,
+			"provider_type", proxyReq.provider.Type,
+			"path", logFields.Path,
+			"upstream_path", logFields.UpstreamPath,
+			"upstream_status", resp.StatusCode,
+			"content_type", resp.Header.Get("Content-Type"),
+			"content_encoding", resp.Header.Get("Content-Encoding"),
+			"body", errorBody,
+		)
+	}
+	if copyErr != nil {
+		logFields.Error = fmt.Sprintf("透传上游错误响应失败: %v", copyErr)
 	}
 	if shouldRecordUpstreamFailure(resp.StatusCode) {
 		h.keyring.RecordFailure(proxyReq.parts.provider, upstreamKey)

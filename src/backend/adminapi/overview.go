@@ -1,14 +1,11 @@
 package adminapi
 
 import (
-	"simple-api-pool/applog"
 	"simple-api-pool/config"
 	"simple-api-pool/service"
 	"simple-api-pool/stats"
 	"simple-api-pool/statusapi"
 )
-
-const adminRecentLogLimit = 80
 
 type GlobalConfigSnapshot struct {
 	AdminKeyConfigured     bool `json:"admin_key_configured"`
@@ -21,11 +18,10 @@ type AdminOverviewResponse struct {
 	GlobalConfig  GlobalConfigSnapshot            `json:"global_config"`
 	Providers     []AdminProviderSnapshot         `json:"providers"`
 	ProviderStats map[string]statusapi.Snapshot   `json:"provider_stats"`
-	RecentLogs    []applog.Entry                  `json:"recent_logs"`
 }
 
 func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) AdminOverviewResponse {
-	overview := service.NewOverviewService(cfg, statsManager).AdminOverview(adminRecentLogLimit)
+	overview := service.NewOverviewService(cfg, statsManager).AdminOverview()
 	return AdminOverviewResponse{
 		Health: statusapi.ServiceHealthSnapshot{Status: overview.Health.Status},
 		GlobalConfig: GlobalConfigSnapshot{
@@ -35,6 +31,5 @@ func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) A
 		},
 		Providers:     buildAdminProviderSnapshots(cfg.Providers()),
 		ProviderStats: overview.ProviderStats,
-		RecentLogs:    overview.RecentLogs,
 	}
 }

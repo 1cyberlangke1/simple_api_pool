@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { normalizeErrorMessage } from "@/api.js";
-import { fetchStatusOverview } from "@/services/status_service.js";
+import { createStatusLiveSnapshot, reduceStatusLiveEvent } from "@/lib/live";
 import { createEmptyStatusOverview, type StatusOverview } from "@/lib/status";
+import { buildStreamURL, openLiveStream } from "@/services/live_service.js";
+import { fetchStatusBootstrap } from "@/services/status_service.js";
 
 export interface StatusOverviewState {
   error: string;
@@ -12,8 +14,6 @@ export interface StatusOverviewState {
   overview: StatusOverview;
 }
 
-const statusPollIntervalMs = 15000;
-
 export function useStatusOverview(translate: (key: string, params?: Record<string, unknown>) => string) {
   const [state, setState] = useState<StatusOverviewState>({
     error: "",
@@ -22,7 +22,53 @@ export function useStatusOverview(translate: (key: string, params?: Record<strin
     loading: false,
     overview: createEmptyStatusOverview()
   });
-  const etagRef = useRef("");
+
+  const streamRef = useRef<{ close: () => void } | null>(null);
+  const cursorRef = useRef(0);
+
+  const closeStream = useCallback(function closeStream() {
+    if (!streamRef.current) {
+      return;
+    }
+    streamRef.current.close();
+    streamRef.current = null;
+  }, []);
+
+  const connectStream = useCallback(function connectStream(after: number, reload: (forceRefresh?: boolean) => Promise<void>) {
+    closeStream();
+
+    if (typeof window === "undefined" || typeof window.EventSource !== "function") {
+      return;
+    }
+
+    streamRef.current = openLiveStream(buildStreamURL("/api/status/stream", after), {
+      eventNames: ["stats_delta", "providers_changed", "resync_required"],
+      onEvent(event) {
+        setState(function applyLiveEvent(previousState) {
+          const result = reduceStatusLiveEvent({
+            cursor: cursorRef.current,
+            overview: previousState.overview
+          }, event);
+
+          cursorRef.current = result.snapshot.cursor;
+          if (result.requiresBootstrap) {
+            closeStream();
+            window.setTimeout(function reloadFromBootstrap() {
+              void reload(true);
+            }, 0);
+            return previousState;
+          }
+
+          return {
+            ...previousState,
+            error: "",
+            loadedAt: Date.now(),
+            overview: result.snapshot.overview
+          };
+        });
+      }
+    });
+  }, [closeStream]);
 
   const refresh = useCallback(async function refreshStatusOverview(forceRefresh = false) {
     setState(function markLoading(previousState) {
@@ -32,30 +78,27 @@ export function useStatusOverview(translate: (key: string, params?: Record<strin
         loading: true
       };
     });
+
     try {
-      const result = await fetchStatusOverview({
-        etag: etagRef.current,
-        forceRefresh
+      const result = await fetchStatusBootstrap();
+      const snapshot = createStatusLiveSnapshot((result.data || createEmptyStatusOverview()) as Record<string, unknown>);
+      cursorRef.current = snapshot.cursor;
+
+      setState(function applyBootstrap(previousState) {
+        return {
+          ...previousState,
+          error: "",
+          loadedAt: Date.now(),
+          loading: false,
+          overview: snapshot.overview
+        };
       });
-      if (result.notModified) {
-        setState(function markNotModified(previousState) {
-          return {
-            ...previousState,
-            loadedAt: Date.now(),
-            loading: false
-          };
-        });
-        return;
-      }
-      etagRef.current = result.etag || "";
-      setState({
-        error: "",
-        etag: etagRef.current,
-        loadedAt: Date.now(),
-        loading: false,
-        overview: (result.data || createEmptyStatusOverview()) as StatusOverview
-      });
+
+      connectStream(snapshot.cursor, refresh);
     } catch (error) {
+      if (forceRefresh) {
+        closeStream();
+      }
       setState(function markError(previousState) {
         return {
           ...previousState,
@@ -64,33 +107,14 @@ export function useStatusOverview(translate: (key: string, params?: Record<strin
         };
       });
     }
-  }, [translate]);
+  }, [closeStream, connectStream, translate]);
 
-  useEffect(function pollStatusOverview() {
-    let timerId = 0;
-
+  useEffect(function loadBootstrapOnMount() {
     void refresh(false);
-
-    function handleVisibilityChange() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      void refresh(true);
-    }
-
-    timerId = window.setInterval(function onInterval() {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      void refresh(false);
-    }, statusPollIntervalMs);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return function cleanupPolling() {
-      window.clearInterval(timerId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    return function cleanupStream() {
+      closeStream();
     };
-  }, [refresh]);
+  }, [closeStream, refresh]);
 
   return {
     refresh,

@@ -3,7 +3,6 @@ package service
 import (
 	"time"
 
-	"simple-api-pool/applog"
 	"simple-api-pool/config"
 	"simple-api-pool/stats"
 )
@@ -40,7 +39,6 @@ type AdminOverview struct {
 	Health        HealthSnapshot                    `json:"health"`
 	GlobalConfig  GlobalConfigSnapshot              `json:"global_config"`
 	ProviderStats map[string]ProviderStatusSnapshot `json:"provider_stats"`
-	RecentLogs    []applog.Entry                    `json:"recent_logs"`
 }
 
 type OverviewService struct {
@@ -63,7 +61,7 @@ func (service *OverviewService) StatusOverview() StatusOverview {
 	}
 }
 
-func (service *OverviewService) AdminOverview(recentLogLimit int) AdminOverview {
+func (service *OverviewService) AdminOverview() AdminOverview {
 	globalConfig := service.cfg.AdminSettings()
 	return AdminOverview{
 		Health: HealthSnapshot{Status: "ok"},
@@ -73,7 +71,6 @@ func (service *OverviewService) AdminOverview(recentLogLimit int) AdminOverview 
 			ClientKeyCount:         len(globalConfig.ClientKeys),
 		},
 		ProviderStats: service.ProviderStatusSnapshots(),
-		RecentLogs:    applog.RecentEntries(recentLogLimit),
 	}
 }
 
@@ -105,6 +102,12 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 	}
 
 	return providerStats
+}
+
+func (service *OverviewService) ProviderStatusSnapshot(providerName string) (ProviderStatusSnapshot, bool) {
+	providerStats := service.ProviderStatusSnapshots()
+	snapshot, exists := providerStats[providerName]
+	return snapshot, exists
 }
 
 func (service *OverviewService) ProviderTypeSnapshots() map[string]string {

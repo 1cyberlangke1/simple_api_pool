@@ -128,18 +128,22 @@ func TestStatusAndAdminPagesServeSingleBundleFrontend(t *testing.T) {
 	}
 
 	for _, requiredPath := range []string{
-		"/api/status/overview",
-		"/api/admin/overview",
+		"/api/status/bootstrap",
+		"/api/status/stream",
+		"/api/admin/bootstrap",
+		"/api/admin/stream",
 		"/api/admin/login",
 		"/api/admin/logout",
 		"/api/admin/config",
 		"/api/admin/providers/",
 		"same-origin",
+		"stats_delta",
+		"log_append",
+		"providers_changed",
+		"global_config_changed",
+		"resync_required",
 		"disable_until",
-		"bulk-disable-seconds",
-		"bulk-disable-mode",
 		"parseImportedKeys",
-		"recent_logs",
 		"hidePanelLogs",
 	} {
 		if !strings.Contains(appBundle, requiredPath) {

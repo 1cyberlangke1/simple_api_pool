@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tidwall/gjson"
 
@@ -196,7 +198,7 @@ func (b *limitedLogBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *limitedLogBuffer) String() string {
-	value := strings.TrimSpace(b.buf.String())
+	value := sanitizeLogText(b.buf.Bytes())
 	if b.truncated {
 		if value == "" {
 			return "上游错误响应过大，已截断日志"
@@ -204,6 +206,30 @@ func (b *limitedLogBuffer) String() string {
 		return value + " ...(truncated)"
 	}
 	return value
+}
+
+func sanitizeLogText(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	if !utf8.Valid(raw) {
+		return "上游错误响应不是可显示文本，可能为压缩或二进制内容"
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(raw))
+	for _, currentRune := range string(raw) {
+		switch {
+		case currentRune == '\n' || currentRune == '\r' || currentRune == '\t':
+			builder.WriteRune(currentRune)
+		case unicode.IsControl(currentRune):
+			builder.WriteRune(' ')
+		default:
+			builder.WriteRune(currentRune)
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
 }
 
 func readRequestBodyForCache(body io.ReadCloser, limit int) ([]byte, bool, error) {

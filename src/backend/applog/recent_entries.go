@@ -11,16 +11,26 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
+
+	"simple-api-pool/realtime"
 )
 
 const defaultRecentEntryLimit = 200
 const defaultRecentEntryMaxBytes = 2 * 1024 * 1024
 
 type Entry struct {
+	Seq   uint64         `json:"seq"`
 	Time  string         `json:"time"`
 	Level string         `json:"level"`
 	Msg   string         `json:"msg"`
 	Attrs map[string]any `json:"attrs,omitempty"`
+}
+
+type RecentEntryDelta struct {
+	Entries    []Entry `json:"entries"`
+	NextCursor uint64  `json:"next_cursor"`
+	Gap        bool    `json:"gap"`
+	Snapshot   []Entry `json:"snapshot,omitempty"`
 }
 
 type entryRingBuffer struct {
@@ -32,6 +42,7 @@ type entryRingBuffer struct {
 	limit      int
 	maxBytes   int
 	totalBytes int
+	nextSeq    uint64
 }
 
 var entryBuffer atomic.Pointer[entryRingBuffer]
@@ -42,6 +53,10 @@ func init() {
 
 func RecentEntries(limit int) []Entry {
 	return currentEntryBuffer().snapshot(limit)
+}
+
+func RecentEntriesAfter(after uint64, limit int) RecentEntryDelta {
+	return currentEntryBuffer().delta(after, limit)
 }
 
 func ReplaceRecentEntriesForTesting(limit int) func() {
@@ -61,7 +76,7 @@ func ReplaceRecentEntriesForTestingWithBytes(limit, maxBytes int) func() {
 }
 
 func AppendRecentEntryForTesting(entry Entry) {
-	currentEntryBuffer().append(entry)
+	appendRecentEntry(entry)
 }
 
 func loadRecentEntryLimitFromEnv() int {
@@ -117,16 +132,24 @@ func newEntryRingBuffer(limit, maxBytes int) *entryRingBuffer {
 		entrySizes: make([]int, limit),
 		limit:      limit,
 		maxBytes:   maxBytes,
+		nextSeq:    1,
 	}
 }
 
-func (buffer *entryRingBuffer) append(entry Entry) {
+func (buffer *entryRingBuffer) append(entry Entry) (Entry, bool) {
 	buffer.mu.Lock()
-	defer buffer.mu.Unlock()
+
+	if entry.Seq == 0 {
+		entry.Seq = buffer.nextSeq
+		buffer.nextSeq++
+	} else if entry.Seq >= buffer.nextSeq {
+		buffer.nextSeq = entry.Seq + 1
+	}
 
 	entrySize := estimateEntrySize(entry)
 	if entrySize > buffer.maxBytes {
-		return
+		buffer.mu.Unlock()
+		return Entry{}, false
 	}
 	if buffer.count == buffer.limit {
 		buffer.evictOldestLocked()
@@ -141,6 +164,23 @@ func (buffer *entryRingBuffer) append(entry Entry) {
 	for buffer.count > 1 && buffer.totalBytes > buffer.maxBytes {
 		buffer.evictOldestLocked()
 	}
+	buffer.mu.Unlock()
+	return entry, true
+}
+
+func appendRecentEntry(entry Entry) {
+	buffer := currentEntryBuffer()
+	appendedEntry, appended := buffer.append(entry)
+	if !appended {
+		return
+	}
+	realtime.PublishLog(realtime.LogEntry{
+		Seq:   appendedEntry.Seq,
+		Time:  appendedEntry.Time,
+		Level: appendedEntry.Level,
+		Msg:   appendedEntry.Msg,
+		Attrs: appendedEntry.Attrs,
+	})
 }
 
 func (buffer *entryRingBuffer) evictOldestLocked() {
@@ -203,6 +243,10 @@ func (buffer *entryRingBuffer) snapshot(limit int) []Entry {
 	buffer.mu.RLock()
 	defer buffer.mu.RUnlock()
 
+	return buffer.snapshotLocked(limit)
+}
+
+func (buffer *entryRingBuffer) snapshotLocked(limit int) []Entry {
 	if limit <= 0 || limit > buffer.count {
 		limit = buffer.count
 	}
@@ -213,6 +257,88 @@ func (buffer *entryRingBuffer) snapshot(limit int) []Entry {
 		result = append(result, buffer.entries[index])
 	}
 	return result
+}
+
+func (buffer *entryRingBuffer) delta(after uint64, limit int) RecentEntryDelta {
+	buffer.mu.RLock()
+	defer buffer.mu.RUnlock()
+
+	if buffer.count == 0 {
+		gapDetected := after > 0
+		return RecentEntryDelta{
+			Entries:    make([]Entry, 0),
+			NextCursor: 0,
+			Gap:        gapDetected,
+			Snapshot:   make([]Entry, 0),
+		}
+	}
+	if limit <= 0 || limit > buffer.count {
+		limit = buffer.count
+	}
+
+	oldestEntry := buffer.entries[buffer.start]
+	newestIndex := (buffer.start + buffer.count - 1) % buffer.limit
+	newestEntry := buffer.entries[newestIndex]
+
+	if after == 0 {
+		entries := buffer.snapshotLocked(limit)
+		return RecentEntryDelta{
+			Entries:    entries,
+			NextCursor: newestEntry.Seq,
+			Gap:        false,
+			Snapshot:   make([]Entry, 0),
+		}
+	}
+	if after > newestEntry.Seq {
+		snapshot := buffer.snapshotLocked(limit)
+		return RecentEntryDelta{
+			Entries:    make([]Entry, 0),
+			NextCursor: newestEntry.Seq,
+			Gap:        true,
+			Snapshot:   snapshot,
+		}
+	}
+	if after == newestEntry.Seq {
+		return RecentEntryDelta{
+			Entries:    make([]Entry, 0),
+			NextCursor: newestEntry.Seq,
+			Gap:        false,
+			Snapshot:   make([]Entry, 0),
+		}
+	}
+	if after+1 < oldestEntry.Seq {
+		snapshot := buffer.snapshotLocked(limit)
+		return RecentEntryDelta{
+			Entries:    make([]Entry, 0),
+			NextCursor: newestEntry.Seq,
+			Gap:        true,
+			Snapshot:   snapshot,
+		}
+	}
+
+	entries := make([]Entry, 0, limit)
+	for offset := 0; offset < buffer.count; offset++ {
+		index := (buffer.start + offset) % buffer.limit
+		entry := buffer.entries[index]
+		if entry.Seq <= after {
+			continue
+		}
+		entries = append(entries, entry)
+		if len(entries) >= limit {
+			break
+		}
+	}
+
+	nextCursor := newestEntry.Seq
+	if len(entries) > 0 {
+		nextCursor = entries[len(entries)-1].Seq
+	}
+	return RecentEntryDelta{
+		Entries:    entries,
+		NextCursor: nextCursor,
+		Gap:        false,
+		Snapshot:   make([]Entry, 0),
+	}
 }
 
 type RecentEntryHandler struct {
@@ -251,7 +377,7 @@ func (handler *RecentEntryHandler) Handle(ctx context.Context, record slog.Recor
 	if len(attributes) > 0 {
 		entry.Attrs = attributes
 	}
-	currentEntryBuffer().append(entry)
+	appendRecentEntry(entry)
 	return handler.nextHandler.Handle(ctx, record)
 }
 

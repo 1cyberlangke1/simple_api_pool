@@ -21,23 +21,49 @@ export interface AdminProviderSnapshot {
   max_disable_secs: number;
 }
 
+export interface AdminProviderStatsSnapshot {
+  available_keys?: number;
+  total_keys?: number;
+  success_count?: number;
+  error_count?: number;
+  error_types?: Record<string, number>;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_tokens?: number;
+  cache_hits?: number;
+}
+
 export interface AdminOverview {
   health: { status?: string };
   global_config: {
     admin_key_configured: boolean;
+    client_keys: string[];
     token_estimation_enabled: boolean;
     client_key_count: number;
   };
   providers: AdminProviderSnapshot[];
-  provider_stats: Record<string, Record<string, number>>;
-  recent_logs: Array<Record<string, unknown>>;
+  provider_stats: Record<string, AdminProviderStatsSnapshot>;
 }
 
-export interface ProviderRecentError {
-  message: string;
-  path: string;
-  status: number;
+export interface AdminLogEntry {
+  attrs?: Record<string, unknown>;
+  level: string;
+  msg: string;
+  seq: number;
   time: string;
+}
+
+export interface AdminLogCache {
+  cursor: number;
+  entries: AdminLogEntry[];
+  updatedAt: number;
+}
+
+export interface AdminLogDeltaResponse {
+  entries?: Array<Record<string, unknown>>;
+  gap?: boolean;
+  next_cursor?: number;
+  snapshot?: Array<Record<string, unknown>>;
 }
 
 export type BulkDisableDraft =
@@ -45,17 +71,28 @@ export type BulkDisableDraft =
   | { mode: "duration"; seconds: number }
   | { mode: "until"; until: string };
 
+export const adminLogCacheStorageKey = "admin-log-cache-v1";
+export const adminLogCacheMaxEntries = 100;
+
 export function createEmptyAdminOverview(): AdminOverview {
   return {
     health: { status: "unknown" },
     global_config: {
       admin_key_configured: false,
+      client_keys: [],
       token_estimation_enabled: false,
       client_key_count: 0
     },
     providers: [],
-    provider_stats: {},
-    recent_logs: []
+    provider_stats: {}
+  };
+}
+
+export function createEmptyAdminLogCache(): AdminLogCache {
+  return {
+    cursor: 0,
+    entries: [],
+    updatedAt: 0
   };
 }
 
@@ -164,46 +201,149 @@ export function buildBulkDisableRequest(
   };
 }
 
-export function collectProviderRecentErrors(
-  logs: Array<Record<string, unknown>>,
-  providerName: string,
-  limit = 2
-): ProviderRecentError[] {
-  if (!providerName || !Array.isArray(logs) || limit <= 0) {
-    return [];
+function normalizeLogSequence(rawValue: unknown) {
+  const nextSequence = toInteger(rawValue, 0);
+  if (nextSequence <= 0) {
+    return 0;
   }
-
-  const normalizedProviderName = providerName.trim().toLowerCase();
-  const matchedErrors: ProviderRecentError[] = [];
-
-  for (let index = 0; index < logs.length; index += 1) {
-    const entry = logs[index];
-    if (!entry || String(entry.level || "").toUpperCase() !== "ERROR") {
-      continue;
-    }
-
-    const attrs = typeof entry.attrs === "object" && entry.attrs ? entry.attrs as Record<string, unknown> : {};
-    const entryProviderName = String(attrs.provider || attrs.provider_name || "").trim().toLowerCase();
-    if (entryProviderName !== normalizedProviderName) {
-      continue;
-    }
-
-    matchedErrors.push({
-      message: String(attrs.error || entry.msg || "").trim(),
-      path: String(attrs.path || ""),
-      status: toInteger(attrs.upstream_status ?? attrs.status, 0),
-      time: String(entry.time || "")
-    });
-
-    if (matchedErrors.length >= limit) {
-      return matchedErrors;
-    }
-  }
-
-  return matchedErrors;
+  return nextSequence;
 }
 
-export function isPanelRequestLog(entry: Record<string, unknown> | null | undefined) {
+function normalizeAdminLogEntry(rawEntry: Record<string, unknown> | null | undefined): AdminLogEntry | null {
+  if (!rawEntry) {
+    return null;
+  }
+
+  const nextSequence = normalizeLogSequence(rawEntry.seq);
+  if (nextSequence <= 0) {
+    return null;
+  }
+
+  const attrs = typeof rawEntry.attrs === "object" && rawEntry.attrs
+    ? rawEntry.attrs as Record<string, unknown>
+    : undefined;
+
+  return {
+    attrs,
+    level: String(rawEntry.level || ""),
+    msg: String(rawEntry.msg || ""),
+    seq: nextSequence,
+    time: String(rawEntry.time || "")
+  };
+}
+
+function normalizeAdminLogEntries(
+  rawEntries: Array<AdminLogEntry | Record<string, unknown>> | null | undefined,
+  maxEntries: number
+) {
+  const entriesBySequence = new Map<number, AdminLogEntry>();
+  const sourceEntries = Array.isArray(rawEntries) ? rawEntries : [];
+
+  for (let index = 0; index < sourceEntries.length; index += 1) {
+    const normalizedEntry = normalizeAdminLogEntry(sourceEntries[index] as Record<string, unknown>);
+    if (!normalizedEntry) {
+      continue;
+    }
+    entriesBySequence.set(normalizedEntry.seq, normalizedEntry);
+  }
+
+  return Array.from(entriesBySequence.values())
+    .sort(function compareAdminLogEntries(leftEntry, rightEntry) {
+      return leftEntry.seq - rightEntry.seq;
+    })
+    .slice(-Math.max(1, maxEntries));
+}
+
+function readStoredAdminLogCacheValue() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return "";
+  }
+  try {
+    return window.localStorage.getItem(adminLogCacheStorageKey) || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+export function restoreAdminLogCache(maxEntries = adminLogCacheMaxEntries): AdminLogCache {
+  const rawValue = readStoredAdminLogCacheValue();
+  if (!rawValue) {
+    return createEmptyAdminLogCache();
+  }
+
+  try {
+    const parsedValue = JSON.parse(rawValue) as {
+      cursor?: number;
+      entries?: Array<Record<string, unknown>>;
+      updatedAt?: number;
+    };
+    const entries = normalizeAdminLogEntries(parsedValue.entries, maxEntries);
+    const lastSequence = entries.length > 0 ? entries[entries.length - 1].seq : 0;
+    return {
+      cursor: Math.max(normalizeLogSequence(parsedValue.cursor), lastSequence),
+      entries,
+      updatedAt: Math.max(0, toInteger(parsedValue.updatedAt, 0))
+    };
+  } catch (_error) {
+    return createEmptyAdminLogCache();
+  }
+}
+
+export function persistAdminLogCache(cache: AdminLogCache) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(adminLogCacheStorageKey, JSON.stringify(cache));
+  } catch (_error) {
+  }
+}
+
+export function clearPersistedAdminLogCache() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(adminLogCacheStorageKey);
+  } catch (_error) {
+  }
+}
+
+export function applyAdminLogDelta(
+  currentCache: AdminLogCache,
+  response: AdminLogDeltaResponse,
+  maxEntries = adminLogCacheMaxEntries,
+  nowMs = Date.now()
+) {
+  const gapDetected = Boolean(response?.gap);
+  const normalizedCurrentEntries = normalizeAdminLogEntries(currentCache.entries, maxEntries);
+  const normalizedDeltaEntries = normalizeAdminLogEntries(response.entries, maxEntries);
+  const normalizedSnapshotEntries = normalizeAdminLogEntries(response.snapshot, maxEntries);
+
+  const nextEntries = gapDetected
+    ? normalizedSnapshotEntries
+    : normalizeAdminLogEntries(
+        normalizedCurrentEntries.concat(normalizedDeltaEntries) as unknown as Array<Record<string, unknown>>,
+        maxEntries
+      );
+
+  const lastSequence = nextEntries.length > 0 ? nextEntries[nextEntries.length - 1].seq : 0;
+  const responseCursor = Math.max(normalizeLogSequence(response.next_cursor), lastSequence);
+  const nextCursor = gapDetected
+    ? responseCursor
+    : Math.max(responseCursor, normalizeLogSequence(currentCache.cursor));
+
+  return {
+    cache: {
+      cursor: nextCursor,
+      entries: nextEntries,
+      updatedAt: nowMs
+    },
+    gapDetected
+  };
+}
+
+export function isPanelRequestLog(entry: AdminLogEntry | Record<string, unknown> | null | undefined) {
   if (!entry || entry.msg !== "http_request") {
     return false;
   }

@@ -1,4 +1,4 @@
-import { ProviderIcon } from "@lobehub/icons";
+import ProviderIcon from "@lobehub/icons/es/features/ProviderIcon";
 import { Server } from "lucide-react";
 
 import { resolveProviderIconName } from "@/lib/provider_icons";

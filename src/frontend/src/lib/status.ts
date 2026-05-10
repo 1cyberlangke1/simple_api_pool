@@ -7,6 +7,7 @@ export interface ProviderStatusSnapshot {
   total_keys?: number;
   success_count?: number;
   error_count?: number;
+  error_types?: Record<string, number>;
   input_tokens?: number;
   output_tokens?: number;
   cache_tokens?: number;
@@ -84,5 +85,28 @@ export function buildProviderCards(overview: StatusOverview) {
         status: overview?.health?.status || "unknown",
         type: overview?.provider_types?.[entry[0]] || ""
       };
+    });
+}
+
+export function buildErrorTypeSummaries(snapshot: ProviderStatusSnapshot, limit = 4) {
+  return Object.entries(snapshot?.error_types || {})
+    .map(function toErrorTypeEntry(entry) {
+      return {
+        code: String(entry[0] || ""),
+        count: Number(entry[1] || 0)
+      };
+    })
+    .filter(function keepPositiveEntry(entry) {
+      return entry.code && entry.count > 0;
+    })
+    .sort(function compareErrorTypeEntries(leftEntry, rightEntry) {
+      if (rightEntry.count !== leftEntry.count) {
+        return rightEntry.count - leftEntry.count;
+      }
+      return leftEntry.code.localeCompare(rightEntry.code, "en");
+    })
+    .slice(0, limit)
+    .map(function toErrorTypeSummary(entry) {
+      return `${entry.code} × ${entry.count}`;
     });
 }

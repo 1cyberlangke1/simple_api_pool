@@ -1,5 +1,9 @@
 import { requestJSON } from "../api.js";
 
+export async function fetchAdminBootstrap() {
+  return requestJSON("/api/admin/bootstrap");
+}
+
 export async function fetchAdminOverview(options) {
   const requestOptions = options || {};
   const headers = {};
@@ -7,6 +11,19 @@ export async function fetchAdminOverview(options) {
     headers["If-None-Match"] = requestOptions.etag;
   }
   return requestJSON("/api/admin/overview", { headers });
+}
+
+export async function fetchAdminLogs(options) {
+  const requestOptions = options || {};
+  const query = new URLSearchParams();
+  if (requestOptions.after) {
+    query.set("after", String(requestOptions.after));
+  }
+  if (requestOptions.limit) {
+    query.set("limit", String(requestOptions.limit));
+  }
+  const requestURL = query.size > 0 ? `/api/admin/logs?${query.toString()}` : "/api/admin/logs";
+  return requestJSON(requestURL);
 }
 
 export async function fetchAdminConfig() {

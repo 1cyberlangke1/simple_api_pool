@@ -17,6 +17,7 @@ import (
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
 	"simple-api-pool/httpapi"
+	"simple-api-pool/realtime"
 	"simple-api-pool/stats"
 )
 
@@ -74,7 +75,10 @@ func (ah *Handler) newRouter() chi.Router {
 
 	router.Group(func(r chi.Router) {
 		r.Use(ah.requireAdmin)
+		r.Get("/api/admin/bootstrap", ah.handleBootstrap)
+		r.Get("/api/admin/stream", ah.handleStream)
 		r.Get("/api/admin/overview", ah.handleOverview)
+		r.Get("/api/admin/logs", ah.handleLogs)
 		r.Get("/api/admin/config", ah.handleConfig)
 		r.Put("/api/admin/config", ah.handleConfig)
 
@@ -161,6 +165,7 @@ func (ah *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "保存提供商失败")
 			return
 		}
+		realtime.PublishProvidersChanged()
 		httpapi.WriteJSONResponse(w, http.StatusCreated, snapshot)
 	default:
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
@@ -179,6 +184,7 @@ func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request) 
 			httpapi.WriteErrorResponse(w, http.StatusInternalServerError, "删除提供商失败")
 			return
 		}
+		realtime.PublishProvidersChanged()
 		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		snapshot, err := ah.providerSvc.GetSnapshot(providerName)
@@ -208,6 +214,7 @@ func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request) {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 			return
 		}
+		realtime.PublishProvidersChanged()
 		httpapi.WriteJSONResponse(w, http.StatusOK, keySnapshots)
 	case http.MethodDelete:
 		keyName := chi.URLParam(r, "key")
@@ -224,6 +231,7 @@ func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request) {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
 			return
 		}
+		realtime.PublishProvidersChanged()
 		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
@@ -276,6 +284,7 @@ func (ah *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		realtime.PublishGlobalConfigChanged()
 		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "updated"})
 	default:
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
@@ -311,6 +320,7 @@ func (ah *Handler) handleProviderKeyBulkAction(w http.ResponseWriter, r *http.Re
 		httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
 		return
 	}
+	realtime.PublishProvidersChanged()
 	httpapi.WriteJSONResponse(w, http.StatusOK, keySnapshots)
 }
 

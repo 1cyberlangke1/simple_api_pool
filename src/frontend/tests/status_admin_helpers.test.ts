@@ -4,14 +4,13 @@ import { normalizeErrorMessage, shouldIgnoreRuntimeFailure } from "@/api.js";
 import {
   buildBulkDisableRequest,
   chooseSelectedProviderName,
-  collectProviderRecentErrors,
   filterSelectedRefs,
   getDisableBounds,
   isPanelRequestLog,
   normalizeBulkSeconds
 } from "@/lib/admin";
 import { resolveProviderIconName } from "@/lib/provider_icons";
-import { buildProviderCards, collectStatusSummary } from "@/lib/status";
+import { buildErrorTypeSummaries, buildProviderCards, collectStatusSummary } from "@/lib/status";
 
 describe("status helpers", function () {
   it("会累计所有提供商的请求和 token 统计", function () {
@@ -73,10 +72,22 @@ describe("status helpers", function () {
     expect(resolveProviderIconName(["responses", "OpenAI Responses"])).toBe("openai");
     expect(resolveProviderIconName(["claude", "Anthropic Claude"])).toBe("anthropic");
     expect(resolveProviderIconName(["gemini", "Google Gemini"])).toBe("google");
+    expect(resolveProviderIconName(["openai_chat", "longcat"])).toBe("longcat");
+    expect(resolveProviderIconName(["openai_chat", "Long Cat Mirror"])).toBe("longcat");
     expect(resolveProviderIconName(["custom", "longcat"])).toBe("longcat");
     expect(resolveProviderIconName(["custom", "Long Cat Mirror"])).toBe("longcat");
     expect(resolveProviderIconName(["custom", "Claude Sonnet 4 Mirror"])).toBe("anthropic");
     expect(resolveProviderIconName(["openai_responses", "Acme Router"])).toBe("openai");
+  });
+
+  it("会把错误类型计数整理成状态页可直接展示的摘要", function () {
+    expect(buildErrorTypeSummaries({
+      error_types: {
+        "500": 1,
+        "429": 3,
+        "404": 2
+      }
+    })).toEqual(["429 × 3", "404 × 2", "500 × 1"]);
   });
 });
 
@@ -165,56 +176,6 @@ describe("admin helpers", function () {
       action: "disable_until",
       disable_seconds: 2700
     });
-  });
-
-  it("会按提供商提取最近错误记录", function () {
-    const errors = collectProviderRecentErrors([
-      {
-        attrs: {
-          error: "quota exceeded",
-          path: "/openai/v1/chat/completions",
-          provider: "openai",
-          upstream_status: 429
-        },
-        level: "ERROR",
-        msg: "proxy_request",
-        time: "2026-05-10T12:02:00Z"
-      },
-      {
-        attrs: {
-          provider: "gemini"
-        },
-        level: "INFO",
-        msg: "proxy_request",
-        time: "2026-05-10T12:01:00Z"
-      },
-      {
-        attrs: {
-          error: "upstream timeout",
-          path: "/openai/v1/models",
-          provider: "openai",
-          status: 504
-        },
-        level: "ERROR",
-        msg: "proxy_request",
-        time: "2026-05-10T12:00:00Z"
-      }
-    ], "openai", 2);
-
-    expect(errors).toEqual([
-      {
-        message: "quota exceeded",
-        path: "/openai/v1/chat/completions",
-        status: 429,
-        time: "2026-05-10T12:02:00Z"
-      },
-      {
-        message: "upstream timeout",
-        path: "/openai/v1/models",
-        status: 504,
-        time: "2026-05-10T12:00:00Z"
-      }
-    ]);
   });
 
   it("会识别面板自身请求日志", function () {

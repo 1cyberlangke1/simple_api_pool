@@ -11,6 +11,7 @@ import (
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+	"simple-api-pool/httpapi"
 	"simple-api-pool/keyring"
 	"simple-api-pool/middleware"
 	"simple-api-pool/proxyapi"
@@ -80,7 +81,7 @@ func NewRuntime(opts Options) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Handler:    middleware.ApplySecurityHeaders(applog.LoggingMiddleware(rootHandler), policyFunc(cspProvider)),
+		Handler:    httpapi.CompressionMiddleware(middleware.ApplySecurityHeaders(applog.LoggingMiddleware(rootHandler), policyFunc(cspProvider))),
 		statsMgr:   statsMgr,
 		cacheStore: cacheStore,
 	}, nil

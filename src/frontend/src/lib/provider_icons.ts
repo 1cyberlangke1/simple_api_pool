@@ -31,36 +31,28 @@ const supportedProviderKeys = Object.values(ModelProvider).map(function toSuppor
   return normalizeProviderIconKey(String(providerKey || ""));
 });
 
-export function resolveProviderIconName(inputValues: Array<string | null | undefined>) {
-  const normalizedValues = inputValues
-    .map(function toNormalizedValue(value) {
-      return normalizeProviderIconKey(String(value || ""));
-    })
-    .filter(Boolean);
+const supportedProviderKeySet = new Set(supportedProviderKeys);
 
-  for (let index = 0; index < normalizedValues.length; index += 1) {
-    const value = normalizedValues[index];
-    const aliasedIcon = protocolAliasIcons[value];
-    if (aliasedIcon) {
-      return aliasedIcon;
+function findExactSupportedProviderIcon(candidateValues: string[]) {
+  for (let index = 0; index < candidateValues.length; index += 1) {
+    const value = candidateValues[index];
+    if (supportedProviderKeySet.has(value)) {
+      return canonicalizeResolvedProviderKey(value);
     }
   }
 
-  for (let index = 0; index < normalizedValues.length; index += 1) {
-    const value = normalizedValues[index];
+  return "";
+}
+
+function findFuzzySupportedProviderIcon(candidateValues: string[]) {
+  for (let valueIndex = 0; valueIndex < candidateValues.length; valueIndex += 1) {
+    const value = candidateValues[valueIndex];
+    const squashedValue = squashProviderIconKey(value);
+
     for (let providerIndex = 0; providerIndex < supportedProviderKeys.length; providerIndex += 1) {
-      if (supportedProviderKeys[providerIndex] === value) {
-        return canonicalizeResolvedProviderKey(supportedProviderKeys[providerIndex]);
-      }
-    }
-  }
+      const providerKey = supportedProviderKeys[providerIndex];
+      const squashedProviderKey = squashProviderIconKey(providerKey);
 
-  for (let providerIndex = 0; providerIndex < supportedProviderKeys.length; providerIndex += 1) {
-    const providerKey = supportedProviderKeys[providerIndex];
-    const squashedProviderKey = squashProviderIconKey(providerKey);
-    for (let valueIndex = 0; valueIndex < normalizedValues.length; valueIndex += 1) {
-      const value = normalizedValues[valueIndex];
-      const squashedValue = squashProviderIconKey(value);
       if (
         value.includes(providerKey) ||
         providerKey.includes(value) ||
@@ -72,16 +64,53 @@ export function resolveProviderIconName(inputValues: Array<string | null | undef
     }
   }
 
-  for (let familyIndex = 0; familyIndex < familyFuzzyIcons.length; familyIndex += 1) {
-    const family = familyFuzzyIcons[familyIndex];
-    for (let valueIndex = 0; valueIndex < normalizedValues.length; valueIndex += 1) {
-      const value = normalizedValues[valueIndex];
+  return "";
+}
+
+function findFamilyFuzzyProviderIcon(candidateValues: string[]) {
+  for (let valueIndex = 0; valueIndex < candidateValues.length; valueIndex += 1) {
+    const value = candidateValues[valueIndex];
+
+    for (let familyIndex = 0; familyIndex < familyFuzzyIcons.length; familyIndex += 1) {
+      const family = familyFuzzyIcons[familyIndex];
+
       for (let keywordIndex = 0; keywordIndex < family.keywords.length; keywordIndex += 1) {
         if (value.includes(family.keywords[keywordIndex])) {
           return family.icon;
         }
       }
     }
+  }
+
+  return "";
+}
+
+export function resolveProviderIconName(inputValues: Array<string | null | undefined>) {
+  const normalizedValues = inputValues
+    .map(function toNormalizedValue(value) {
+      return normalizeProviderIconKey(String(value || ""));
+    })
+    .filter(Boolean);
+
+  const preferredCandidateValues = normalizedValues.filter(function excludeProtocolFallbackValue(value) {
+    return !protocolAliasIcons[value];
+  });
+
+  const candidateValues = preferredCandidateValues.length > 0 ? preferredCandidateValues : normalizedValues;
+
+  const exactSupportedIcon = findExactSupportedProviderIcon(candidateValues);
+  if (exactSupportedIcon) {
+    return exactSupportedIcon;
+  }
+
+  const fuzzySupportedIcon = findFuzzySupportedProviderIcon(candidateValues);
+  if (fuzzySupportedIcon) {
+    return fuzzySupportedIcon;
+  }
+
+  const familyFuzzyIcon = findFamilyFuzzyProviderIcon(candidateValues);
+  if (familyFuzzyIcon) {
+    return familyFuzzyIcon;
   }
 
   for (let index = 0; index < normalizedValues.length; index += 1) {

@@ -10,6 +10,7 @@ import (
 	"simple-api-pool/applog"
 	"simple-api-pool/config"
 	"simple-api-pool/domain"
+	"simple-api-pool/realtime"
 )
 
 type roundRobinState struct {
@@ -85,7 +86,9 @@ func (k *KeyRing) RecordSuccess(providerName, keyValue string) {
 
 	if err := k.cfg.UpdateKeyState(providerName, keyValue, disabledUntil, 0); err != nil {
 		slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
+		return
 	}
+	realtime.PublishProvidersChanged()
 }
 
 func (k *KeyRing) RecordFailure(providerName, keyValue string) {
@@ -103,7 +106,9 @@ func (k *KeyRing) RecordFailure(providerName, keyValue string) {
 			})
 			if err := k.cfg.UpdateKeyState(providerName, keyValue, nextState.DisabledUntil, nextState.ConsecutiveFails); err != nil {
 				slog.Default().Error("update_key_state_failed", "provider", providerName, "key_ref", applog.MaskSecret(keyValue), "error", err)
+				return
 			}
+			realtime.PublishProvidersChanged()
 			return
 		}
 	}

@@ -195,6 +195,75 @@ func TestProxyStreamRequestWritesFirstByteLatencyLog(t *testing.T) {
 	}
 }
 
+func TestUpstreamErrorBodyUsesDedicatedLogInsteadOfProxyRequestErrorField(t *testing.T) {
+	restoreRecentEntries := applog.ReplaceRecentEntriesForTesting(10)
+	defer restoreRecentEntries()
+
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(applog.NewTestLogger(&logs))
+	defer slog.SetDefault(oldLogger)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"quota exceeded"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai",
+		Type:    config.OpenAIChat,
+		BaseURL: upstream.URL,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1"}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusTooManyRequests, rec.Code, rec.Body.String())
+	}
+
+	var proxyEntry applog.Entry
+	var bodyEntry applog.Entry
+	for _, entry := range applog.RecentEntries(10) {
+		switch entry.Msg {
+		case "proxy_request":
+			proxyEntry = entry
+		case "upstream_error_body":
+			bodyEntry = entry
+		}
+	}
+
+	if proxyEntry.Msg != "proxy_request" {
+		t.Fatalf("期望记录 proxy_request 日志，实际是 %+v", applog.RecentEntries(10))
+	}
+	if got := proxyEntry.Attrs["error"]; got != "上游返回 429" {
+		t.Fatalf("期望 proxy_request.error 只保留摘要，实际是 %#v", got)
+	}
+	if bodyEntry.Msg != "upstream_error_body" {
+		t.Fatalf("期望记录 upstream_error_body 日志，实际是 %+v", applog.RecentEntries(10))
+	}
+	if got := bodyEntry.Attrs["body"]; got != `{"error":{"message":"quota exceeded"}}` {
+		t.Fatalf("期望专用日志记录上游错误体，实际是 %#v", got)
+	}
+}
+
 func TestProxyAndAccessLogsRedactSensitiveQueryValues(t *testing.T) {
 	var logs bytes.Buffer
 	oldLogger := slog.Default()

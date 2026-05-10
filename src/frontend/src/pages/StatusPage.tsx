@@ -14,7 +14,7 @@ import { ProviderBadgeIcon } from "@/components/provider/ProviderBadgeIcon";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatLocaleTime, formatNumber } from "@/lib/format";
-import { buildProviderCards, collectStatusSummary } from "@/lib/status";
+import { buildErrorTypeSummaries, buildProviderCards, collectStatusSummary } from "@/lib/status";
 import { useStatusOverview } from "@/hooks/useStatusOverview";
 import { useAppStore } from "@/store/appStore";
 
@@ -95,6 +95,7 @@ export function StatusPage() {
       name: String(card.name || ""),
       outputTokens: Number(card.snapshot.output_tokens || 0),
       rps: 0,
+      snapshot: card.snapshot,
       status: String(card.status || "unknown"),
       successRate: calculateSuccessRate(successCount, errorCount),
       totalKeys: Number(card.snapshot.total_keys || 0),
@@ -209,6 +210,7 @@ export function StatusPage() {
           ) : null}
           {providerCards.map(function renderProviderCard(providerCard) {
             const providerStatusPresentation = readStatusPresentation(providerCard.status);
+            const errorTypeSummaries = buildErrorTypeSummaries(providerCard.snapshot);
             return (
               <motion.div variants={item} key={providerCard.id}>
                 <Card className="h-full flex flex-col hover:shadow-md transition-shadow">
@@ -262,6 +264,25 @@ export function StatusPage() {
                         <p className="mb-1 text-xs text-muted-foreground">{translate("status.cacheHits")}</p>
                         <p className="font-mono font-medium">{formatNumber(providerCard.cacheHits)}</p>
                       </div>
+                    </div>
+                    <div className="mt-4 border-t border-border/50 pt-4">
+                      <p className="mb-2 text-xs text-muted-foreground">{translate("status.errorTypes")}</p>
+                      {errorTypeSummaries.length === 0 ? (
+                        <p className="font-mono text-sm text-muted-foreground">-</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {errorTypeSummaries.map(function renderErrorTypeSummary(summary) {
+                            return (
+                              <span
+                                className="inline-flex min-h-7 items-center rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-1 font-mono text-xs text-destructive"
+                                key={summary}
+                              >
+                                {summary}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

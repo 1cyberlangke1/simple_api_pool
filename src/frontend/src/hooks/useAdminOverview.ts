@@ -6,8 +6,7 @@ import {
   clearProviderCache,
   deleteProvider,
   deleteProviderKey,
-  fetchAdminConfig,
-  fetchAdminOverview,
+  fetchAdminBootstrap,
   importProviderKeys,
   loginAdmin,
   logoutAdmin,
@@ -22,7 +21,10 @@ import {
 } from "@/forms/global_config_form.js";
 import { buildProviderPayload, createDefaultProviderDraft, createProviderDraftFromSnapshot } from "@/forms/provider_form.js";
 import {
+  adminLogCacheMaxEntries,
   chooseSelectedProviderName,
+  clearPersistedAdminLogCache,
+  createEmptyAdminLogCache,
   createEmptyAdminOverview,
   filterKeysBySearch,
   filterProvidersBySearch,
@@ -31,15 +33,20 @@ import {
   getProviderByName,
   isPanelRequestLog,
   normalizeBulkSeconds,
+  persistAdminLogCache,
+  restoreAdminLogCache,
+  type AdminLogCache,
   type AdminOverview,
   type AdminProviderSnapshot
 } from "@/lib/admin";
+import { createAdminLiveSnapshot, reduceAdminLiveEvent } from "@/lib/live";
+import { buildStreamURL, openLiveStream } from "@/services/live_service.js";
 
 export type AdminTab = "global" | "providers" | "keys" | "logs";
 export type BulkMode = "disable_until" | "disable_forever";
 
 interface MessageState {
-  kind: "" | "ok" | "error";
+  kind: "" | "ok" | "error" | "warning";
   text: string;
 }
 
@@ -62,6 +69,7 @@ interface AdminState {
   keyImportDialogOpen: boolean;
   keySearch: string;
   loadedAt: number;
+  logCache: AdminLogCache;
   logModalOpen: boolean;
   loginMessage: MessageState;
   loginPending: boolean;
@@ -79,9 +87,8 @@ interface AdminState {
 
 interface OverviewStateOptions {
   preferredProviderName?: string;
+  replaceGlobalDraft?: boolean;
 }
-
-const adminPollIntervalMs = 10000;
 
 function mergeGlobalDraft(
   currentDraft: ReturnType<typeof createGlobalDraft>,
@@ -132,6 +139,7 @@ function createInitialAdminState(): AdminState {
     keyImportDialogOpen: false,
     keySearch: "",
     loadedAt: 0,
+    logCache: restoreAdminLogCache(adminLogCacheMaxEntries),
     logModalOpen: false,
     loginMessage: createMessage(""),
     loginPending: false,
@@ -148,13 +156,44 @@ function createInitialAdminState(): AdminState {
   };
 }
 
+function createUnauthorizedState(
+  previousState: AdminState,
+  translate: (key: string, params?: Record<string, unknown>) => string
+): AdminState {
+  return {
+    ...previousState,
+    authenticated: false,
+    checkedAuth: true,
+    clientKeysPending: false,
+    flashMessage: createMessage(""),
+    globalAdminKeyDirty: false,
+    globalConfigLoaded: false,
+    globalConfigPending: false,
+    globalDraft: createGlobalDraft(null),
+    globalSettingsDirty: false,
+    keyImportDialogOpen: false,
+    loadedAt: 0,
+    logCache: createEmptyAdminLogCache(),
+    logModalOpen: false,
+    loginMessage: createMessage("error", translate("admin.unauthorized")),
+    loginPending: false,
+    overview: createEmptyAdminOverview(),
+    pending: false,
+    providerDialogOpen: false,
+    providerDirty: false,
+    providerDraft: null,
+    selectedKeyRefs: [],
+    selectedProviderName: "",
+    tokenEstimationPending: false
+  };
+}
+
 export function useAdminOverview(
   translate: (key: string, params?: Record<string, unknown>) => string,
   language: "en" | "zh"
 ) {
   const [state, setState] = useState<AdminState>(createInitialAdminState);
   const stateRef = useRef(state);
-  const etagRef = useRef("");
 
   useEffect(function syncStateRef() {
     stateRef.current = state;
@@ -176,14 +215,14 @@ export function useAdminOverview(
   }, [selectedProvider, state.keySearch]);
 
   const filteredLogs = useMemo(function computeFilteredLogs() {
-    const sourceLogs = state.overview.recent_logs || [];
+    const sourceLogs = state.logCache.entries || [];
     if (!state.hidePanelLogs) {
       return sourceLogs;
     }
     return sourceLogs.filter(function keepVisibleLog(entry) {
       return !isPanelRequestLog(entry);
     });
-  }, [state.hidePanelLogs, state.overview.recent_logs]);
+  }, [state.hidePanelLogs, state.logCache.entries]);
 
   const selectedProviderStats = useMemo(function computeSelectedProviderStats() {
     if (!state.selectedProviderName) {
@@ -196,102 +235,38 @@ export function useAdminOverview(
     return getDisableBounds(state.providerDraft || selectedProvider);
   }, [selectedProvider, state.providerDraft]);
 
-  const loadGlobalConfig = useCallback(async function loadGlobalConfig(forceReplace = false) {
-    setState(function markGlobalConfigPending(previousState) {
-      return {
-        ...previousState,
-        globalConfigPending: true
-      };
-    });
+  const streamRef = useRef<{ close: () => void } | null>(null);
+  const cursorRef = useRef(0);
 
-    try {
-      const result = await fetchAdminConfig();
-      const nextGlobalConfig = (result.data || {}) as Record<string, unknown>;
-
-      setState(function mergeGlobalConfig(previousState) {
-        return {
-          ...previousState,
-          authenticated: true,
-          checkedAuth: true,
-          globalConfigLoaded: true,
-          globalConfigPending: false,
-          globalDraft: mergeGlobalDraft(previousState.globalDraft, nextGlobalConfig, {
-            preserveAdminKey: forceReplace ? false : previousState.globalAdminKeyDirty,
-            preserveClientKeys: forceReplace ? false : (previousState.globalSettingsDirty || previousState.clientKeysPending),
-            preserveTokenEstimation: forceReplace ? false : previousState.tokenEstimationPending
-          })
-        };
-      });
-    } catch (error) {
-      if (error && typeof error === "object" && "status" in error && (error.status === 401 || error.status === 403)) {
-        etagRef.current = "";
-        setState(function markGlobalConfigUnauthorized(previousState) {
-          return {
-            ...previousState,
-            authenticated: false,
-            checkedAuth: true,
-            clientKeysPending: false,
-            flashMessage: createMessage(""),
-            globalAdminKeyDirty: false,
-            globalConfigLoaded: false,
-            globalConfigPending: false,
-            globalDraft: createGlobalDraft(null),
-            globalSettingsDirty: false,
-            loadedAt: 0,
-            loginMessage: createMessage("error", translate("admin.unauthorized")),
-            overview: createEmptyAdminOverview(),
-            pending: false,
-            providerDraft: null,
-            selectedKeyRefs: [],
-            selectedProviderName: "",
-            tokenEstimationPending: false
-          };
-        });
-        return;
-      }
-
-      setState(function markGlobalConfigError(previousState) {
-        return {
-          ...previousState,
-          flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.overviewLoadFailed"))),
-          globalConfigPending: false
-        };
-      });
+  const closeStream = useCallback(function closeStream() {
+    if (!streamRef.current) {
+      return;
     }
-  }, [translate]);
+    streamRef.current.close();
+    streamRef.current = null;
+  }, []);
 
-  const loadOverview = useCallback(async function loadOverview(forceRefresh = false, options?: OverviewStateOptions) {
+  const loadOverview = useCallback(async function loadOverview(_forceRefresh = false, options?: OverviewStateOptions) {
     setState(function markPending(previousState) {
       return {
         ...previousState,
+        globalConfigPending: true,
         pending: true
       };
     });
 
     try {
-      const result = await fetchAdminOverview({
-        etag: etagRef.current,
-        forceRefresh
-      });
-
-      if (result.notModified) {
-        setState(function markReady(previousState) {
-          return {
-            ...previousState,
-            authenticated: true,
-            checkedAuth: true,
-            loadedAt: Date.now(),
-            pending: false
-          };
-        });
-        return;
-      }
-
-      etagRef.current = result.etag || "";
-      const nextOverview = (result.data || createEmptyAdminOverview()) as AdminOverview;
+      const result = await fetchAdminBootstrap();
+      const bootstrapSnapshot = createAdminLiveSnapshot(
+        (result.data || createEmptyAdminOverview()) as Record<string, unknown>,
+        stateRef.current.logCache,
+        adminLogCacheMaxEntries
+      );
+      cursorRef.current = bootstrapSnapshot.cursor;
+      persistAdminLogCache(bootstrapSnapshot.logCache);
 
       setState(function mergeOverview(previousState) {
-        const providers = nextOverview.providers || [];
+        const providers = bootstrapSnapshot.overview.providers || [];
         const nextSelectedProviderName = chooseSelectedProviderName(
           previousState.selectedProviderName,
           providers,
@@ -299,19 +274,23 @@ export function useAdminOverview(
         );
         const nextSelectedProvider = getProviderByName(providers, nextSelectedProviderName);
         const keepProviderDraft = previousState.providerDirty && previousState.selectedProviderName === nextSelectedProviderName;
+        const replaceGlobalDraft = Boolean(options?.replaceGlobalDraft);
 
         return {
           ...previousState,
           authenticated: true,
           checkedAuth: true,
-          globalDraft: mergeGlobalDraft(previousState.globalDraft, nextOverview.global_config, {
+          globalConfigLoaded: true,
+          globalConfigPending: false,
+          globalDraft: mergeGlobalDraft(previousState.globalDraft, bootstrapSnapshot.overview.global_config, {
             keepExistingClientKeys: previousState.globalConfigLoaded,
-            preserveAdminKey: previousState.globalAdminKeyDirty,
-            preserveClientKeys: previousState.globalSettingsDirty || previousState.clientKeysPending,
-            preserveTokenEstimation: previousState.tokenEstimationPending
+            preserveAdminKey: replaceGlobalDraft ? false : previousState.globalAdminKeyDirty,
+            preserveClientKeys: replaceGlobalDraft ? false : (previousState.globalSettingsDirty || previousState.clientKeysPending),
+            preserveTokenEstimation: replaceGlobalDraft ? false : previousState.tokenEstimationPending
           }),
           loadedAt: Date.now(),
-          overview: nextOverview,
+          logCache: bootstrapSnapshot.logCache,
+          overview: bootstrapSnapshot.overview,
           pending: false,
           providerDraft: keepProviderDraft ? previousState.providerDraft : createProviderDraftFromSnapshot(nextSelectedProvider),
           providerDirty: keepProviderDraft,
@@ -319,30 +298,50 @@ export function useAdminOverview(
           selectedProviderName: nextSelectedProviderName
         };
       });
+
+      closeStream();
+      if (typeof window !== "undefined" && typeof window.EventSource === "function") {
+        streamRef.current = openLiveStream(buildStreamURL("/api/admin/stream", bootstrapSnapshot.cursor), {
+          eventNames: ["stats_delta", "log_append", "providers_changed", "global_config_changed", "resync_required"],
+          onEvent(event) {
+            setState(function applyLiveEvent(previousState) {
+              const result = reduceAdminLiveEvent({
+                cursor: cursorRef.current,
+                logCache: previousState.logCache,
+                overview: previousState.overview
+              }, event, adminLogCacheMaxEntries);
+
+              cursorRef.current = result.snapshot.cursor;
+              if (event.type === "log_append") {
+                persistAdminLogCache(result.snapshot.logCache);
+              }
+              if (result.requiresBootstrap) {
+                closeStream();
+                window.setTimeout(function reloadBootstrap() {
+                  void loadOverview(true, {
+                    preferredProviderName: stateRef.current.selectedProviderName,
+                    replaceGlobalDraft: false
+                  });
+                }, 0);
+                return previousState;
+              }
+
+              return {
+                ...previousState,
+                loadedAt: Date.now(),
+                logCache: result.snapshot.logCache,
+                overview: result.snapshot.overview
+              };
+            });
+          }
+        });
+      }
     } catch (error) {
       if (error && typeof error === "object" && "status" in error && (error.status === 401 || error.status === 403)) {
-        etagRef.current = "";
+        clearPersistedAdminLogCache();
+        closeStream();
         setState(function markUnauthorized(previousState) {
-          return {
-            ...previousState,
-            authenticated: false,
-            checkedAuth: true,
-            clientKeysPending: false,
-            flashMessage: createMessage(""),
-            globalAdminKeyDirty: false,
-            globalConfigLoaded: false,
-            globalConfigPending: false,
-            globalDraft: createGlobalDraft(null),
-            globalSettingsDirty: false,
-            loadedAt: 0,
-            loginMessage: createMessage("error", translate("admin.unauthorized")),
-            overview: createEmptyAdminOverview(),
-            pending: false,
-            providerDraft: null,
-            selectedKeyRefs: [],
-            selectedProviderName: "",
-            tokenEstimationPending: false
-          };
+          return createUnauthorizedState(previousState, translate);
         });
         return;
       }
@@ -351,50 +350,30 @@ export function useAdminOverview(
         return {
           ...previousState,
           flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.overviewLoadFailed"))),
+          globalConfigPending: false,
           pending: false
         };
       });
     }
-  }, [translate]);
+  }, [closeStream, translate]);
 
-  useEffect(function probeAndPollOverview() {
-    let timerId = 0;
-    const shouldProbeAuth = !state.checkedAuth;
-    const shouldPoll = state.authenticated;
+  const loadGlobalConfig = useCallback(async function loadGlobalConfig(forceReplace = false) {
+    await loadOverview(true, {
+      preferredProviderName: stateRef.current.selectedProviderName,
+      replaceGlobalDraft: forceReplace
+    });
+  }, [loadOverview]);
 
-    if (shouldProbeAuth || shouldPoll) {
-      void loadOverview(false);
-    }
+  useEffect(function probeBootstrapOnMount() {
+    void loadOverview(false, {
+      preferredProviderName: stateRef.current.selectedProviderName,
+      replaceGlobalDraft: false
+    });
 
-    function handleVisibilityChange() {
-      if (document.visibilityState !== "visible" || !stateRef.current.authenticated) {
-        return;
-      }
-      void loadOverview(true);
-    }
-
-    if (shouldPoll) {
-      timerId = window.setInterval(function pollOverview() {
-        if (document.visibilityState === "hidden" || !stateRef.current.authenticated) {
-          return;
-        }
-        void loadOverview(false);
-      }, adminPollIntervalMs);
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return function cleanupPolling() {
-      window.clearInterval(timerId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    return function cleanupRealtimeStream() {
+      closeStream();
     };
-  }, [loadOverview, state.authenticated, state.checkedAuth]);
-
-  useEffect(function ensureGlobalConfigLoaded() {
-    if (!state.authenticated || !state.checkedAuth || state.globalConfigLoaded || state.globalConfigPending) {
-      return;
-    }
-    void loadGlobalConfig(false);
-  }, [loadGlobalConfig, state.authenticated, state.checkedAuth, state.globalConfigLoaded, state.globalConfigPending]);
+  }, [closeStream, loadOverview]);
 
   useEffect(function bindEscapeKey() {
     if (!state.logModalOpen && !state.providerDialogOpen && !state.keyImportDialogOpen) {
@@ -491,9 +470,10 @@ export function useAdminOverview(
       await logoutAdmin();
     } catch (_error) {
     }
-    etagRef.current = "";
+    closeStream();
+    clearPersistedAdminLogCache();
     setState(createInitialAdminState());
-  }, []);
+  }, [closeStream]);
 
   const saveAdminKey = useCallback(async function saveAdminKey() {
     const currentState = stateRef.current;
@@ -513,8 +493,10 @@ export function useAdminOverview(
           }
         };
       });
-      await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
-      await loadGlobalConfig(true);
+      await loadOverview(true, {
+        preferredProviderName: currentState.selectedProviderName,
+        replaceGlobalDraft: true
+      });
     } catch (error) {
       setState(function markAdminKeyError(previousState) {
         return {
@@ -546,8 +528,10 @@ export function useAdminOverview(
           globalSettingsDirty: false
         };
       });
-      await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
-      await loadGlobalConfig(true);
+      await loadOverview(true, {
+        preferredProviderName: currentState.selectedProviderName,
+        replaceGlobalDraft: true
+      });
     } catch (error) {
       setState(function markGlobalSettingsError(previousState) {
         return {
@@ -1045,8 +1029,10 @@ export function useAdminOverview(
                 tokenEstimationPending: false
               };
             });
-            await loadOverview(true, { preferredProviderName: stateRef.current.selectedProviderName });
-            await loadGlobalConfig(true);
+            await loadOverview(true, {
+              preferredProviderName: stateRef.current.selectedProviderName,
+              replaceGlobalDraft: true
+            });
           } catch (error) {
             setState(function markTokenEstimationError(previousState) {
               return {
@@ -1059,7 +1045,10 @@ export function useAdminOverview(
                 tokenEstimationPending: false
               };
             });
-            await loadGlobalConfig(true);
+            await loadOverview(true, {
+              preferredProviderName: stateRef.current.selectedProviderName,
+              replaceGlobalDraft: true
+            });
           }
         })();
       },
