@@ -7,10 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/backend
-        shell: bash
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
@@ -21,8 +17,16 @@ jobs:
           go-version-file: src/backend/go.mod
           cache-dependency-path: src/backend/go.sum
 
-      - name: 运行后端测试
-        run: go test ./...
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: 运行检查脚本
+        shell: bash
+        run: bash scripts/check.sh
 
   build:
     needs: test

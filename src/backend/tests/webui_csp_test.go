@@ -58,6 +58,9 @@ console.log("hello");
 		t.Fatal("期望样式 hash 按原始内联内容计算，不能使用裁剪后的内容")
 	}
 	mustContain(t, csp, "script-src 'self' https://static.cloudflareinsights.com")
+	mustContain(t, csp, "style-src 'self' 'sha256-")
+	mustContain(t, csp, "https://fonts.googleapis.com")
+	mustContain(t, csp, "font-src 'self' https://fonts.gstatic.com")
 	mustContain(t, csp, "connect-src 'self' https://cloudflareinsights.com")
 }
 

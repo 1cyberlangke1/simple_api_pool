@@ -146,6 +146,14 @@ func TestStatusAndAdminPagesServeSingleBundleFrontend(t *testing.T) {
 			t.Fatalf("期望前端 bundle 保留能力标记 %q", requiredPath)
 		}
 	}
+	for _, forbiddenRuntimeReference := range []string{
+		"process.env.NODE_ENV",
+		"process.env.",
+	} {
+		if strings.Contains(appBundle, forbiddenRuntimeReference) {
+			t.Fatalf("期望浏览器 bundle 不残留 Node 运行时引用 %q", forbiddenRuntimeReference)
+		}
+	}
 
 	for _, requiredStyle := range []string{
 		".app-shell",

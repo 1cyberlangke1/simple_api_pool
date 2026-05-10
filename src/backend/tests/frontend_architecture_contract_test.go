@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestFrontendPackageIncludesRefactorDependencies(t *testing.T) {
+func TestFrontendPackageUsesViteReactStack(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	frontendRoot := frontendRootFromRepoRoot(repoRoot)
 	packageJSONPath := filepath.Join(frontendRoot, "package.json")
@@ -18,103 +18,137 @@ func TestFrontendPackageIncludesRefactorDependencies(t *testing.T) {
 	}
 
 	var pkg struct {
-		Dependencies map[string]string `json:"dependencies"`
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
 	}
 	if err := json.Unmarshal(packageJSONBytes, &pkg); err != nil {
 		t.Fatalf("解析前端 package.json 失败: %v", err)
 	}
 
-	for _, dependencyName := range []string{
+	requiredDependencies := []string{
+		"react",
+		"react-dom",
+		"react-router-dom",
+		"framer-motion",
+		"lucide-react",
+		"zustand",
+		"clsx",
+		"tailwind-merge",
+		"class-variance-authority",
+		"@lobehub/icons",
+		"valibot",
+		"@radix-ui/react-dialog",
+		"@radix-ui/react-select",
+		"@radix-ui/react-slot",
+		"@radix-ui/react-switch",
+		"@radix-ui/react-tabs",
+	}
+	for _, dependencyName := range requiredDependencies {
+		if _, ok := pkg.Dependencies[dependencyName]; !ok {
+			t.Fatalf("期望前端依赖包含 %q，用于支撑 React/Vite 重构后的界面和交互", dependencyName)
+		}
+	}
+
+	requiredDevDependencies := []string{
+		"vite",
+		"@vitejs/plugin-react",
+		"tailwindcss",
+		"@tailwindcss/vite",
+		"typescript",
+		"vitest",
+		"jsdom",
+	}
+	for _, dependencyName := range requiredDevDependencies {
+		if _, ok := pkg.DevDependencies[dependencyName]; !ok {
+			t.Fatalf("期望前端开发依赖包含 %q，用于支撑新的构建与测试链路", dependencyName)
+		}
+	}
+
+	for _, unexpectedDependency := range []string{
+		"preact",
 		"@preact/signals",
 		"wouter-preact",
-		"valibot",
+		"htm",
+		"esbuild-wasm",
 	} {
-		if _, ok := pkg.Dependencies[dependencyName]; !ok {
-			t.Fatalf("期望前端依赖包含 %q，用于完成计划中的状态、路由和表单重构", dependencyName)
+		if _, ok := pkg.Dependencies[unexpectedDependency]; ok {
+			t.Fatalf("期望前端运行时依赖不再包含旧栈依赖 %q", unexpectedDependency)
+		}
+		if _, ok := pkg.DevDependencies[unexpectedDependency]; ok {
+			t.Fatalf("期望前端开发依赖不再包含旧栈依赖 %q", unexpectedDependency)
 		}
 	}
 }
 
-func TestFrontendSourceUsesRefactorModules(t *testing.T) {
+func TestFrontendSourceUsesReactEntryAndPages(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	frontendRoot := frontendRootFromRepoRoot(repoRoot)
 
 	requiredSourceFiles := []string{
-		filepath.Join(frontendRoot, "src", "routes", "app_router.js"),
-		filepath.Join(frontendRoot, "src", "routes", "admin_route_controller.js"),
-		filepath.Join(frontendRoot, "src", "routes", "status_route_controller.js"),
-		filepath.Join(frontendRoot, "src", "routes", "admin_polling.js"),
-		filepath.Join(frontendRoot, "src", "routes", "admin_actions.js"),
-		filepath.Join(frontendRoot, "src", "routes", "app_effects.js"),
-		filepath.Join(frontendRoot, "src", "routes", "route_state.js"),
-		filepath.Join(frontendRoot, "src", "stores", "app_store.js"),
-		filepath.Join(frontendRoot, "src", "stores", "admin_store.js"),
-		filepath.Join(frontendRoot, "src", "stores", "status_store.js"),
-		filepath.Join(frontendRoot, "src", "services", "admin_service.js"),
-		filepath.Join(frontendRoot, "src", "services", "status_service.js"),
-		filepath.Join(frontendRoot, "src", "forms", "provider_form.js"),
-		filepath.Join(frontendRoot, "src", "forms", "global_config_form.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin", "admin_shell.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin", "provider_sidebar.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin", "provider_editor.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin", "key_workspace.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin", "logs_modal.js"),
-		filepath.Join(frontendRoot, "src", "views", "admin_page.js"),
-		filepath.Join(frontendRoot, "src", "views", "status_page.js"),
-		filepath.Join(frontendRoot, "src", "styles", "tokens.css"),
-		filepath.Join(frontendRoot, "src", "styles", "layout.css"),
-		filepath.Join(frontendRoot, "src", "styles", "status.css"),
-		filepath.Join(frontendRoot, "src", "styles", "admin.css"),
-		filepath.Join(frontendRoot, "src", "styles", "forms.css"),
-		filepath.Join(frontendRoot, "src", "styles", "logs.css"),
+		filepath.Join(frontendRoot, "src", "main.tsx"),
+		filepath.Join(frontendRoot, "src", "App.tsx"),
+		filepath.Join(frontendRoot, "src", "styles.css"),
+		filepath.Join(frontendRoot, "src", "components", "layout", "AppLayout.tsx"),
+		filepath.Join(frontendRoot, "src", "pages", "StatusPage.tsx"),
+		filepath.Join(frontendRoot, "src", "pages", "AdminPage.tsx"),
+		filepath.Join(frontendRoot, "src", "store", "appStore.ts"),
+		filepath.Join(frontendRoot, "src", "hooks", "useStatusOverview.ts"),
+		filepath.Join(frontendRoot, "src", "hooks", "useAdminOverview.ts"),
+		filepath.Join(frontendRoot, "src", "lib", "admin.ts"),
+		filepath.Join(frontendRoot, "src", "lib", "status.ts"),
 	}
-
 	for _, sourceFilePath := range requiredSourceFiles {
 		if _, err := os.Stat(sourceFilePath); err != nil {
 			t.Fatalf("期望前端重构源码文件存在 %q: %v", filepath.ToSlash(sourceFilePath), err)
 		}
 	}
 
-	appEntryPath := filepath.Join(frontendRoot, "src", "app.js")
-	appEntryBytes, err := os.ReadFile(appEntryPath)
+	mainEntryBytes, err := os.ReadFile(filepath.Join(frontendRoot, "src", "main.tsx"))
 	if err != nil {
-		t.Fatalf("读取前端入口文件失败: %v", err)
+		t.Fatalf("读取 main.tsx 失败: %v", err)
 	}
-	appEntry := string(appEntryBytes)
-
-	for _, requiredImport := range []string{
-		"@preact/signals",
-		"wouter-preact",
-		"./routes/app_router.js",
-		"./stores/app_store.js",
+	mainEntry := string(mainEntryBytes)
+	for _, requiredSnippet := range []string{
+		`createRoot`,
+		`@/App.tsx`,
+		`@/styles.css`,
 	} {
-		if !strings.Contains(appEntry, requiredImport) {
-			t.Fatalf("期望前端入口引用 %q，以保证模块化结构真正接入入口", requiredImport)
+		if !strings.Contains(mainEntry, requiredSnippet) {
+			t.Fatalf("期望 main.tsx 包含 %q，以保证 React 入口和样式入口明确接入", requiredSnippet)
 		}
 	}
 
-	routerEntryPath := filepath.Join(frontendRoot, "src", "routes", "app_router.js")
-	routerEntryBytes, err := os.ReadFile(routerEntryPath)
+	appShellBytes, err := os.ReadFile(filepath.Join(frontendRoot, "src", "App.tsx"))
 	if err != nil {
-		t.Fatalf("读取前端路由入口失败: %v", err)
+		t.Fatalf("读取 App.tsx 失败: %v", err)
 	}
-	routerEntry := string(routerEntryBytes)
-	for _, requiredImport := range []string{
-		"./admin_route_controller.js",
-		"./status_route_controller.js",
-		"./app_effects.js",
-		"./route_state.js",
+	appShell := string(appShellBytes)
+	for _, requiredSnippet := range []string{
+		`BrowserRouter`,
+		`<StatusPage />`,
+		`<AdminPage />`,
+		`syncThemeWithSystemPreference`,
 	} {
-		if !strings.Contains(routerEntry, requiredImport) {
-			t.Fatalf("期望前端路由入口引用 %q，以保证页面装配由路由模块负责", requiredImport)
+		if !strings.Contains(appShell, requiredSnippet) {
+			t.Fatalf("期望 App.tsx 包含 %q，以保证路由和主题同步逻辑真正接入", requiredSnippet)
 		}
 	}
-	for _, forbiddenImport := range []string{
-		"../services/admin_service.js",
-		"../services/status_service.js",
+
+	buildScriptBytes, err := os.ReadFile(filepath.Join(frontendRoot, "build.mjs"))
+	if err != nil {
+		t.Fatalf("读取 build.mjs 失败: %v", err)
+	}
+	buildScript := string(buildScriptBytes)
+	for _, requiredSnippet := range []string{
+		`@vitejs/plugin-react`,
+		`@tailwindcss/vite`,
+		`src/main.tsx`,
+		`return "app.js";`,
+		`return "styles.css";`,
+		`process.env.NODE_ENV`,
 	} {
-		if strings.Contains(routerEntry, forbiddenImport) {
-			t.Fatalf("期望前端路由入口不再直接依赖 %q，而是通过 route controller 协调", forbiddenImport)
+		if !strings.Contains(buildScript, requiredSnippet) {
+			t.Fatalf("期望 build.mjs 包含 %q，以保证构建继续产出单 bundle 契约", requiredSnippet)
 		}
 	}
 }

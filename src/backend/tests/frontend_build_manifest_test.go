@@ -13,6 +13,7 @@ import (
 func TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	fixtureRoot := prepareFrontendBuildFixture(t, repoRoot)
+	seedGeneratedFrontendAssets(t, fixtureRoot, "console.log('ok');", "body{color:#111;}")
 	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
 
 	templatePath := filepath.Join(frontendRoot, "src", "index.template.html")
@@ -30,7 +31,7 @@ func TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset(t *testin
 		t.Fatalf("写入前端模板失败: %v", err)
 	}
 
-	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
+	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot, "-skip-bundle")
 	command.Env = append(os.Environ(),
 		"APP_VERSION=v-test",
 		"APP_REVISION=abc1234",
@@ -45,19 +46,9 @@ func TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset(t *testin
 func TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	fixtureRoot := prepareFrontendBuildFixture(t, repoRoot)
-	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
+	seedGeneratedFrontendAssets(t, fixtureRoot, "console.log('ok');", ".placeholder-check{color:__APP_VERSION__;}")
 
-	stylesPath := filepath.Join(frontendRoot, "src", "styles.css")
-	stylesBody, err := os.ReadFile(stylesPath)
-	if err != nil {
-		t.Fatalf("读取前端样式失败: %v", err)
-	}
-	stylesBody = append(stylesBody, []byte("\n.placeholder-check{color:__APP_VERSION__;}\n")...)
-	if err := os.WriteFile(stylesPath, stylesBody, 0600); err != nil {
-		t.Fatalf("写入前端样式失败: %v", err)
-	}
-
-	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
+	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot, "-skip-bundle")
 	command.Env = append(os.Environ(),
 		"APP_VERSION=v-test",
 		"APP_REVISION=abc1234",
@@ -72,16 +63,18 @@ func TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder(t *testing
 func TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	fixtureRoot := prepareFrontendBuildFixture(t, repoRoot)
-
-	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
-	command.Env = append(os.Environ(),
-		"APP_VERSION=v-test",
-		"APP_REVISION=abc1234",
-		"APP_BUILD_TIME=2026-05-09T01:02:03Z",
-	)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("运行前端构建失败: %v\n%s", err, string(output))
+	if !reuseFrontendBuildOutputs(t, repoRoot, fixtureRoot) {
+		command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
+		command.Env = append(os.Environ(),
+			"APP_VERSION=v-test",
+			"APP_REVISION=abc1234",
+			"APP_BUILD_TIME=2026-05-09T01:02:03Z",
+		)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("运行前端构建失败: %v\n%s", err, string(output))
+		}
+		persistFrontendBuildOutputsToCache(t, repoRoot, fixtureRoot)
 	}
 
 	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
@@ -133,6 +126,7 @@ func TestFrontendBuildRemovesStaleGeneratedAssets(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	fixtureRoot := prepareFrontendBuildFixture(t, repoRoot)
 	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
+	seedGeneratedFrontendAssets(t, fixtureRoot, "console.log('ok');", "body{color:#111;}")
 	staleAssetPath := filepath.Join(frontendRoot, "assets", "stale.js")
 	if err := os.MkdirAll(filepath.Dir(staleAssetPath), 0700); err != nil {
 		t.Fatalf("创建陈旧资源目录失败: %v", err)
@@ -141,7 +135,7 @@ func TestFrontendBuildRemovesStaleGeneratedAssets(t *testing.T) {
 		t.Fatalf("写入陈旧资源失败: %v", err)
 	}
 
-	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
+	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot, "-skip-bundle")
 	command.Env = append(os.Environ(),
 		"APP_VERSION=v-test",
 		"APP_REVISION=abc1234",

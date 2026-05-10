@@ -18,7 +18,9 @@ var inlineStylePattern = regexp.MustCompile(`(?is)<style(?:\s[^>]*)?>(.*?)</styl
 
 const cloudflareInsightsScriptSource = "https://static.cloudflareinsights.com"
 const cloudflareInsightsConnectSource = "https://cloudflareinsights.com"
-const defaultContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' " + cloudflareInsightsScriptSource + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+const googleFontsStyleSource = "https://fonts.googleapis.com"
+const googleFontsFontSource = "https://fonts.gstatic.com"
+const defaultContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' " + googleFontsStyleSource + "; font-src 'self' " + googleFontsFontSource + "; script-src 'self' " + cloudflareInsightsScriptSource + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 type ContentSecurityPolicyProvider struct {
 	mu           sync.RWMutex
@@ -143,7 +145,8 @@ func BuildContentSecurityPolicy(frontendRoot string) (string, error) {
 		styleSources = append(styleSources, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
 	}
 
-	return "default-src 'self'; img-src 'self' data:; style-src " + strings.Join(styleSources, " ") + "; script-src " + strings.Join(scriptSources, " ") + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", nil
+	styleSources = append(styleSources, googleFontsStyleSource)
+	return "default-src 'self'; img-src 'self' data:; style-src " + strings.Join(styleSources, " ") + "; font-src 'self' " + googleFontsFontSource + "; script-src " + strings.Join(scriptSources, " ") + "; connect-src 'self' " + cloudflareInsightsConnectSource + "; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", nil
 }
 
 func (p *ContentSecurityPolicyProvider) refresh() error {

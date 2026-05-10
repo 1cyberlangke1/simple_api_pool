@@ -1,8 +1,8 @@
 {
-  "version": "v0.1.34-dirty",
-  "revision": "fecec33",
-  "build_time": "2026-05-09T14:32:23Z",
-  "asset_version": "fecec33-2026-05-09T14-32-23Z",
+  "version": "v0.1.35-1-g4af55fd-dirty",
+  "revision": "4af55fd",
+  "build_time": "2026-05-10T09:03:41Z",
+  "asset_version": "4af55fd-2026-05-10T09-03-41Z",
   "frontend_root": "src/frontend",
   "source_dir": "src/frontend/src",
   "assets": [

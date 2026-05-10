@@ -1,11 +1,15 @@
 package tests
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"testing"
+	"time"
 )
 
 func TestFrontendBuildChangesAssetVersionWhenBuildTimeChanges(t *testing.T) {
@@ -82,9 +86,9 @@ func backendRootFromRepoRoot(repoRoot string) string {
 
 func prepareFrontendBuildFixture(t *testing.T, repoRoot string) string {
 	t.Helper()
-	fixtureRoot := t.TempDir()
 	relativeRoot := frontendRelativeRootFromRepoRoot(repoRoot)
 	frontendRoot := frontendRootFromRepoRoot(repoRoot)
+	fixtureRoot := newFrontendBuildFixtureRoot(t, frontendRoot)
 	copyTree(t, filepath.Join(frontendRootFromRepoRoot(repoRoot), "src"), filepath.Join(fixtureRoot, relativeRoot, "src"))
 	copyFile(t, filepath.Join(frontendRoot, "build.mjs"), filepath.Join(fixtureRoot, relativeRoot, "build.mjs"))
 	copyFile(t, filepath.Join(frontendRoot, "package.json"), filepath.Join(fixtureRoot, relativeRoot, "package.json"))
@@ -93,9 +97,30 @@ func prepareFrontendBuildFixture(t *testing.T, repoRoot string) string {
 	return fixtureRoot
 }
 
+func newFrontendBuildFixtureRoot(t *testing.T, frontendRoot string) string {
+	t.Helper()
+
+	installMarkerPath := filepath.Join(frontendRoot, "node_modules", "vite", "package.json")
+	if _, err := os.Stat(installMarkerPath); err == nil {
+		fixtureParent := filepath.Join(frontendRoot, "node_modules", ".frontend-build-fixtures")
+		if err := os.MkdirAll(fixtureParent, 0700); err == nil {
+			fixtureRoot, err := os.MkdirTemp(fixtureParent, "build-*")
+			if err == nil {
+				t.Cleanup(func() {
+					_ = os.RemoveAll(fixtureRoot)
+				})
+				return fixtureRoot
+			}
+		}
+	}
+
+	return t.TempDir()
+}
+
 func runFrontendBuildAndReadAssetVersion(t *testing.T, fixtureRoot string, version string, revision string, buildTime string) string {
 	t.Helper()
-	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot)
+	seedGeneratedFrontendAssets(t, fixtureRoot, "console.log('ok');", "body{color:#111;}")
+	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot, "-skip-bundle")
 	command.Env = append(os.Environ(),
 		"APP_VERSION="+version,
 		"APP_REVISION="+revision,
@@ -149,5 +174,182 @@ func copyFile(t *testing.T, sourcePath string, targetPath string) {
 	}
 	if err := os.WriteFile(targetPath, content, 0600); err != nil {
 		t.Fatalf("写入文件 %s 失败: %v", targetPath, err)
+	}
+}
+
+func reuseFrontendBuildOutputs(t *testing.T, repoRoot string, fixtureRoot string) bool {
+	t.Helper()
+
+	if repositoryBuildOutputsAreFresh(t, repoRoot) {
+		copyFrontendBuildOutputs(t, frontendRootFromRepoRoot(repoRoot), frontendRootFromRepoRoot(fixtureRoot))
+		persistFrontendBuildOutputsToCache(t, repoRoot, fixtureRoot)
+		return true
+	}
+
+	cacheKey, err := computeFrontendBuildCacheKey(repoRoot)
+	if err != nil {
+		t.Fatalf("计算前端构建缓存键失败: %v", err)
+	}
+
+	cacheRoot := filepath.Join(repoRoot, "local-logs", "frontend-build-cache", cacheKey)
+	cacheFrontendRoot := filepath.Join(cacheRoot, frontendRelativeRootFromRepoRoot(repoRoot))
+	if !frontendBuildOutputsExist(cacheFrontendRoot) {
+		return false
+	}
+
+	copyFrontendBuildOutputs(t, cacheFrontendRoot, frontendRootFromRepoRoot(fixtureRoot))
+	return true
+}
+
+func persistFrontendBuildOutputsToCache(t *testing.T, repoRoot string, fixtureRoot string) {
+	t.Helper()
+
+	cacheKey, err := computeFrontendBuildCacheKey(repoRoot)
+	if err != nil {
+		t.Logf("跳过前端构建缓存写入，计算缓存键失败: %v", err)
+		return
+	}
+
+	cacheRoot := filepath.Join(repoRoot, "local-logs", "frontend-build-cache", cacheKey)
+	cacheFrontendRoot := filepath.Join(cacheRoot, frontendRelativeRootFromRepoRoot(repoRoot))
+	if err := os.MkdirAll(cacheFrontendRoot, 0700); err != nil {
+		t.Logf("跳过前端构建缓存写入，创建缓存目录失败: %v", err)
+		return
+	}
+
+	copyFrontendBuildOutputs(t, frontendRootFromRepoRoot(fixtureRoot), cacheFrontendRoot)
+}
+
+func repositoryBuildOutputsAreFresh(t *testing.T, repoRoot string) bool {
+	t.Helper()
+
+	frontendRoot := frontendRootFromRepoRoot(repoRoot)
+	if !frontendBuildOutputsExist(frontendRoot) {
+		return false
+	}
+
+	inputFiles, err := frontendBuildInputFiles(repoRoot)
+	if err != nil {
+		t.Fatalf("收集前端构建输入失败: %v", err)
+	}
+
+	var latestInputTime time.Time
+	for _, inputFile := range inputFiles {
+		info, err := os.Stat(inputFile)
+		if err != nil {
+			t.Fatalf("读取前端构建输入状态失败: %v", err)
+		}
+		if info.ModTime().After(latestInputTime) {
+			latestInputTime = info.ModTime()
+		}
+	}
+
+	var earliestOutputTime time.Time
+	for index, relativePath := range frontendBuildOutputFiles() {
+		info, err := os.Stat(filepath.Join(frontendRoot, relativePath))
+		if err != nil {
+			t.Fatalf("读取前端构建产物状态失败: %v", err)
+		}
+		if index == 0 || info.ModTime().Before(earliestOutputTime) {
+			earliestOutputTime = info.ModTime()
+		}
+	}
+
+	return !earliestOutputTime.Before(latestInputTime)
+}
+
+func frontendBuildOutputsExist(frontendRoot string) bool {
+	for _, relativePath := range frontendBuildOutputFiles() {
+		if _, err := os.Stat(filepath.Join(frontendRoot, relativePath)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func copyFrontendBuildOutputs(t *testing.T, sourceFrontendRoot string, targetFrontendRoot string) {
+	t.Helper()
+
+	for _, relativePath := range frontendBuildOutputFiles() {
+		copyFile(t, filepath.Join(sourceFrontendRoot, relativePath), filepath.Join(targetFrontendRoot, relativePath))
+	}
+}
+
+func frontendBuildOutputFiles() []string {
+	return []string{
+		"index.html",
+		filepath.Join("assets", "app.js"),
+		filepath.Join("assets", "styles.css"),
+		filepath.Join("assets", "build-manifest.json"),
+	}
+}
+
+func computeFrontendBuildCacheKey(repoRoot string) (string, error) {
+	inputFiles, err := frontendBuildInputFiles(repoRoot)
+	if err != nil {
+		return "", err
+	}
+
+	sort.Strings(inputFiles)
+	hash := sha256.New()
+	for _, inputFile := range inputFiles {
+		relativePath, err := filepath.Rel(repoRoot, inputFile)
+		if err != nil {
+			return "", err
+		}
+		hash.Write([]byte(filepath.ToSlash(relativePath)))
+		hash.Write([]byte{0})
+
+		content, err := os.ReadFile(inputFile)
+		if err != nil {
+			return "", err
+		}
+		hash.Write(content)
+		hash.Write([]byte{0})
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func frontendBuildInputFiles(repoRoot string) ([]string, error) {
+	frontendRoot := frontendRootFromRepoRoot(repoRoot)
+	inputFiles := []string{
+		filepath.Join(repoRoot, "scripts", "build_frontend.go"),
+		filepath.Join(frontendRoot, "build.mjs"),
+		filepath.Join(frontendRoot, "package.json"),
+		filepath.Join(frontendRoot, "package-lock.json"),
+	}
+
+	sourceRoot := filepath.Join(frontendRoot, "src")
+	err := filepath.Walk(sourceRoot, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		inputFiles = append(inputFiles, path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return inputFiles, nil
+}
+
+func seedGeneratedFrontendAssets(t *testing.T, fixtureRoot string, appBundle string, styleBundle string) {
+	t.Helper()
+
+	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
+	assetsDir := filepath.Join(frontendRoot, "assets")
+	if err := os.MkdirAll(assetsDir, 0700); err != nil {
+		t.Fatalf("创建前端资源目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "app.js"), []byte(appBundle), 0600); err != nil {
+		t.Fatalf("写入前端脚本资源失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "styles.css"), []byte(styleBundle), 0600); err != nil {
+		t.Fatalf("写入前端样式资源失败: %v", err)
 	}
 }

@@ -47,6 +47,37 @@ function createRequestError(status, message) {
   return error;
 }
 
+function extractMessageText(error) {
+  if (error && typeof error.message === "string") {
+    return error.message.trim();
+  }
+  if (typeof error === "string") {
+    return error.trim();
+  }
+  return "";
+}
+
+function isBrowserNetworkFailureMessage(messageText) {
+  const normalizedMessage = String(messageText || "").trim().toLowerCase();
+  if (!normalizedMessage) {
+    return false;
+  }
+  return (
+    normalizedMessage === "failed to fetch" ||
+    normalizedMessage === "load failed" ||
+    normalizedMessage === "network request failed" ||
+    normalizedMessage === "the network connection was lost." ||
+    normalizedMessage.includes("networkerror when attempting to fetch resource")
+  );
+}
+
+export function shouldIgnoreRuntimeFailure(error) {
+  if (error && typeof error === "object" && error.name === "AbortError") {
+    return true;
+  }
+  return isBrowserNetworkFailureMessage(extractMessageText(error));
+}
+
 export async function requestJSON(url, options) {
   const requestOptions = options || {};
   const headers = new Headers(requestOptions.headers || {});
@@ -98,8 +129,12 @@ export async function requestJSON(url, options) {
 }
 
 export function normalizeErrorMessage(error, fallbackText) {
-  if (error && typeof error.message === "string" && error.message.trim()) {
-    return error.message.trim();
+  const messageText = extractMessageText(error);
+  if (isBrowserNetworkFailureMessage(messageText)) {
+    return fallbackText;
+  }
+  if (messageText) {
+    return messageText;
   }
   return fallbackText;
 }

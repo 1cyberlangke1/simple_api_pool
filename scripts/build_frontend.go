@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,6 +18,7 @@ import (
 
 func main() {
 	rootDir := flag.String("root", ".", "repository root")
+	skipBundle := flag.Bool("skip-bundle", false, "reuse existing generated assets instead of invoking frontend bundler")
 	flag.Parse()
 
 	frontendLayout, err := resolveFrontendLayout(*rootDir)
@@ -25,8 +27,10 @@ func main() {
 	buildMetadata := loadBuildMetadata(*rootDir)
 	must(os.MkdirAll(frontendLayout.OutputDir, 0700))
 	must(removeStaleGeneratedAssets(frontendLayout.OutputDir, expectedGeneratedAssets()))
-	must(ensureFrontendDependencies(frontendLayout.RootDir))
-	must(bundleFrontend(frontendLayout.RootDir, buildMetadata))
+	if !*skipBundle {
+		must(ensureFrontendDependencies(frontendLayout.RootDir))
+		must(bundleFrontend(frontendLayout.RootDir, buildMetadata))
+	}
 	must(writeBuildManifest(frontendLayout, buildMetadata))
 
 	templateHTML, err := os.ReadFile(filepath.Join(frontendLayout.SourceDir, "index.template.html"))
@@ -42,13 +46,14 @@ func main() {
 	must(err)
 
 	generatedAssets := map[string]struct{}{
-		"/assets/app.js":    {},
+		"/assets/app.js":     {},
 		"/assets/styles.css": {},
 	}
 
 	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "index.html")), templateHTML))
 	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "app.js")), appBundle))
 	must(validateNoBuildPlaceholders(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "styles.css")), styleBundle))
+	must(validateNoBrowserRuntimeLeak(filepath.ToSlash(filepath.Join(frontendLayout.RelativeRoot, "assets", "app.js")), appBundle))
 	must(validateAssetReferences(templateHTML, generatedAssets))
 	must(os.WriteFile(filepath.Join(frontendLayout.RootDir, "index.html"), templateHTML, 0600))
 }
@@ -105,8 +110,8 @@ func resolveFrontendLayout(rootDir string) (frontendLayout, error) {
 
 func expectedGeneratedAssets() map[string]struct{} {
 	return map[string]struct{}{
-		"app.js":             {},
-		"styles.css":         {},
+		"app.js":              {},
+		"styles.css":          {},
 		"build-manifest.json": {},
 	}
 }
@@ -191,6 +196,18 @@ func validateNoBuildPlaceholders(label string, content []byte) error {
 	return nil
 }
 
+func validateNoBrowserRuntimeLeak(label string, content []byte) error {
+	for _, forbiddenReference := range []string{
+		"process.env.NODE_ENV",
+		"process.env.",
+	} {
+		if strings.Contains(string(content), forbiddenReference) {
+			return errors.New(label + " contains browser-incompatible runtime reference " + forbiddenReference)
+		}
+	}
+	return nil
+}
+
 func validateAssetReferences(indexHTML []byte, generatedAssets map[string]struct{}) error {
 	assetReferencePattern := regexp.MustCompile(`(?:href|src)="(/assets/[^"?]+)(?:\?v=[^"]*)?"`)
 	matches := assetReferencePattern.FindAllSubmatch(indexHTML, -1)
@@ -255,21 +272,38 @@ func firstNonEmpty(values ...string) string {
 }
 
 func ensureFrontendDependencies(frontendRoot string) error {
-	if !needsFrontendInstall(frontendRoot) {
+	if resolveInstalledDependencyRoot(frontendRoot) != "" {
 		return nil
 	}
 	return runFrontendCommand(frontendRoot, "npm", []string{"ci", "--no-fund", "--no-audit"}, nil)
 }
 
-func needsFrontendInstall(frontendRoot string) bool {
-	installMarkerPath := filepath.Join(frontendRoot, "node_modules", "esbuild-wasm", "package.json")
+func resolveInstalledDependencyRoot(frontendRoot string) string {
+	if hasUsableInstalledDependencies(frontendRoot) {
+		return frontendRoot
+	}
+
+	for candidateRoot := filepath.Dir(frontendRoot); candidateRoot != filepath.Dir(candidateRoot); candidateRoot = filepath.Dir(candidateRoot) {
+		if !dependencyFilesMatch(frontendRoot, candidateRoot) {
+			continue
+		}
+		if hasUsableInstalledDependencies(candidateRoot) {
+			return candidateRoot
+		}
+	}
+
+	return ""
+}
+
+func hasUsableInstalledDependencies(frontendRoot string) bool {
+	installMarkerPath := filepath.Join(frontendRoot, "node_modules", "vite", "package.json")
 	if !fileExists(installMarkerPath) {
-		return true
+		return false
 	}
 
 	installInfo, err := os.Stat(installMarkerPath)
 	if err != nil {
-		return true
+		return false
 	}
 	for _, dependencyFile := range []string{
 		filepath.Join(frontendRoot, "package.json"),
@@ -277,13 +311,30 @@ func needsFrontendInstall(frontendRoot string) bool {
 	} {
 		info, err := os.Stat(dependencyFile)
 		if err != nil {
-			return true
+			return false
 		}
 		if info.ModTime().After(installInfo.ModTime()) {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func dependencyFilesMatch(frontendRoot string, candidateRoot string) bool {
+	for _, relativePath := range []string{"package.json", "package-lock.json"} {
+		frontendBytes, err := os.ReadFile(filepath.Join(frontendRoot, relativePath))
+		if err != nil {
+			return false
+		}
+		candidateBytes, err := os.ReadFile(filepath.Join(candidateRoot, relativePath))
+		if err != nil {
+			return false
+		}
+		if !bytes.Equal(frontendBytes, candidateBytes) {
+			return false
+		}
+	}
+	return true
 }
 
 func bundleFrontend(frontendRoot string, metadata buildMetadata) error {

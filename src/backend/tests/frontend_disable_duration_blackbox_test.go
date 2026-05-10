@@ -22,9 +22,14 @@ func TestFrontendDisableDurationCapabilitiesExistInBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取前端 bundle 失败: %v", err)
 	}
+	apiSourceBytes, err := os.ReadFile(filepath.Join(frontendRoot, "src", "api.js"))
+	if err != nil {
+		t.Fatalf("读取前端 api.js 失败: %v", err)
+	}
 
 	indexHTML := string(indexHTMLBytes)
 	appBundle := string(appBundleBytes)
+	apiSource := string(apiSourceBytes)
 
 	mustContain(t, indexHTML, `<script src="/assets/app.js?v=`)
 
@@ -44,7 +49,10 @@ func TestFrontendDisableDurationCapabilitiesExistInBundle(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(appBundle, `/\s+/`) {
-		t.Fatal("期望前端导入 key 不再把空格当作分隔符")
+	if strings.Contains(apiSource, `/\s+/`) {
+		t.Fatal("期望前端导入 key 的源码不再把空格当作分隔符")
+	}
+	if !strings.Contains(apiSource, `.split(/[,\n]/)`) {
+		t.Fatal("期望前端导入 key 的源码继续只按换行或半角逗号切分")
 	}
 }
