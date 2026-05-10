@@ -23,6 +23,9 @@ func TestConfigServiceSnapshotReflectsCurrentGlobalConfig(t *testing.T) {
 	if snapshot.ClientKeyCount != 2 {
 		t.Fatalf("期望客户端密钥数量为 2，实际是 %d", snapshot.ClientKeyCount)
 	}
+	if len(snapshot.ClientKeys) != 2 || snapshot.ClientKeys[0] != "client-1" || snapshot.ClientKeys[1] != "client-2" {
+		t.Fatalf("期望返回客户端密钥列表，实际是 %+v", snapshot.ClientKeys)
+	}
 }
 
 func TestConfigServiceUpdateValidatesAdminKeyAndTrimsClientKeys(t *testing.T) {

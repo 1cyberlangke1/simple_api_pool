@@ -47,6 +47,11 @@ describe("status helpers", function () {
   it("会按名称排序生成提供商卡片", function () {
     const cards = buildProviderCards({
       health: { status: "warning" },
+      provider_types: {
+        alpha: "claude",
+        middle: "gemini",
+        zebra: "openai_chat"
+      },
       provider_stats: {
         zebra: { success_count: 1 },
         alpha: { success_count: 2 },
@@ -58,13 +63,16 @@ describe("status helpers", function () {
       return card.name;
     })).toEqual(["alpha", "middle", "zebra"]);
     expect(cards[0].status).toBe("warning");
+    expect(cards[0].type).toBe("claude");
   });
 
-  it("会把常见供应商标识映射到 tmp/zip 同款 icon key", function () {
+  it("会把常见供应商标识映射到 tmp/zip 同款 icon key，并支持模糊匹配与协议兜底", function () {
     expect(resolveProviderIconName(["openai_chat", "OpenAI GPT-4"])).toBe("openai");
     expect(resolveProviderIconName(["responses", "OpenAI Responses"])).toBe("openai");
     expect(resolveProviderIconName(["claude", "Anthropic Claude"])).toBe("anthropic");
     expect(resolveProviderIconName(["gemini", "Google Gemini"])).toBe("google");
+    expect(resolveProviderIconName(["custom", "Claude Sonnet 4 Mirror"])).toBe("anthropic");
+    expect(resolveProviderIconName(["openai_responses", "Acme Router"])).toBe("openai");
   });
 });
 

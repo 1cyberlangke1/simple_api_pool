@@ -32,6 +32,7 @@ type GlobalConfigSnapshot struct {
 
 type StatusOverview struct {
 	Health        HealthSnapshot                    `json:"health"`
+	ProviderTypes map[string]string                 `json:"provider_types"`
 	ProviderStats map[string]ProviderStatusSnapshot `json:"provider_stats"`
 }
 
@@ -57,6 +58,7 @@ func NewOverviewService(cfg *config.Config, statsManager *stats.Manager) *Overvi
 func (service *OverviewService) StatusOverview() StatusOverview {
 	return StatusOverview{
 		Health:        HealthSnapshot{Status: "ok"},
+		ProviderTypes: service.ProviderTypeSnapshots(),
 		ProviderStats: service.ProviderStatusSnapshots(),
 	}
 }
@@ -103,4 +105,12 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 	}
 
 	return providerStats
+}
+
+func (service *OverviewService) ProviderTypeSnapshots() map[string]string {
+	providerTypes := make(map[string]string)
+	for _, provider := range service.cfg.Providers() {
+		providerTypes[provider.Name] = string(provider.Type)
+	}
+	return providerTypes
 }

@@ -15,6 +15,7 @@ export interface ProviderStatusSnapshot {
 
 export interface StatusOverview {
   health: HealthSnapshot;
+  provider_types?: Record<string, string>;
   provider_stats: Record<string, ProviderStatusSnapshot>;
 }
 
@@ -80,7 +81,8 @@ export function buildProviderCards(overview: StatusOverview) {
       return {
         name: entry[0],
         snapshot: entry[1] || {},
-        status: overview?.health?.status || "unknown"
+        status: overview?.health?.status || "unknown",
+        type: overview?.provider_types?.[entry[0]] || ""
       };
     });
 }

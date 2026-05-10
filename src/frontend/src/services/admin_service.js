@@ -9,6 +9,10 @@ export async function fetchAdminOverview(options) {
   return requestJSON("/api/admin/overview", { headers });
 }
 
+export async function fetchAdminConfig() {
+  return requestJSON("/api/admin/config");
+}
+
 export async function loginAdmin(adminKey) {
   return requestJSON("/api/admin/login", {
     body: { admin_key: adminKey },

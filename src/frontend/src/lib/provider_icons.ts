@@ -2,6 +2,37 @@ function normalizeProviderIconKey(rawValue: string) {
   return rawValue.trim().toLowerCase().replace(/[\s_/.-]+/g, "-");
 }
 
+const protocolFallbackIcons: Record<string, string> = {
+  anthropic: "anthropic",
+  claude: "anthropic",
+  deepseek: "deepseek",
+  gemini: "google",
+  google: "google",
+  openai: "openai",
+  "openai-chat": "openai",
+  "openai-responses": "openai",
+  responses: "openai"
+};
+
+const providerIconMatchers = [
+  {
+    icon: "openai",
+    keywords: ["openai", "chatgpt", "dall-e", "gpt", "responses", "whisper"]
+  },
+  {
+    icon: "anthropic",
+    keywords: ["anthropic", "claude", "haiku", "opus", "sonnet"]
+  },
+  {
+    icon: "google",
+    keywords: ["gemini", "gemma", "google", "imagen", "veo", "vertex"]
+  },
+  {
+    icon: "deepseek",
+    keywords: ["deepseek", "deep-seek"]
+  }
+] as const;
+
 export function resolveProviderIconName(inputValues: Array<string | null | undefined>) {
   const normalizedValues = inputValues
     .map(function toNormalizedValue(value) {
@@ -9,21 +40,32 @@ export function resolveProviderIconName(inputValues: Array<string | null | undef
     })
     .filter(Boolean);
 
+  let protocolFallbackIcon = "";
+  const fuzzyCandidates: string[] = [];
+
   for (let index = 0; index < normalizedValues.length; index += 1) {
     const value = normalizedValues[index];
-    if (value.includes("openai") || value.includes("gpt") || value.includes("responses")) {
-      return "openai";
+    const protocolIcon = protocolFallbackIcons[value];
+    if (protocolIcon) {
+      if (!protocolFallbackIcon) {
+        protocolFallbackIcon = protocolIcon;
+      }
+      continue;
     }
-    if (value.includes("anthropic") || value.includes("claude")) {
-      return "anthropic";
-    }
-    if (value.includes("gemini") || value.includes("google")) {
-      return "google";
-    }
-    if (value.includes("deepseek")) {
-      return "deepseek";
+    fuzzyCandidates.push(value);
+  }
+
+  for (let matcherIndex = 0; matcherIndex < providerIconMatchers.length; matcherIndex += 1) {
+    const matcher = providerIconMatchers[matcherIndex];
+    for (let valueIndex = 0; valueIndex < fuzzyCandidates.length; valueIndex += 1) {
+      const value = fuzzyCandidates[valueIndex];
+      for (let keywordIndex = 0; keywordIndex < matcher.keywords.length; keywordIndex += 1) {
+        if (value.includes(matcher.keywords[keywordIndex])) {
+          return matcher.icon;
+        }
+      }
     }
   }
 
-  return normalizedValues[0] || "";
+  return protocolFallbackIcon;
 }

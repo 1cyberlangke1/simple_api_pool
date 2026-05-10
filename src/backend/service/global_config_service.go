@@ -19,16 +19,34 @@ type GlobalConfigService struct {
 	cfg *config.Config
 }
 
+type GlobalConfigDetailSnapshot struct {
+	AdminKeyConfigured     bool     `json:"admin_key_configured"`
+	TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
+	ClientKeyCount         int      `json:"client_key_count"`
+	ClientKeys             []string `json:"client_keys"`
+}
+
 func NewGlobalConfigService(cfg *config.Config) *GlobalConfigService {
 	return &GlobalConfigService{cfg: cfg}
 }
 
 func (service *GlobalConfigService) Snapshot() GlobalConfigSnapshot {
-	globalConfig := service.cfg.AdminSettings()
+	detail := service.DetailSnapshot()
 	return GlobalConfigSnapshot{
+		AdminKeyConfigured:     detail.AdminKeyConfigured,
+		TokenEstimationEnabled: detail.TokenEstimationEnabled,
+		ClientKeyCount:         detail.ClientKeyCount,
+	}
+}
+
+func (service *GlobalConfigService) DetailSnapshot() GlobalConfigDetailSnapshot {
+	globalConfig := service.cfg.AdminSettings()
+	clientKeys := append([]string(nil), globalConfig.ClientKeys...)
+	return GlobalConfigDetailSnapshot{
 		AdminKeyConfigured:     globalConfig.AdminKey != "",
 		TokenEstimationEnabled: globalConfig.TokenEstimationEnabled,
 		ClientKeyCount:         len(globalConfig.ClientKeys),
+		ClientKeys:             clientKeys,
 	}
 }
 

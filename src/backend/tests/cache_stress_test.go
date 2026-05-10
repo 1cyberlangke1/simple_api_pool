@@ -20,7 +20,7 @@ func TestSQLiteCacheSupportsConcurrentReadWriteWithinProvider(t *testing.T) {
 	const (
 		workers    = 12
 		iterations = 60
-		maxEntries = 200
+		maxEntries = workers * iterations
 	)
 
 	var wg sync.WaitGroup
@@ -34,7 +34,10 @@ func TestSQLiteCacheSupportsConcurrentReadWriteWithinProvider(t *testing.T) {
 				body := []byte(fmt.Sprintf(`{"model":"gpt-4.1","messages":[{"role":"user","content":"worker-%d-msg-%d"}]}`, workerID, i))
 				response := []byte(fmt.Sprintf(`{"id":"resp-%d-%d"}`, workerID, i))
 
-				store.Set("openai", config.OpenAIChat, "gpt-4.1", body, response, 200, map[string]string{"Content-Type": "application/json"}, 1, 1, maxEntries)
+				if ok := store.Set("openai", config.OpenAIChat, "gpt-4.1", body, response, 200, map[string]string{"Content-Type": "application/json"}, 1, 1, maxEntries); !ok {
+					errCh <- fmt.Errorf("worker %d iteration %d 写入缓存失败", workerID, i)
+					return
+				}
 
 				entry, ok := store.Get("openai", config.OpenAIChat, "gpt-4.1", body)
 				if !ok {
@@ -59,11 +62,8 @@ func TestSQLiteCacheSupportsConcurrentReadWriteWithinProvider(t *testing.T) {
 	}
 
 	count := sqliteEntryCount(t, filepath.Join(baseDir, "openai", "cache.db"))
-	if count > maxEntries {
-		t.Fatalf("期望并发写入后条目数不超过 %d，实际是 %d", maxEntries, count)
-	}
-	if count == 0 {
-		t.Fatal("期望并发写入后至少保留一个条目")
+	if count != maxEntries {
+		t.Fatalf("期望并发写入后保留 %d 个唯一条目，实际是 %d", maxEntries, count)
 	}
 }
 

@@ -97,7 +97,8 @@ export function StatusPage() {
       rps: 0,
       status: String(card.status || "unknown"),
       successRate: calculateSuccessRate(successCount, errorCount),
-      totalKeys: Number(card.snapshot.total_keys || 0)
+      totalKeys: Number(card.snapshot.total_keys || 0),
+      type: String(card.type || "")
     };
   });
 
@@ -111,13 +112,12 @@ export function StatusPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold tracking-tight">{translate("app.statusTitle")}</h1>
-          <p className="text-muted-foreground mt-1 flex items-center gap-2">
-            {translate("app.statusCopy")}
-            <span className="inline-flex items-center text-xs bg-muted px-2 py-0.5 rounded-full">
-              <RotateCw className="w-3 h-3 mr-1 animate-spin-slow" />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-muted-foreground">
+            <span className="inline-flex items-center rounded-full border bg-muted px-2.5 py-1 text-xs">
+              <RotateCw className="mr-1 h-3 w-3 animate-spin-slow" />
               {translate("status.autoRefresh")}
             </span>
-          </p>
+          </div>
         </div>
         <div className="text-sm font-mono text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border text-center">
           {translate("status.lastUpdated")}: {state.loadedAt ? formatLocaleTime(state.loadedAt, language) : translate("message.loading")}
@@ -187,7 +187,16 @@ export function StatusPage() {
       ) : null}
 
       <div className="space-y-4">
-        <h2 className="text-xl font-display font-semibold tracking-tight">{translate("status.providerDetails")}</h2>
+        <div className="space-y-3">
+          <h2 className="text-xl font-display font-semibold tracking-tight">{translate("status.detailsTitle")}</h2>
+          <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <span>{translate("status.proxyRouteLabel")} </span>
+            <code className="rounded bg-background/80 px-1.5 py-0.5 text-foreground">/{`{provider}`}/...</code>
+            <span className="mx-2">·</span>
+            <span>{translate("status.cacheRouteLabel")} </span>
+            <code className="rounded bg-background/80 px-1.5 py-0.5 text-foreground">/cache/{`{provider}`}/...</code>
+          </div>
+        </div>
         <motion.div variants={container} initial="hidden" animate="show" className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {providerCards.length === 0 ? (
             <motion.div variants={item} className="md:col-span-2 lg:col-span-3">
@@ -206,7 +215,7 @@ export function StatusPage() {
                   <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <ProviderBadgeIcon providerHints={[providerCard.id, providerCard.name]} size={32} />
+                        <ProviderBadgeIcon providerHints={[providerCard.type, providerCard.id, providerCard.name]} size={32} />
                         <div>
                           <CardTitle className="text-lg">{providerCard.name}</CardTitle>
                           <CardDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">

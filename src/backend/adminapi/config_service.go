@@ -11,6 +11,13 @@ type ConfigService struct {
 	globalConfigService *svc.GlobalConfigService
 }
 
+type GlobalConfigDetailSnapshot struct {
+	AdminKeyConfigured     bool     `json:"admin_key_configured"`
+	TokenEstimationEnabled bool     `json:"token_estimation_enabled"`
+	ClientKeyCount         int      `json:"client_key_count"`
+	ClientKeys             []string `json:"client_keys"`
+}
+
 func NewConfigService(cfg *config.Config) *ConfigService {
 	return &ConfigService{globalConfigService: svc.NewGlobalConfigService(cfg)}
 }
@@ -21,9 +28,9 @@ type GlobalConfigUpdateInput struct {
 	ClientKeys             *[]string `json:"client_keys" validate:"omitempty,dive,required"`
 }
 
-func (service *ConfigService) Snapshot() GlobalConfigSnapshot {
-	snapshot := service.globalConfigService.Snapshot()
-	return GlobalConfigSnapshot(snapshot)
+func (service *ConfigService) Snapshot() GlobalConfigDetailSnapshot {
+	snapshot := service.globalConfigService.DetailSnapshot()
+	return GlobalConfigDetailSnapshot(snapshot)
 }
 
 func (service *ConfigService) Update(input GlobalConfigUpdateInput) (bool, error) {

@@ -262,6 +262,11 @@ export function AdminPage() {
   const selectedProviderName = state.selectedProviderName;
   const hasSelectedProvider = Boolean(selectedProvider);
   const providerCount = state.overview.providers.length;
+  const clientKeyCount = state.globalConfigLoaded
+    ? state.globalDraft.client_keys.length
+    : Number(state.overview.global_config.client_key_count || 0);
+  const canSaveAdminKey = state.globalAdminKeyDirty && String(state.globalDraft.admin_key || "").trim() !== "";
+  const canSaveClientKeys = state.globalConfigLoaded && state.globalSettingsDirty && !state.globalConfigPending;
   const activeKeyCount = formatNumber(derived.selectedProviderStats.available_keys || 0);
   const totalKeyCount = formatNumber(derived.selectedProviderStats.total_keys || selectedProviderKeys.length);
   const logPreview = derived.filteredLogs.slice(Math.max(derived.filteredLogs.length - 10, 0));
@@ -291,7 +296,6 @@ export function AdminPage() {
                 <ShieldAlert className="h-6 w-6 text-primary" />
               </div>
               <CardTitle className="text-2xl">{translate("admin.loginTitle")}</CardTitle>
-              <CardDescription>{translate("admin.loginHint")}</CardDescription>
             </CardHeader>
             <CardContent>
               <form
@@ -337,7 +341,6 @@ export function AdminPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-display font-bold tracking-tight">{translate("app.adminTitle")}</h1>
-          <p className="mt-1 text-muted-foreground">{translate("app.adminCopy")}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center rounded-full border bg-muted/40 px-3 py-1">
               {translate("status.lastUpdated")}: {state.loadedAt ? formatDateTime(state.loadedAt, language) : translate("message.loading")}
@@ -397,10 +400,7 @@ export function AdminPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>{translate("admin.globalTitle")}</CardTitle>
-                  <CardDescription>{translate("admin.globalSummary")}</CardDescription>
-                </div>
+                <CardTitle>{translate("admin.globalTitle")}</CardTitle>
                 <Badge variant={state.overview.global_config.admin_key_configured ? "success" : "warning"}>
                   {state.overview.global_config.admin_key_configured
                     ? translate("admin.adminKeyConfigured")
@@ -409,7 +409,33 @@ export function AdminPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between border-b pb-4">
+              <div className="space-y-2">
+                <Label htmlFor="global-admin-key">{translate("admin.adminKey")}</Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <Input
+                    autoComplete="new-password"
+                    className="sm:flex-1"
+                    id="global-admin-key"
+                    onChange={function handleAdminKeyChange(event) {
+                      actions.setAdminKey(event.target.value);
+                    }}
+                    placeholder={translate("admin.adminKeyPlaceholder")}
+                    type="password"
+                    value={String(state.globalDraft.admin_key || "")}
+                  />
+                  <Button
+                    disabled={!canSaveAdminKey}
+                    onClick={function handleSaveAdminKey() {
+                      void actions.saveAdminKey();
+                    }}
+                    type="button"
+                  >
+                    {translate("admin.saveAdminKey")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
                 <div className="space-y-0.5">
                   <Label className="text-base">{translate("admin.tokenEstimation")}</Label>
                   <p className="text-sm text-muted-foreground">{translate("admin.globalTokenHint")}</p>
@@ -417,46 +443,92 @@ export function AdminPage() {
                 <Switch
                   checked={Boolean(state.globalDraft.token_estimation_enabled)}
                   onCheckedChange={function handleTokenEstimationChange(checked) {
-                    actions.setGlobalField("token_estimation_enabled", checked);
+                    actions.setTokenEstimationEnabled(checked);
                   }}
                 />
               </div>
 
-              <div className="space-y-2 pt-2">
-                <Label htmlFor="global-admin-key">{translate("admin.adminKey")}</Label>
-                <Input
-                  autoComplete="new-password"
-                  id="global-admin-key"
-                  onChange={function handleAdminKeyChange(event) {
-                    actions.setGlobalField("admin_key", event.target.value);
-                  }}
-                  placeholder={translate("admin.adminKeyPlaceholder")}
-                  type="password"
-                  value={String(state.globalDraft.admin_key || "")}
-                />
-              </div>
+              <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-base">{translate("admin.clientKeys")}</Label>
+                    <p className="text-sm text-muted-foreground">{translate("admin.clientKeysHint")}</p>
+                  </div>
+                  <Button
+                    disabled={state.globalConfigPending && !state.globalConfigLoaded}
+                    onClick={actions.addClientKey}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {translate("action.addKey")}
+                  </Button>
+                </div>
 
-              <div className="space-y-2 pt-2">
-                <Label htmlFor="global-client-keys">{translate("admin.clientKeys")}</Label>
-                <Textarea
-                  className="min-h-40 resize-y"
-                  id="global-client-keys"
-                  onChange={function handleClientKeysChange(event) {
-                    actions.setGlobalField("client_keys_text", event.target.value);
-                  }}
-                  placeholder={translate("admin.importPlaceholder")}
-                  value={String(state.globalDraft.client_keys_text || "")}
-                />
-                <p className="text-sm text-muted-foreground">{translate("admin.clientKeysHint")}</p>
+                {state.globalConfigPending && !state.globalConfigLoaded ? (
+                  <div className="rounded-lg border border-dashed bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                    {translate("message.loading")}
+                  </div>
+                ) : null}
+
+                {!state.globalConfigPending || state.globalConfigLoaded ? (
+                  <>
+                    {state.globalDraft.client_keys.length === 0 ? (
+                      <div className="rounded-lg border border-dashed bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                        {translate("admin.noClientKeys")}
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      {state.globalDraft.client_keys.map(function renderClientKeyRow(clientKeyValue: string, index: number) {
+                        return (
+                          <div className="flex items-center gap-2" key={`client-key-${index}`}>
+                            <Input
+                              autoComplete="off"
+                              onChange={function handleClientKeyChange(event) {
+                                actions.updateClientKey(index, event.target.value);
+                              }}
+                              placeholder={translate("admin.importPlaceholder")}
+                              value={clientKeyValue}
+                            />
+                            <Button
+                              aria-label={translate("action.delete")}
+                              onClick={function handleClientKeyDelete() {
+                                actions.removeClientKey(index);
+                              }}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+
+                <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">{translate("admin.clientKeysSaveHint")}</p>
+                  <Button
+                    disabled={!canSaveClientKeys}
+                    onClick={function handleSaveGlobalSettings() {
+                      void actions.saveGlobalSettings();
+                    }}
+                    type="button"
+                  >
+                    {translate("admin.saveClientKeys")}
+                  </Button>
+                </div>
               </div>
 
               <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3 sm:gap-6">
                   <div>
                     <span className="block text-xs uppercase tracking-wide">{translate("admin.clientKeys")}</span>
-                    <strong className="mt-1 block text-base text-foreground">
-                      {formatNumber(state.overview.global_config.client_key_count)}
-                    </strong>
+                    <strong className="mt-1 block text-base text-foreground">{formatNumber(clientKeyCount)}</strong>
                   </div>
                   <div>
                     <span className="block text-xs uppercase tracking-wide">{translate("status.providers")}</span>
@@ -469,11 +541,6 @@ export function AdminPage() {
                     </strong>
                   </div>
                 </div>
-                <Button onClick={function handleSaveGlobal() {
-                  void actions.saveGlobal();
-                }}>
-                  {translate("action.save")}
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -481,10 +548,7 @@ export function AdminPage() {
 
         <TabsContent className="space-y-4" value="providers">
           <div className="flex items-center justify-between rounded-lg border bg-muted/50 p-4 shadow-sm">
-            <div>
-              <h3 className="text-lg font-medium">{translate("admin.providerListTitle")}</h3>
-              <p className="text-sm text-muted-foreground">{translate("admin.providerSectionSummary")}</p>
-            </div>
+            <h3 className="text-lg font-medium">{translate("admin.providerListTitle")}</h3>
             <Button onClick={actions.openProviderCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
               {translate("action.createProvider")}
@@ -603,6 +667,38 @@ export function AdminPage() {
                         </div>
                         <div>
                           <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("provider.cacheMaxEntries")}
+                          </span>
+                          <span className="text-foreground">
+                            {formatNumber(providerSnapshot.cache_max_entries)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("provider.failThreshold")}
+                          </span>
+                          <span className="text-foreground">
+                            {formatNumber(providerSnapshot.fail_threshold)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("provider.minDisableSecs")}
+                          </span>
+                          <span className="text-foreground">
+                            {formatNumber(providerSnapshot.min_disable_secs)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("provider.maxDisableSecs")}
+                          </span>
+                          <span className="text-foreground">
+                            {formatNumber(providerSnapshot.max_disable_secs)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
                             {translate("status.availableKeys")}
                           </span>
                           <span className="text-foreground">
@@ -651,14 +747,6 @@ export function AdminPage() {
                             {formatNumber(stats.cache_hits || 0)}
                           </strong>
                         </div>
-                        <div>
-                          <span className="block text-[10px] uppercase tracking-wider opacity-70">
-                            {translate("provider.failThreshold")}
-                          </span>
-                          <strong className="mt-1 block text-foreground">
-                            {formatNumber(providerSnapshot.fail_threshold)}
-                          </strong>
-                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -672,10 +760,7 @@ export function AdminPage() {
           <Card>
             <CardHeader className="border-b pb-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <CardTitle>{translate("admin.tab.keys")}</CardTitle>
-                  <CardDescription>{translate("admin.keysSectionSummary")}</CardDescription>
-                </div>
+                <CardTitle>{translate("admin.tab.keys")}</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <Select
                     onValueChange={function handleProviderChange(value) {
@@ -725,34 +810,6 @@ export function AdminPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Select
-                        onValueChange={function handleBulkModeChange(value) {
-                          actions.setBulkMode(value as BulkMode);
-                        }}
-                        value={state.bulkMode}
-                      >
-                        <SelectTrigger className="bulk-disable-mode w-[180px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="disable_until">{translate("admin.bulkModeTimed")}</SelectItem>
-                          <SelectItem value="disable_forever">{translate("admin.bulkModeForever")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {state.bulkMode === "disable_until" ? (
-                        <Input
-                          className="bulk-disable-seconds w-[140px]"
-                          max={derived.disableBounds.max}
-                          min={derived.disableBounds.min}
-                          onChange={function handleBulkSecondsChange(event) {
-                            actions.setBulkSeconds(Number(event.target.value || 0));
-                          }}
-                          type="number"
-                          value={String(state.bulkSeconds)}
-                        />
-                      ) : null}
-                    </div>
                   </div>
 
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -784,6 +841,32 @@ export function AdminPage() {
                       >
                         {translate("action.clearSelected")}
                       </Button>
+                      <Select
+                        onValueChange={function handleBulkModeChange(value) {
+                          actions.setBulkMode(value as BulkMode);
+                        }}
+                        value={state.bulkMode}
+                      >
+                        <SelectTrigger className="bulk-disable-mode w-[180px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="disable_until">{translate("admin.bulkModeTimed")}</SelectItem>
+                          <SelectItem value="disable_forever">{translate("admin.bulkModeForever")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {state.bulkMode === "disable_until" ? (
+                        <Input
+                          className="bulk-disable-seconds w-[140px]"
+                          max={derived.disableBounds.max}
+                          min={derived.disableBounds.min}
+                          onChange={function handleBulkSecondsChange(event) {
+                            actions.setBulkSeconds(Number(event.target.value || 0));
+                          }}
+                          type="number"
+                          value={String(state.bulkSeconds)}
+                        />
+                      ) : null}
                       <Button
                         disabled={state.selectedKeyRefs.length === 0}
                         onClick={function handleBulkEnable() {
@@ -894,10 +977,7 @@ export function AdminPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle>{translate("admin.logsTitle")}</CardTitle>
-                  <CardDescription>{translate("admin.logsHint")}</CardDescription>
-                </div>
+                <CardTitle>{translate("admin.logsTitle")}</CardTitle>
                 <Button onClick={actions.openLogsDialog} variant="outline">
                   <FileText className="mr-2 h-4 w-4" />
                   {translate("action.openLogs")}
@@ -1092,10 +1172,7 @@ export function AdminPage() {
         <DialogContent className="log-modal max-w-6xl">
           <div className="overflow-hidden rounded-lg border bg-[#1e1e1e] text-[#d4d4d4] shadow-xl">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-              <div>
-                <h3 className="text-lg font-semibold">{translate("admin.logsTitle")}</h3>
-                <p className="mt-1 text-sm text-slate-400">{translate("admin.logsHint")}</p>
-              </div>
+              <h3 className="text-lg font-semibold">{translate("admin.logsTitle")}</h3>
               <Button onClick={actions.closeDialogs} variant="ghost">
                 {translate("action.close")}
               </Button>

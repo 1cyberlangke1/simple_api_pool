@@ -59,32 +59,28 @@ export function AppLayout(props: AppLayoutProps) {
     <div className="app-shell flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-6">
-            <Link to="/status" className="flex items-center gap-2 font-display font-bold text-xl tracking-tight">
-              <div className="bg-primary text-primary-foreground p-1.5 rounded-lg">
-                <Activity className="h-5 w-5" />
-              </div>
-              <span className="hidden sm:inline-block">API Pool</span>
-            </Link>
-
-            <nav className="flex items-center gap-4 text-sm font-medium">
-              <Link
-                to="/status"
-                className={`transition-colors hover:text-foreground/80 ${location.pathname === "/status" ? "text-foreground" : "text-foreground/60"}`}
-              >
-                {translate("nav.status")}
-              </Link>
-              <Link
-                to="/admin"
-                className={`flex items-center gap-1 transition-colors hover:text-foreground/80 ${location.pathname.startsWith("/admin") ? "text-foreground" : "text-foreground/60"}`}
-              >
-                <Shield className="h-4 w-4" />
-                {translate("nav.admin")}
-              </Link>
-            </nav>
-          </div>
+          <Link to="/status" className="flex items-center gap-2 font-display font-bold text-xl tracking-tight">
+            <div className="rounded-lg bg-primary p-1.5 text-primary-foreground">
+              <Activity className="h-5 w-5" />
+            </div>
+            <span className="hidden sm:inline-block">API Pool</span>
+          </Link>
 
           <div className="flex items-center gap-2">
+            <nav className="flex items-center gap-2">
+              <Button asChild size="sm" variant={location.pathname === "/status" ? "secondary" : "ghost"}>
+                <Link to="/status" className="flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  <span>{translate("nav.status")}</span>
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant={location.pathname.startsWith("/admin") ? "secondary" : "ghost"}>
+                <Link to="/admin" className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  <span>{translate("nav.admin")}</span>
+                </Link>
+              </Button>
+            </nav>
             <Button variant="ghost" size="icon" onClick={toggleLanguage} title="Toggle Language">
               <Globe className="h-4 w-4" />
               <span className="sr-only">Toggle Language</span>

@@ -1932,6 +1932,7 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 		Health struct {
 			Status string `json:"status"`
 		} `json:"health"`
+		ProviderTypes map[string]string             `json:"provider_types"`
 		ProviderStats map[string]statusapi.Snapshot `json:"provider_stats"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -1942,6 +1943,9 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 	}
 	if payload.ProviderStats["openai"].InputTokens != 7 || payload.ProviderStats["openai"].OutputTokens != 5 {
 		t.Fatalf("期望状态总览返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
+	}
+	if payload.ProviderTypes["openai"] != string(config.OpenAIChat) {
+		t.Fatalf("期望状态总览返回提供商类型，实际是 %+v", payload.ProviderTypes)
 	}
 }
 

@@ -57,6 +57,9 @@ func TestAdminProviderCrudConfigAndLogoutFlow(t *testing.T) {
 	if configGetRecorder.Code != http.StatusOK {
 		t.Fatalf("获取配置期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, configGetRecorder.Code, configGetRecorder.Body.String())
 	}
+	if !bytes.Contains(configGetRecorder.Body.Bytes(), []byte(`"client_keys":["client-0"]`)) {
+		t.Fatalf("期望配置快照包含客户端密钥列表，实际是 %s", configGetRecorder.Body.String())
+	}
 
 	configPutBody := []byte(`{"admin_key":"  next-admin  ","token_estimation_enabled":true,"client_keys":["  alpha ",""," beta "]}`)
 	configPutRequest := httptest.NewRequest(http.MethodPut, "/api/admin/config", bytes.NewReader(configPutBody))

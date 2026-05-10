@@ -1,8 +1,8 @@
 {
-  "version": "v0.1.35-1-g4af55fd-dirty",
-  "revision": "4af55fd",
-  "build_time": "2026-05-10T09:03:41Z",
-  "asset_version": "4af55fd-2026-05-10T09-03-41Z",
+  "version": "v0.1.36-1-gcdfca03-dirty",
+  "revision": "cdfca03",
+  "build_time": "2026-05-10T10:26:19Z",
+  "asset_version": "cdfca03-2026-05-10T10-26-19Z",
   "frontend_root": "src/frontend",
   "source_dir": "src/frontend/src",
   "assets": [
