@@ -93,6 +93,37 @@ func TestStoreInitializesSchemaVersion(t *testing.T) {
 	}
 }
 
+func TestStoreDoesNotImportLegacyJSONFilesOnStartup(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(baseDir, "config.json"), []byte(`{"admin_key":"legacy"}`), 0600); err != nil {
+		t.Fatalf("写入旧版 config.json 失败: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "stats"), 0700); err != nil {
+		t.Fatalf("创建旧版 stats 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "stats", "all.json"), []byte(`{"openai":{"success_count":1}}`), 0600); err != nil {
+		t.Fatalf("写入旧版 stats/all.json 失败: %v", err)
+	}
+
+	st := store.New(baseDir)
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	if st.Exists("config.json") {
+		t.Fatal("期望启动时不再把旧版 config.json 导入统一状态库")
+	}
+	if st.Exists("stats/all.json") {
+		t.Fatal("期望启动时不再把旧版 stats/all.json 导入统一状态库")
+	}
+
+	var loaded map[string]any
+	err := st.Load("config.json", &loaded)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("期望旧版 config.json 不会被自动导入，实际错误: %v", err)
+	}
+}
+
 func TestStatsManagerFlushesOnStopAndRestoresOnRestart(t *testing.T) {
 	st := store.New(t.TempDir())
 

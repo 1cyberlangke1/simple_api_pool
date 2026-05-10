@@ -451,51 +451,7 @@ func initializeDB(db *sql.DB) error {
 			return err
 		}
 	}
-	migrations := []struct {
-		name string
-		sql  string
-	}{
-		{name: "stream_headers_json", sql: `ALTER TABLE cache_entries ADD COLUMN stream_headers_json TEXT NOT NULL DEFAULT '{}'`},
-		{name: "cached_body", sql: `ALTER TABLE cache_entries ADD COLUMN cached_body BLOB NOT NULL DEFAULT ''`},
-		{name: "cached_stream_body", sql: `ALTER TABLE cache_entries ADD COLUMN cached_stream_body BLOB NOT NULL DEFAULT ''`},
-	}
-	for _, migration := range migrations {
-		if err := ensureColumn(tx, migration.name, migration.sql); err != nil {
-			return err
-		}
-	}
 	return tx.Commit()
-}
-
-func ensureColumn(tx *sql.Tx, columnName, migrationSQL string) error {
-	rows, err := tx.Query(`PRAGMA table_info(cache_entries)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			ctype      string
-			notNull    int
-			defaultV   any
-			primaryKey int
-		)
-		if err := rows.Scan(&cid, &name, &ctype, &notNull, &defaultV, &primaryKey); err != nil {
-			return err
-		}
-		if name == columnName {
-			return nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(migrationSQL)
-	return err
 }
 
 func normalizeBodyForCache(providerType config.ProviderType, body []byte) []byte {

@@ -93,7 +93,7 @@ func TestBootstrapRuntimeRejectsInvalidDataDir(t *testing.T) {
 	}
 }
 
-func TestBootstrapRuntimeRejectsInvalidConfigSnapshot(t *testing.T) {
+func TestBootstrapRuntimeIgnoresLegacyConfigSnapshotFile(t *testing.T) {
 	repoRoot := repoRootFromTestFile(t)
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "config.json"), []byte(`{invalid`), 0600); err != nil {
@@ -104,10 +104,13 @@ func TestBootstrapRuntimeRejectsInvalidConfigSnapshot(t *testing.T) {
 		DataDir:      dataDir,
 		FrontendRoot: frontendRootFromRepoRoot(repoRoot),
 	})
-	if err == nil {
+	if err != nil {
 		if runtimeInstance != nil {
 			_ = runtimeInstance.Close()
 		}
-		t.Fatal("期望损坏的 config.json 在启动阶段直接返回错误")
+		t.Fatalf("期望旧版残留 config.json 不再影响启动，实际错误: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = runtimeInstance.Close()
+	})
 }

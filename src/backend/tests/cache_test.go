@@ -66,6 +66,92 @@ func TestProviderCacheInitializesSchemaVersion(t *testing.T) {
 	}
 }
 
+func TestCacheStoreDoesNotAutoUpgradeLegacyCacheSchema(t *testing.T) {
+	baseDir := t.TempDir()
+	providerDir := filepath.Join(baseDir, "openai")
+	if err := os.MkdirAll(providerDir, 0700); err != nil {
+		t.Fatalf("创建旧缓存目录失败: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(providerDir, "cache.db"))
+	if err != nil {
+		t.Fatalf("打开旧缓存库失败: %v", err)
+	}
+	defer db.Close()
+
+	statements := []string{
+		`CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+		`INSERT INTO schema_meta(key, value) VALUES ('schema_version', '0');`,
+		`CREATE TABLE cache_entries (
+			cache_key TEXT PRIMARY KEY,
+			response_body BLOB NOT NULL,
+			status_code INTEGER NOT NULL,
+			headers_json TEXT NOT NULL,
+			input_tokens INTEGER NOT NULL,
+			output_tokens INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);`,
+		`CREATE TABLE cache_meta (
+			id INTEGER PRIMARY KEY CHECK(id = 1),
+			entry_count INTEGER NOT NULL
+		);`,
+		`INSERT INTO cache_meta (id, entry_count) VALUES (1, 0);`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("初始化旧缓存表结构失败: %v", err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("关闭旧缓存库失败: %v", err)
+	}
+
+	store := cache.NewStore(baseDir)
+	t.Cleanup(func() { _ = store.Close() })
+
+	body := []byte(`{"model":"gpt-4.1","messages":[{"role":"user","content":"legacy"}]}`)
+	if ok := store.SetForRequest("openai", config.OpenAIChat, "gpt-4.1", body, []byte(`{"id":"legacy"}`), 200, map[string]string{"Content-Type": "application/json"}, 1, 1, 10, false); ok {
+		t.Fatal("期望旧结构 cache.db 不再自动补列，SetForRequest 应失败")
+	}
+
+	db, err = sql.Open("sqlite", filepath.Join(providerDir, "cache.db"))
+	if err != nil {
+		t.Fatalf("重新打开旧缓存库失败: %v", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`PRAGMA table_info(cache_entries)`)
+	if err != nil {
+		t.Fatalf("读取旧缓存表结构失败: %v", err)
+	}
+	defer rows.Close()
+
+	columnNames := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			ctype      string
+			notNull    int
+			defaultV   any
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &defaultV, &primaryKey); err != nil {
+			t.Fatalf("扫描旧缓存表结构失败: %v", err)
+		}
+		columnNames[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("遍历旧缓存表结构失败: %v", err)
+	}
+
+	for _, columnName := range []string{"stream_headers_json", "cached_body", "cached_stream_body"} {
+		if _, exists := columnNames[columnName]; exists {
+			t.Fatalf("期望不再自动升级旧缓存表结构，但发现列 %s 已存在", columnName)
+		}
+	}
+}
+
 func TestCacheEvictsOldEntriesWhenLimitExceeded(t *testing.T) {
 	baseDir := t.TempDir()
 	store := cache.NewStore(baseDir)

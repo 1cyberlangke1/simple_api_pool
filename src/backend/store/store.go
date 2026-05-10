@@ -41,11 +41,6 @@ func New(baseDir string) *Store {
 		store.initErr = err
 		return store
 	}
-
-	if err := migrateLegacyDocuments(db, baseDir); err != nil {
-		store.initErr = err
-		return store
-	}
 	return store
 }
 
@@ -176,48 +171,6 @@ func openDatabase(baseDir string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	return db, nil
-}
-
-func migrateLegacyDocuments(db *sql.DB, baseDir string) error {
-	// Migration-only compatibility path: import legacy JSON state files into the
-	// unified state database on startup when they still exist on disk. This is
-	// intentionally kept out of the normal read/write path and can be removed
-	// after the legacy file-based state format is fully retired.
-	legacyPaths := []string{
-		"config.json",
-		filepath.Join("stats", "all.json"),
-	}
-	for _, legacyPath := range legacyPaths {
-		normalizedPath := normalizePath(legacyPath)
-		var exists int
-		err := db.QueryRow(`SELECT 1 FROM documents WHERE path = ? LIMIT 1`, normalizedPath).Scan(&exists)
-		if err == nil {
-			continue
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-
-		diskPath := filepath.Join(baseDir, filepath.FromSlash(normalizedPath))
-		content, readErr := os.ReadFile(diskPath)
-		if errors.Is(readErr, os.ErrNotExist) {
-			continue
-		}
-		if readErr != nil {
-			return readErr
-		}
-		if !json.Valid(content) {
-			return errors.New("legacy document is not valid JSON: " + normalizedPath)
-		}
-		if _, err := db.Exec(`
-			INSERT INTO documents(path, payload, updated_at)
-			VALUES (?, ?, ?)
-			ON CONFLICT(path) DO NOTHING
-		`, normalizedPath, content, time.Now().UnixNano()); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func normalizePath(path string) string {
