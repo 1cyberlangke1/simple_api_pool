@@ -151,10 +151,10 @@ function ProviderStatusCapsule(props: {
 }) {
   const className =
     props.status === "error"
-      ? "border-[#fecaca] bg-[#fee2e2] text-[#b91c1c] dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]"
+      ? "border-[#991b1b] bg-[#dc2626] text-white dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white"
       : props.status === "warning"
-        ? "border-[#fde68a] bg-[#fef3c7] text-[#92400e] dark:border-[rgba(251,191,36,0.35)] dark:bg-[rgba(245,158,11,0.2)] dark:text-[#fde68a]"
-        : "border-[#bbf7d0] bg-[#dcfce7] text-[#166534] dark:border-[rgba(74,222,128,0.35)] dark:bg-[rgba(34,197,94,0.18)] dark:text-[#bbf7d0]";
+        ? "border-[#92400e] bg-[#d97706] text-white dark:border-[#fcd34d] dark:bg-[#92400e] dark:text-white"
+        : "border-[#166534] bg-[#16a34a] text-white dark:border-[#86efac] dark:bg-[#166534] dark:text-white";
 
   return (
     <div
@@ -166,11 +166,11 @@ function ProviderStatusCapsule(props: {
 }
 
 function buildErrorAlertClassName() {
-  return "rounded-lg border border-[#fecaca] bg-[#fee2e2] px-4 py-3 text-sm font-medium text-[#b91c1c] dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
+  return "rounded-lg border border-[#991b1b] bg-[#7f1d1d] px-4 py-3 text-sm font-medium text-white dark:border-[#f87171] dark:bg-[#991b1b] dark:text-white";
 }
 
 function buildSuccessAlertClassName() {
-  return "rounded-lg border border-[#bbf7d0] bg-[#dcfce7] px-4 py-3 text-sm font-medium text-[#166534] dark:border-[rgba(74,222,128,0.35)] dark:bg-[rgba(34,197,94,0.18)] dark:text-[#bbf7d0]";
+  return "rounded-lg border border-[#166534] bg-[#166534] px-4 py-3 text-sm font-medium text-white dark:border-[#86efac] dark:bg-[#14532d] dark:text-white";
 }
 
 function buildLogLevelClassName(level: string) {
@@ -218,6 +218,45 @@ function AdminLogPanel(props: {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+function AdminTerminalLogPanel(props: {
+  entries: AdminLogEntry[];
+  emptyText: string;
+  heightClassName: string;
+}) {
+  return (
+    <div className={`${props.heightClassName} overflow-auto rounded-md border bg-[#1e1e1e] p-4 font-mono text-xs text-[#d4d4d4]`}>
+      {props.entries.length === 0 ? (
+        <div className="py-8 text-center text-slate-400">{props.emptyText}</div>
+      ) : (
+        props.entries.map(function renderLogEntry(entry, index) {
+          const level = readLogLevel(entry);
+          return (
+            <div className="mb-1.5 flex gap-4 opacity-90 hover:opacity-100" key={`${entry.time || "log"}-${index}`}>
+              <span className="w-24 shrink-0 text-[#858585]">
+                {String(entry.time || "").replace("T", " ").slice(11, 19)}
+              </span>
+              <span
+                className={`w-14 shrink-0 ${
+                  level === "ERROR"
+                    ? "text-[#f14c4c]"
+                    : level === "WARN"
+                      ? "text-[#cca700]"
+                      : level === "DEBUG"
+                        ? "text-[#c586c0]"
+                        : "text-[#3794ff]"
+                }`}
+              >
+                [{level}]
+              </span>
+              <span className="truncate">{formatLogSummary(entry as { attrs?: Record<string, unknown> }) || String(entry.msg || "")}</span>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -1917,7 +1956,7 @@ export function AdminPage() {
                   }}
                 />
               </div>
-              <AdminLogPanel
+              <AdminTerminalLogPanel
                 emptyText={translate("admin.logsEmpty")}
                 entries={derived.filteredLogs}
                 heightClassName="h-[400px]"

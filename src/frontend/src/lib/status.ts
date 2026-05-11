@@ -115,15 +115,15 @@ export function buildErrorTypeSummaries(snapshot: ProviderStatusSnapshot, limit 
 }
 
 export function buildErrorTypeSummaryClassName() {
-  return "inline-flex min-h-8 items-center rounded-full border border-[#fecaca] bg-[#fee2e2] px-3 py-1.5 text-sm font-semibold leading-none text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
+  return "inline-flex min-h-8 items-center rounded-full border border-[#991b1b] bg-[#dc2626] px-3 py-1.5 text-sm font-semibold leading-none text-white shadow-sm dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white";
 }
 
 export function buildStatusErrorCountClassName() {
-  return "inline-flex min-h-11 items-center rounded-xl border border-[#fecaca] bg-[#fee2e2] px-3 py-1.5 font-mono text-2xl font-bold text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
+  return "inline-flex min-h-11 items-center rounded-xl border border-[#991b1b] bg-[#dc2626] px-3 py-1.5 font-mono text-2xl font-bold text-white shadow-sm dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white";
 }
 
 export function buildStatusErrorAlertClassName() {
-  return "rounded-lg border border-[#fecaca] bg-[#fee2e2] px-4 py-3 text-sm font-medium text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
+  return "rounded-lg border border-[#991b1b] bg-[#7f1d1d] px-4 py-3 text-sm font-medium text-white shadow-sm dark:border-[#f87171] dark:bg-[#991b1b] dark:text-white";
 }
 
 export function computeStatusRefreshCountdownSeconds(nextRefreshAt: number, nowMs = Date.now()) {

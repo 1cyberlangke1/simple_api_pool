@@ -12,12 +12,12 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
-          "border-[#fecaca] bg-[#fee2e2] text-[#b91c1c] hover:bg-[#fecaca] dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca] dark:hover:bg-[rgba(239,68,68,0.28)]",
+          "border-[#991b1b] bg-[#dc2626] text-white hover:bg-[#b91c1c] dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white dark:hover:bg-[#dc2626]",
         outline: "text-foreground",
         success:
-          "border-[#bbf7d0] bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] dark:border-[rgba(74,222,128,0.35)] dark:bg-[rgba(34,197,94,0.18)] dark:text-[#bbf7d0] dark:hover:bg-[rgba(34,197,94,0.26)]",
+          "border-[#166534] bg-[#16a34a] text-white hover:bg-[#15803d] dark:border-[#86efac] dark:bg-[#166534] dark:text-white dark:hover:bg-[#15803d]",
         warning:
-          "border-[#fde68a] bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a] dark:border-[rgba(251,191,36,0.35)] dark:bg-[rgba(245,158,11,0.2)] dark:text-[#fde68a] dark:hover:bg-[rgba(245,158,11,0.28)]",
+          "border-[#92400e] bg-[#d97706] text-white hover:bg-[#b45309] dark:border-[#fcd34d] dark:bg-[#92400e] dark:text-white dark:hover:bg-[#b45309]",
       },
     },
     defaultVariants: {
