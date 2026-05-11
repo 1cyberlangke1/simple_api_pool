@@ -4,9 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
       version:
@@ -19,10 +16,17 @@ permissions:
   packages: write
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    outputs:
+      build_date: ${{ steps.vars.outputs.build_date }}
+      image: ${{ steps.vars.outputs.image }}
+      major: ${{ steps.vars.outputs.major }}
+      minor: ${{ steps.vars.outputs.minor }}
+      revision_short: ${{ steps.vars.outputs.revision_short }}
+      version: ${{ steps.vars.outputs.version }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
@@ -32,9 +36,6 @@ jobs:
         shell: bash
         run: |
           version="${{ github.event.inputs.version }}"
-          if [ -z "$version" ]; then
-            version="${{ github.event.release.tag_name }}"
-          fi
           if [ -z "$version" ]; then
             version="${{ github.ref_name }}"
           fi
@@ -63,6 +64,91 @@ jobs:
           echo "build_date=$build_date" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${owner}/${repo}" >> "$GITHUB_OUTPUT"
 
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_id: amd64
+          - platform: linux/arm64
+            platform_id: arm64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 安装 Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签与标签元数据
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ needs.prepare.outputs.image }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=v${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.major }}.${{ needs.prepare.outputs.minor }}
+            type=raw,value=${{ needs.prepare.outputs.major }}
+            type=raw,value=latest
+
+      - name: 构建并推送单架构镜像
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ needs.prepare.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=publish-ghcr-${{ matrix.platform_id }}
+          cache-to: type=gha,mode=max,scope=publish-ghcr-${{ matrix.platform_id }}
+          build-args: |
+            APP_VERSION=${{ needs.prepare.outputs.version }}
+            APP_REVISION=${{ needs.prepare.outputs.revision_short }}
+            APP_BUILD_TIME=${{ needs.prepare.outputs.build_date }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: 记录镜像摘要
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - name: 上传镜像摘要
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.platform_id }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    steps:
+      - name: 下载镜像摘要
+        uses: actions/download-artifact@v5
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
       - name: 安装 Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -77,24 +163,18 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ steps.vars.outputs.image }}
+          images: ${{ needs.prepare.outputs.image }}
           tags: |
-            type=raw,value=${{ steps.vars.outputs.version }}
-            type=raw,value=v${{ steps.vars.outputs.version }}
-            type=raw,value=${{ steps.vars.outputs.major }}.${{ steps.vars.outputs.minor }}
-            type=raw,value=${{ steps.vars.outputs.major }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=v${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.major }}.${{ needs.prepare.outputs.minor }}
+            type=raw,value=${{ needs.prepare.outputs.major }}
             type=raw,value=latest
 
-      - name: 构建并推送镜像
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            APP_VERSION=${{ steps.vars.outputs.version }}
-            APP_REVISION=${{ steps.vars.outputs.revision_short }}
-            APP_BUILD_TIME=${{ steps.vars.outputs.build_date }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: 合并多架构清单并推送
+        working-directory: ${{ runner.temp }}/digests
+        shell: bash
+        run: |
+          tags=$(jq -r '.tags | map("-t " + .) | join(" ")' <<< '${{ steps.meta.outputs.json }}')
+          digests=$(printf '${{ needs.prepare.outputs.image }}@sha256:%s ' *)
+          docker buildx imagetools create $tags $digests
