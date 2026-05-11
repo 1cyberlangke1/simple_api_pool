@@ -90,6 +90,10 @@ func (h *ProxyHandler) handleNonStreamResponse(w http.ResponseWriter, resp *http
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	if _, err := w.Write(respBody); err != nil {
+		if isDownstreamDisconnect(nil, err) {
+			logFields.Error = "客户端已断开连接"
+			return
+		}
 		h.stats.RecordError(proxyReq.routeName, http.StatusBadGateway)
 		logFields.Status = http.StatusBadGateway
 		logFields.Error = fmt.Sprintf("写入客户端响应失败: %v", err)

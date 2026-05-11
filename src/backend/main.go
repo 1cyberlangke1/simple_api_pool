@@ -33,6 +33,9 @@ func main() {
 
 	addr := config.ListenAddr()
 	server := app.NewHTTPServer(addr, runtimeInstance.Handler)
+	if err := app.ValidatePlainHTTPConfiguration(runtimeInstance.Config()); err != nil {
+		log.Fatalf("启动安全校验失败: %v", err)
+	}
 	shutdownCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 

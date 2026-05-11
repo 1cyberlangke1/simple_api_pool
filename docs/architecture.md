@@ -98,11 +98,12 @@
 请求命中 group 时，链路按下面顺序处理：
 
 1. 先按路径解析出 `routeName`
-2. 如果是 group，则继续从请求体里取逻辑模型名
-3. 按逻辑模型名匹配到某个 collection
-4. 按 collection 策略选择一个或多个 entry
-5. 用 entry 的 `model` 和 `base_url` 覆写上游请求后透传
-6. key 仍然复用 entry 指向 provider 的轮询、填充、禁用和恢复规则
+2. 如果是 group 且命中模型发现端点，则直接按协议返回该 group 下的 collection 列表，不访问上游
+3. 如果是普通推理请求，则继续从请求体里取逻辑模型名
+4. 按逻辑模型名匹配到某个 collection
+5. 按 collection 策略选择一个或多个 entry
+6. 用 entry 的 `model` 和 `base_url` 覆写上游请求后透传
+7. key 仍然复用 entry 指向 provider 的轮询、填充、禁用和恢复规则
 
 当前支持两种调度策略：
 
@@ -115,6 +116,14 @@
   - 如果流式响应已经开始写出，后续不再继续切换
 
 Gemini 路由有一处额外处理：除了请求体里的 `model` 字段外，路径中的 `models/<name>` 也会按 entry 的目标模型名一起改写。
+
+group 的模型发现端点也按协议类型分别对外暴露：
+
+- `OpenAI Chat` / `OpenAI Responses`：`GET /<group>/v1/models`
+- `Claude`：`GET /<group>/v1/models`
+- `Gemini`：`GET /<group>/v1beta/models`
+
+这些端点返回的是 collection 名，也就是下游真正应该填写到请求体 `model` 字段中的逻辑模型名，而不是某个 entry 的上游真实模型名。
 
 ## Provider 扩展点
 

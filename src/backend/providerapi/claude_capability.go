@@ -28,6 +28,9 @@ func newClaudeCapability() Capability {
 		modelFunc: func(_ string, body []byte) string {
 			return gjson.GetBytes(body, "model").String()
 		},
+		discoveryFunc: func(method, suffix string) bool {
+			return method == http.MethodGet && strings.TrimSuffix(suffix, "/") == "/v1/models"
+		},
 		responseUsageFunc:        extractClaudeResponseUsage,
 		streamUsageFunc:          extractClaudeStreamUsage,
 		decorateCachedResponse:   decorateClaudeCachedResponse,

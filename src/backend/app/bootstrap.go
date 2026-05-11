@@ -34,6 +34,7 @@ type Options struct {
 
 type Runtime struct {
 	Handler    http.Handler
+	cfg        *config.Config
 	statsMgr   *stats.Manager
 	cacheStore *cache.Store
 }
@@ -82,6 +83,7 @@ func NewRuntime(opts Options) (*Runtime, error) {
 
 	return &Runtime{
 		Handler:    httpapi.CompressionMiddleware(middleware.ApplySecurityHeaders(applog.LoggingMiddleware(rootHandler), policyFunc(cspProvider))),
+		cfg:        cfg,
 		statsMgr:   statsMgr,
 		cacheStore: cacheStore,
 	}, nil
@@ -98,6 +100,13 @@ func (r *Runtime) Close() error {
 		return r.cacheStore.Close()
 	}
 	return nil
+}
+
+func (r *Runtime) Config() *config.Config {
+	if r == nil {
+		return nil
+	}
+	return r.cfg
 }
 
 func newCSPProvider(opts Options, frontendRoot string) (ContentSecurityPolicyProvider, error) {

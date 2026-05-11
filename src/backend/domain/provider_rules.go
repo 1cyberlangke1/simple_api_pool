@@ -1,8 +1,10 @@
 package domain
 
 import (
+	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +25,26 @@ var reservedProviderNames = map[string]struct{}{
 	"status": {},
 	"admin":  {},
 	"assets": {},
+}
+
+var blockedUpstreamPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+}
+
+var blockedUpstreamHostnames = map[string]struct{}{
+	"localhost":                {},
+	"ip6-localhost":            {},
+	"metadata.google.internal": {},
 }
 
 func DefaultBaseURL(providerType string) string {
@@ -59,12 +81,52 @@ func NormalizeProviderBaseURL(rawValue string) (string, error) {
 	if parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return "", os.ErrInvalid
 	}
+	if err := validateUpstreamHost(parsedURL); err != nil {
+		return "", err
+	}
 
 	normalizedValue := strings.TrimRight(parsedURL.String(), "/")
 	if normalizedValue == "" {
 		return "", os.ErrInvalid
 	}
 	return normalizedValue, nil
+}
+
+func validateUpstreamHost(parsedURL *url.URL) error {
+	if parsedURL == nil || allowPrivateUpstreams() {
+		return nil
+	}
+
+	hostname := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsedURL.Hostname())), ".")
+	if hostname == "" {
+		return os.ErrInvalid
+	}
+	if _, blocked := blockedUpstreamHostnames[hostname]; blocked || strings.HasSuffix(hostname, ".localhost") {
+		return os.ErrInvalid
+	}
+
+	ipAddr, err := netip.ParseAddr(hostname)
+	if err != nil {
+		return nil
+	}
+	for _, blockedPrefix := range blockedUpstreamPrefixes {
+		if blockedPrefix.Contains(ipAddr) {
+			return os.ErrInvalid
+		}
+	}
+	return nil
+}
+
+func allowPrivateUpstreams() bool {
+	rawValue := strings.TrimSpace(os.Getenv("ALLOW_PRIVATE_UPSTREAMS"))
+	if rawValue == "" {
+		return false
+	}
+	allowed, err := strconv.ParseBool(rawValue)
+	if err != nil {
+		return false
+	}
+	return allowed
 }
 
 func NormalizeProviderSettings(settings ProviderSettings) (ProviderSettings, error) {

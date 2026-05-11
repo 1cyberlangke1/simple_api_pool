@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  DatabaseZap,
   Edit3,
   FileText,
   Key,
   KeyRound,
   LogOut,
+  Workflow,
   Plus,
   Search,
   Server,
@@ -888,7 +890,7 @@ export function AdminPage() {
             <span className="hidden sm:inline">{translate("admin.tab.providers")}</span>
           </TabsTrigger>
           <TabsTrigger className="flex items-center gap-2" value="groups">
-            <Server className="h-4 w-4" />
+            <Workflow className="h-4 w-4" />
             <span className="hidden sm:inline">{translate("admin.tab.groups")}</span>
           </TabsTrigger>
           <TabsTrigger className="flex items-center gap-2" value="keys">
@@ -1126,12 +1128,14 @@ export function AdminPage() {
                             {translate("action.edit")}
                           </Button>
                           <Button
+                            data-cache-clear-icon="database-zap"
                             onClick={function handleClearCache() {
                               void actions.clearProviderCacheByName(providerSnapshot.name);
                             }}
                             size="sm"
                             variant="outline"
                           >
+                            <DatabaseZap className="mr-2 h-4 w-4" />
                             {translate("action.clearCache")}
                           </Button>
                           <Button
@@ -1263,9 +1267,11 @@ export function AdminPage() {
 
         <TabsContent className="space-y-4" value="groups">
           <div className="flex flex-col gap-3 rounded-lg border bg-muted/50 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="flex items-center gap-3">
+              <div className="rounded-md border bg-background p-2 text-muted-foreground shadow-sm">
+                <Workflow className="h-5 w-5" />
+              </div>
               <h3 className="text-lg font-medium">{translate("group.listTitle")}</h3>
-              <p className="text-sm text-muted-foreground">{translate("group.sectionSummary")}</p>
             </div>
             <Button onClick={openCreateGroupDialog}>
               <Plus className="mr-2 h-4 w-4" />

@@ -57,6 +57,46 @@ func clearClientAuth(req *http.Request, providerType config.ProviderType) {
 	req.URL.RawQuery = queryValues.Encode()
 }
 
+func clearProxyForwardingHeaders(header http.Header) {
+	if header == nil {
+		return
+	}
+	for _, connectionValue := range header.Values("Connection") {
+		for _, token := range strings.Split(connectionValue, ",") {
+			header.Del(strings.TrimSpace(token))
+		}
+	}
+	for _, connectionValue := range header.Values("Proxy-Connection") {
+		for _, token := range strings.Split(connectionValue, ",") {
+			header.Del(strings.TrimSpace(token))
+		}
+	}
+
+	for _, headerName := range []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+		"Forwarded",
+		"Via",
+		"X-Forwarded-For",
+		"X-Forwarded-Host",
+		"X-Forwarded-Port",
+		"X-Forwarded-Proto",
+		"X-Forwarded-Server",
+		"X-Real-IP",
+		"CF-Connecting-IP",
+		"True-Client-IP",
+	} {
+		header.Del(headerName)
+	}
+}
+
 func setAuthHeader(req *http.Request, providerType config.ProviderType, key string) {
 	providerapi.ApplyUpstreamAuth(req, providerType, key)
 }

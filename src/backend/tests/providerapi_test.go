@@ -116,6 +116,8 @@ func TestProviderAPIIsModelDiscoveryRequest(t *testing.T) {
 		suffix   string
 		expected bool
 	}{
+		{name: "openai_models", method: http.MethodGet, suffix: "/v1/models", expected: true},
+		{name: "claude_models", method: http.MethodGet, suffix: "/v1/models/", expected: true},
 		{name: "v1_models", method: http.MethodGet, suffix: "/v1/models", expected: true},
 		{name: "v1beta_models_with_trailing_slash", method: http.MethodGet, suffix: "/v1beta/models/", expected: true},
 		{name: "post_is_not_discovery", method: http.MethodPost, suffix: "/v1beta/models", expected: false},
@@ -124,7 +126,7 @@ func TestProviderAPIIsModelDiscoveryRequest(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if actual := providerapi.CapabilityForType(config.Gemini).IsModelDiscoveryRequest(tc.method, tc.suffix); actual != tc.expected {
+			if actual := providerapi.IsModelDiscoveryRequest(tc.method, tc.suffix); actual != tc.expected {
 				t.Fatalf("期望 discovery=%v，实际是 %v", tc.expected, actual)
 			}
 		})

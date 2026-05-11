@@ -76,7 +76,7 @@ func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
 
 	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
 
-	body, err := json.Marshal(map[string]string{"keys": " key1 \nkey2, key3 ,, \n"})
+	body, err := json.Marshal(map[string]string{"keys": " key1 \nkey2， key3 ,， key4,, \n"})
 	if err != nil {
 		t.Fatalf("构造导入密钥请求失败: %v", err)
 	}
@@ -95,8 +95,14 @@ func TestAdminBulkImportAcceptsMultipleKeyFormats(t *testing.T) {
 	if provider == nil {
 		t.Fatal("期望提供商存在")
 	}
-	if len(provider.Keys) != 3 {
-		t.Fatalf("期望导入 3 个密钥，实际是 %d", len(provider.Keys))
+	if len(provider.Keys) != 4 {
+		t.Fatalf("期望导入 4 个密钥，实际是 %d", len(provider.Keys))
+	}
+	want := []string{"key1", "key2", "key3", "key4"}
+	for index, key := range provider.Keys {
+		if key.Value != want[index] {
+			t.Fatalf("期望导入顺序为 %v，实际是 %+v", want, provider.Keys)
+		}
 	}
 }
 

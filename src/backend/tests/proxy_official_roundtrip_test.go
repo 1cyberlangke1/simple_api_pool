@@ -33,6 +33,26 @@ func TestOfficialProviderRoundTripAndCacheHit(t *testing.T) {
 	}
 }
 
+func TestOfficialGroupRoundTripAndCacheHit(t *testing.T) {
+	for _, tc := range buildOfficialGroupRoundTripCases() {
+		t.Run(tc.Name, func(t *testing.T) {
+			harness := newOfficialProviderHarness(t, tc)
+			defer harness.Close()
+
+			first := runProxyScenario(t, harness.proxy, tc.Request)
+			tc.AssertFirstResponse(t, first)
+
+			second := runProxyScenario(t, harness.proxy, tc.Request)
+			tc.AssertCachedResponse(t, second)
+
+			if got := harness.UpstreamCalls(); got != 1 {
+				t.Fatalf("期望第二次相同分组缓存请求不再访问上游，实际上游调用次数是 %d", got)
+			}
+			tc.AssertUpstreamRequest(t, harness.LastObservedRequest())
+		})
+	}
+}
+
 func TestGeminiCacheKeySeparatesModelsWhenBodyOmitsTopLevelModel(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

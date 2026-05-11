@@ -25,6 +25,14 @@ type stagedReadCloser struct {
 	released bool
 }
 
+type disconnectAfterWritesRecorder struct {
+	header     http.Header
+	statusCode int
+	body       bytes.Buffer
+	writes     int
+	failAfter  int
+}
+
 func (r *stagedReadCloser) Read(p []byte) (int, error) {
 	if r.index >= len(r.chunks) {
 		return 0, io.EOF
@@ -42,6 +50,30 @@ func (r *stagedReadCloser) Read(p []byte) (int, error) {
 func (r *stagedReadCloser) Close() error {
 	return nil
 }
+
+func (r *disconnectAfterWritesRecorder) Header() http.Header {
+	if r.header == nil {
+		r.header = make(http.Header)
+	}
+	return r.header
+}
+
+func (r *disconnectAfterWritesRecorder) WriteHeader(statusCode int) {
+	r.statusCode = statusCode
+}
+
+func (r *disconnectAfterWritesRecorder) Write(p []byte) (int, error) {
+	if r.statusCode == 0 {
+		r.statusCode = http.StatusOK
+	}
+	if r.writes >= r.failAfter {
+		return 0, io.ErrClosedPipe
+	}
+	r.writes++
+	return r.body.Write(p)
+}
+
+func (r *disconnectAfterWritesRecorder) Flush() {}
 
 func TestProxyPassesThroughMethodPathQueryBodyAndAuth(t *testing.T) {
 	received := struct {
@@ -456,6 +488,97 @@ func TestSecondStreamRequestHitsStoredStreamCache(t *testing.T) {
 	}
 	if !strings.Contains(secondRec.Body.String(), "data: [DONE]") {
 		t.Fatalf("期望缓存命中后返回 SSE 结束标记，实际是 %s", secondRec.Body.String())
+	}
+}
+
+func TestInterruptedStreamResponseIsNotCachedOrCountedAsError(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		chunks := []string{
+			"data: {\"id\":\"resp-interrupted\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hello\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+			"data: {\"id\":\"resp-interrupted\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4.1\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":6,\"total_tokens\":10}}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, chunk := range chunks {
+			if _, err := w.Write([]byte(chunk)); err != nil {
+				t.Fatalf("写入流式块失败: %v", err)
+			}
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         upstream.URL,
+		CacheEnabled:    true,
+		CacheMaxEntries: 10,
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsMgr := stats.NewManager(store.New(t.TempDir()))
+	defer statsMgr.Stop()
+	cacheStore := newTestCacheStore(t)
+	proxy := proxyapi.NewProxyHandler(cfg, statsMgr, keyring.New(cfg), cacheStore, 1)
+
+	streamBody := `{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}],"stream":true}`
+	interruptedReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
+	interruptedReq.Header.Set("Authorization", "Bearer client-key")
+	interruptedReq.Header.Set("Content-Type", "application/json")
+	interruptedReq.Header.Set("Accept", "text/event-stream")
+
+	interruptedRec := &disconnectAfterWritesRecorder{failAfter: 1}
+	proxy.ServeHTTP(interruptedRec, interruptedReq)
+
+	if interruptedRec.statusCode != http.StatusOK {
+		t.Fatalf("中断请求期望已开始返回 200，实际是 %d", interruptedRec.statusCode)
+	}
+	if !strings.Contains(interruptedRec.body.String(), "\"resp-interrupted\"") {
+		t.Fatalf("期望中断前已经收到首个流式块，实际是 %s", interruptedRec.body.String())
+	}
+	if _, ok := cacheStore.GetForRequest("openai", config.OpenAIChat, "gpt-4.1", []byte(streamBody), true); ok {
+		t.Fatal("期望客户端中断的流式响应不写入缓存")
+	}
+	if snapshot := statsMgr.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("期望客户端中断不计入成功或错误统计，实际是 %+v", snapshot)
+	}
+
+	normalReq := httptest.NewRequest(http.MethodPost, "/cache/openai/v1/chat/completions", strings.NewReader(streamBody))
+	normalReq.Header.Set("Authorization", "Bearer client-key")
+	normalReq.Header.Set("Content-Type", "application/json")
+	normalReq.Header.Set("Accept", "text/event-stream")
+	normalRec := httptest.NewRecorder()
+	proxy.ServeHTTP(normalRec, normalReq)
+
+	if normalRec.Code != http.StatusOK {
+		t.Fatalf("第二次正常流式请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, normalRec.Code, normalRec.Body.String())
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("期望第一次中断后不写缓存，第二次正常请求继续回源，实际上游调用次数是 %d", upstreamCalls)
+	}
+	if !strings.Contains(normalRec.Body.String(), "data: [DONE]") {
+		t.Fatalf("期望第二次正常请求返回完整 SSE，实际是 %s", normalRec.Body.String())
+	}
+
+	snapshot := statsMgr.Snapshot()
+	stat, ok := snapshot["openai"]
+	if !ok {
+		t.Fatal("期望第二次正常请求后产生 openai 统计")
+	}
+	if stat.SuccessCount != 1 || stat.ErrorCount != 0 {
+		t.Fatalf("期望客户端中断不计错，正常请求只记 1 次成功，实际是 %+v", stat)
 	}
 }
 

@@ -115,6 +115,21 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if proxyReq.group != nil && isModelDiscoveryRequest(r.Method, proxyReq.parts.suffix) {
+		responseBody, err := buildGroupModelDiscoveryResponse(*proxyReq.group)
+		if err != nil {
+			logFields.Status = http.StatusInternalServerError
+			logFields.Error = "构造分组模型列表失败"
+			writeErrorResponse(w, http.StatusInternalServerError, "构造分组模型列表失败")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(responseBody)
+		logFields.Status = http.StatusOK
+		logFields.ResponseBytes = len(responseBody)
+		return
+	}
 
 	if !h.acquireUpstreamSlot(w, r, &logFields) {
 		return

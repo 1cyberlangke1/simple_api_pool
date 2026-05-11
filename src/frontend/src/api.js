@@ -142,7 +142,7 @@ export function normalizeErrorMessage(error, fallbackText) {
 export function splitImportedKeys(rawInput) {
   return String(rawInput || "")
     .replace(/\r/g, "")
-    .split(/[,\n]/)
+    .split(/[，,\n]/)
     .map(function trimKey(value) {
       return value.trim();
     })

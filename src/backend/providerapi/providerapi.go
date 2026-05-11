@@ -139,8 +139,15 @@ func ExtractRequestModel(providerType config.ProviderType, suffix string, body [
 }
 
 func IsModelDiscoveryRequest(method, suffix string) bool {
-	if CapabilityForType(config.Gemini).IsModelDiscoveryRequest(method, suffix) {
-		return true
+	for _, providerType := range []config.ProviderType{
+		config.OpenAIChat,
+		config.OpenAIResponses,
+		config.Claude,
+		config.Gemini,
+	} {
+		if CapabilityForType(providerType).IsModelDiscoveryRequest(method, suffix) {
+			return true
+		}
 	}
 	return false
 }

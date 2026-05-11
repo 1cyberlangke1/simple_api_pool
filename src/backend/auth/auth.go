@@ -70,10 +70,15 @@ func providerTypeFromRequest(r *http.Request, cfg *config.Config) (config.Provid
 	}
 
 	provider, _ := cfg.Provider(parts.Provider)
-	if provider == nil {
-		return "", false
+	if provider != nil {
+		return provider.Type, true
 	}
-	return provider.Type, true
+
+	group, _ := cfg.Group(parts.Provider)
+	if group != nil {
+		return group.Type, true
+	}
+	return "", false
 }
 
 func constantTimeEqual(left, right string) bool {

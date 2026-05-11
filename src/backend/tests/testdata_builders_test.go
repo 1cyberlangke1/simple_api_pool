@@ -53,7 +53,11 @@ type observedUpstreamRequest struct {
 type officialRoundTripCase struct {
 	Name                  string
 	ProviderName          string
+	UpstreamProviderName  string
 	ProviderType          config.ProviderType
+	GroupCollectionName   string
+	GroupTargetModel      string
+	GroupStrategy         string
 	Request               proxyScenarioRequest
 	ResponseStatusCode    int
 	ResponseHeaders       map[string]string
@@ -84,13 +88,18 @@ type openAICacheEvictionHarness struct {
 }
 
 type randomTrafficCase struct {
-	Request             proxyScenarioRequest
-	ExpectedStatusCode  int
-	ExpectedBodyMarkers []string
-	ProviderName        string
-	ResponseStatusCode  int
-	ResponseHeaders     map[string]string
-	ResponseBody        string
+	Request              proxyScenarioRequest
+	UpstreamRequest      proxyScenarioRequest
+	ExpectedStatusCode   int
+	ExpectedBodyMarkers  []string
+	ProviderName         string
+	UpstreamProviderName string
+	ProviderType         config.ProviderType
+	GroupCollectionName  string
+	GroupTargetModel     string
+	ResponseStatusCode   int
+	ResponseHeaders      map[string]string
+	ResponseBody         string
 }
 
 type randomTrafficHarness struct {
@@ -99,7 +108,7 @@ type randomTrafficHarness struct {
 	cacheStore      *cache.Store
 	cacheDir        string
 	totalCacheLimit int
-	providerNames   []string
+	routeNames      []string
 	servers         []*httptest.Server
 	mu              sync.Mutex
 	callsByProvider map[string]int
@@ -252,6 +261,147 @@ func buildOfficialRoundTripCases() []officialRoundTripCase {
 	}
 }
 
+func buildOfficialGroupRoundTripCases() []officialRoundTripCase {
+	openAIChatMarker := "group-openai-chat-official-marker"
+	openAIResponsesMarker := "group-openai-responses-official-marker"
+	claudeMarker := "group-claude-official-marker"
+	geminiMarker := "group-gemini-official-marker"
+
+	return []officialRoundTripCase{
+		{
+			Name:                 "group_openai_chat_non_stream_multiturn_multimodal",
+			ProviderName:         "router-openai",
+			UpstreamProviderName: "openai-upstream",
+			ProviderType:         config.OpenAIChat,
+			GroupCollectionName:  "chat-router",
+			GroupTargetModel:     "gpt-4.1",
+			GroupStrategy:        config.GroupStrategyWeightedRandom,
+			Request:              buildOpenAIChatRequestForRouteName(openAIChatMarker, "router-openai", "chat-router", false, true),
+			ResponseStatusCode:   http.StatusOK,
+			ResponseHeaders: map[string]string{
+				"Content-Type": "application/json",
+			},
+			ResponseBody: buildOpenAIChatResponse(openAIChatMarker, buildLongText("OpenAI Chat group official long answer", 22), 120, 240),
+			AssertFirstResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, openAIChatMarker, "OpenAI Chat group official long answer")
+			},
+			AssertCachedResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, openAIChatMarker, `"cached_tokens":360`)
+			},
+			AssertUpstreamRequest: func(t *testing.T, observed observedUpstreamRequest) {
+				if observed.Authorization != "Bearer upstream-key" {
+					t.Fatalf("期望 OpenAI Chat group 上游鉴权头为 Bearer upstream-key，实际是 %q", observed.Authorization)
+				}
+				if observed.Path != "/v1/chat/completions" {
+					t.Fatalf("期望 OpenAI Chat group 上游路径为 /v1/chat/completions，实际是 %q", observed.Path)
+				}
+				if !strings.Contains(observed.Body, `"model":"gpt-4.1"`) || strings.Contains(observed.Body, `"model":"chat-router"`) {
+					t.Fatalf("期望 OpenAI Chat group 请求体模型改写为真实模型，实际是 %s", observed.Body)
+				}
+			},
+		},
+		{
+			Name:                 "group_openai_responses_stream_multimodal",
+			ProviderName:         "router-responses",
+			UpstreamProviderName: "responses-upstream",
+			ProviderType:         config.OpenAIResponses,
+			GroupCollectionName:  "responses-router",
+			GroupTargetModel:     "gpt-5",
+			GroupStrategy:        config.GroupStrategyWeightedRandom,
+			Request:              buildOpenAIResponsesRequestForRouteName(openAIResponsesMarker, "router-responses", "responses-router", true, true),
+			ResponseStatusCode:   http.StatusOK,
+			ResponseHeaders: map[string]string{
+				"Content-Type": "text/event-stream",
+			},
+			ResponseBody: buildOpenAIResponsesStreamResponse(openAIResponsesMarker, buildLongText("Responses group official stream answer", 18), 75, 55),
+			AssertFirstResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, "response.output_text.delta", openAIResponsesMarker, "data: [DONE]")
+			},
+			AssertCachedResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, `"cached_tokens":130`, openAIResponsesMarker, "response.completed")
+			},
+			AssertUpstreamRequest: func(t *testing.T, observed observedUpstreamRequest) {
+				if observed.Authorization != "Bearer upstream-key" {
+					t.Fatalf("期望 Responses group 上游鉴权头为 Bearer upstream-key，实际是 %q", observed.Authorization)
+				}
+				if observed.Path != "/v1/responses" {
+					t.Fatalf("期望 Responses group 上游路径为 /v1/responses，实际是 %q", observed.Path)
+				}
+				if !strings.Contains(observed.Body, `"model":"gpt-5"`) || strings.Contains(observed.Body, `"model":"responses-router"`) {
+					t.Fatalf("期望 Responses group 请求体模型改写为真实模型，实际是 %s", observed.Body)
+				}
+			},
+		},
+		{
+			Name:                 "group_claude_non_stream_multimodal",
+			ProviderName:         "router-claude",
+			UpstreamProviderName: "claude-upstream",
+			ProviderType:         config.Claude,
+			GroupCollectionName:  "claude-router",
+			GroupTargetModel:     "claude-sonnet-4-5",
+			GroupStrategy:        config.GroupStrategyWeightedRandom,
+			Request:              withProtocolClientAuth(buildClaudeRequestForRouteName(claudeMarker, "router-claude", "claude-router", false, true), config.Claude),
+			ResponseStatusCode:   http.StatusOK,
+			ResponseHeaders: map[string]string{
+				"Content-Type": "application/json",
+			},
+			ResponseBody: buildClaudeResponse(claudeMarker, buildLongText("Claude group official long answer", 16), 91, 37),
+			AssertFirstResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, claudeMarker, "Claude group official long answer")
+			},
+			AssertCachedResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, `"cache_read_input_tokens":128`, claudeMarker)
+			},
+			AssertUpstreamRequest: func(t *testing.T, observed observedUpstreamRequest) {
+				if observed.XAPIKey != "claude-key" {
+					t.Fatalf("期望 Claude group 上游鉴权头 x-api-key 为 claude-key，实际是 %q", observed.XAPIKey)
+				}
+				if observed.Path != "/v1/messages" {
+					t.Fatalf("期望 Claude group 上游路径为 /v1/messages，实际是 %q", observed.Path)
+				}
+				if !strings.Contains(observed.Body, `"model":"claude-sonnet-4-5"`) || strings.Contains(observed.Body, `"model":"claude-router"`) {
+					t.Fatalf("期望 Claude group 请求体模型改写为真实模型，实际是 %s", observed.Body)
+				}
+			},
+		},
+		{
+			Name:                 "group_gemini_stream_multimodal_alt_sse",
+			ProviderName:         "router-gemini",
+			UpstreamProviderName: "gemini-upstream",
+			ProviderType:         config.Gemini,
+			GroupCollectionName:  "gemini-router",
+			GroupTargetModel:     "gemini-2.5-flash",
+			GroupStrategy:        config.GroupStrategyWeightedRandom,
+			Request:              withProtocolClientAuth(buildGeminiRequestForRouteName(geminiMarker, "router-gemini", "gemini-router", true, true), config.Gemini),
+			ResponseStatusCode:   http.StatusOK,
+			ResponseHeaders: map[string]string{
+				"Content-Type": "text/event-stream",
+			},
+			ResponseBody: buildGeminiStreamResponse(geminiMarker, buildLongText("Gemini group official stream answer", 14), 64, 48),
+			AssertFirstResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, geminiMarker, `"totalTokenCount":112`, "Gemini group official stream answer")
+			},
+			AssertCachedResponse: func(t *testing.T, result proxyScenarioResult) {
+				assertProxyStatusAndMarkers(t, result, http.StatusOK, `"cachedContentTokenCount":112`, geminiMarker)
+			},
+			AssertUpstreamRequest: func(t *testing.T, observed observedUpstreamRequest) {
+				if observed.XGoogAPIKey != "gemini-key" {
+					t.Fatalf("期望 Gemini group 上游鉴权头 x-goog-api-key 为 gemini-key，实际是 %q", observed.XGoogAPIKey)
+				}
+				if observed.Path != "/v1beta/models/gemini-2.5-flash:streamGenerateContent" {
+					t.Fatalf("期望 Gemini group 上游路径正确，实际是 %q", observed.Path)
+				}
+				if observed.Query != "alt=sse" {
+					t.Fatalf("期望 Gemini group 上游查询参数为 alt=sse，实际是 %q", observed.Query)
+				}
+				if strings.Contains(observed.Path, "gemini-router") {
+					t.Fatalf("期望 Gemini group 上游路径已改写为真实模型，实际是 %q", observed.Path)
+				}
+			},
+		},
+	}
+}
+
 func newOfficialProviderHarness(t *testing.T, tc officialRoundTripCase) *officialProviderHarness {
 	t.Helper()
 
@@ -289,8 +439,12 @@ func newOfficialProviderHarness(t *testing.T, tc officialRoundTripCase) *officia
 	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
 		t.Fatalf("更新全局配置失败: %v", err)
 	}
+	upstreamProviderName := tc.ProviderName
+	if tc.UpstreamProviderName != "" {
+		upstreamProviderName = tc.UpstreamProviderName
+	}
 	if err := cfg.SaveProvider(config.Provider{
-		Name:            tc.ProviderName,
+		Name:            upstreamProviderName,
 		Type:            tc.ProviderType,
 		BaseURL:         harness.upstream.URL,
 		CacheEnabled:    true,
@@ -300,6 +454,35 @@ func newOfficialProviderHarness(t *testing.T, tc officialRoundTripCase) *officia
 		},
 	}); err != nil {
 		t.Fatalf("保存提供商失败: %v", err)
+	}
+	if tc.GroupCollectionName != "" {
+		strategy := tc.GroupStrategy
+		if strategy == "" {
+			strategy = config.GroupStrategyWeightedRandom
+		}
+		if err := cfg.SaveGroup(config.Group{
+			Name:            tc.ProviderName,
+			Type:            tc.ProviderType,
+			CacheEnabled:    true,
+			CacheMaxEntries: 16,
+			Collections: []config.GroupCollection{
+				{
+					Name:     tc.GroupCollectionName,
+					Strategy: strategy,
+					Entries: []config.GroupEntry{
+						{
+							Provider: upstreamProviderName,
+							Model:    tc.GroupTargetModel,
+							BaseURL:  harness.upstream.URL,
+							Weight:   1,
+							Priority: 1,
+						},
+					},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("保存分组失败: %v", err)
+		}
 	}
 
 	harness.stats = stats.NewManager(store.New(t.TempDir()))
@@ -455,40 +638,83 @@ func buildDeterministicRandomTrafficCases(seed int64, count int) []randomTraffic
 	return cases
 }
 
+func buildDeterministicRandomGroupTrafficCases(seed int64, count int) []randomTrafficCase {
+	rng := rand.New(rand.NewSource(seed))
+	cacheableWarmups := []randomTrafficCase{
+		buildRandomOpenAIChatGroupCase(fmt.Sprintf("warm-group-openai-json-%03d", rng.Intn(1000)), false, true),
+		buildRandomOpenAIChatGroupCase(fmt.Sprintf("warm-group-openai-stream-%03d", rng.Intn(1000)), true, true),
+		buildRandomOpenAIResponsesGroupCase(fmt.Sprintf("warm-group-responses-json-%03d", rng.Intn(1000)), false, true),
+		buildRandomOpenAIResponsesGroupCase(fmt.Sprintf("warm-group-responses-stream-%03d", rng.Intn(1000)), true, true),
+		buildRandomClaudeGroupCase(fmt.Sprintf("warm-group-claude-json-%03d", rng.Intn(1000)), false, true),
+		buildRandomClaudeGroupCase(fmt.Sprintf("warm-group-claude-stream-%03d", rng.Intn(1000)), true, true),
+		buildRandomGeminiGroupCase(fmt.Sprintf("warm-group-gemini-json-%03d", rng.Intn(1000)), false, true),
+		buildRandomGeminiGroupCase(fmt.Sprintf("warm-group-gemini-stream-%03d", rng.Intn(1000)), true, true),
+	}
+
+	cases := make([]randomTrafficCase, 0, count)
+	for len(cases) < count {
+		if len(cases) < len(cacheableWarmups) {
+			cases = append(cases, cacheableWarmups[len(cases)])
+			continue
+		}
+
+		if len(cases)%3 == 0 {
+			cases = append(cases, cacheableWarmups[len(cases)%len(cacheableWarmups)])
+			continue
+		}
+
+		switch len(cases) % 8 {
+		case 0:
+			cases = append(cases, buildRandomOpenAIChatGroupCase(fmt.Sprintf("group-openai-json-%03d", rng.Intn(1000)), false, len(cases)%5 != 0))
+		case 1:
+			cases = append(cases, buildRandomOpenAIChatGroupCase(fmt.Sprintf("group-openai-stream-%03d", rng.Intn(1000)), true, len(cases)%5 != 0))
+		case 2:
+			cases = append(cases, buildRandomOpenAIResponsesGroupCase(fmt.Sprintf("group-responses-json-%03d", rng.Intn(1000)), false, len(cases)%4 != 0))
+		case 3:
+			cases = append(cases, buildRandomOpenAIResponsesGroupCase(fmt.Sprintf("group-responses-stream-%03d", rng.Intn(1000)), true, len(cases)%4 != 0))
+		case 4:
+			cases = append(cases, buildRandomClaudeGroupCase(fmt.Sprintf("group-claude-json-%03d", rng.Intn(1000)), false, len(cases)%4 != 0))
+		case 5:
+			cases = append(cases, buildRandomClaudeGroupCase(fmt.Sprintf("group-claude-stream-%03d", rng.Intn(1000)), true, len(cases)%4 != 0))
+		case 6:
+			cases = append(cases, buildRandomGeminiGroupCase(fmt.Sprintf("group-gemini-json-%03d", rng.Intn(1000)), false, len(cases)%5 != 0))
+		default:
+			cases = append(cases, buildRandomGeminiGroupCase(fmt.Sprintf("group-gemini-stream-%03d", rng.Intn(1000)), true, len(cases)%5 != 0))
+		}
+	}
+	return cases
+}
+
 func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomTrafficHarness {
 	t.Helper()
 
 	harness := &randomTrafficHarness{
 		cacheDir:        t.TempDir(),
-		totalCacheLimit: 64,
-		providerNames:   []string{"openai", "responses", "claude", "gemini"},
 		callsByProvider: make(map[string]int),
 		responseByKey:   make(map[string]randomTrafficCase, len(traffic)),
 	}
 
+	seenRouteNames := make(map[string]struct{})
+	seenUpstreamProviders := make(map[string]config.ProviderType)
 	for _, tc := range traffic {
-		harness.responseByKey[randomTrafficKey(tc.ProviderName, tc.Request)] = tc
+		harness.responseByKey[randomTrafficKey(effectiveUpstreamProviderName(tc), effectiveUpstreamRequest(tc))] = tc
+		if _, ok := seenRouteNames[tc.ProviderName]; !ok {
+			seenRouteNames[tc.ProviderName] = struct{}{}
+			harness.routeNames = append(harness.routeNames, tc.ProviderName)
+		}
+		seenUpstreamProviders[effectiveUpstreamProviderName(tc)] = tc.ProviderType
 	}
+	harness.totalCacheLimit = len(harness.routeNames) * 16
 
 	cfg := newTestConfig(t)
 	if err := cfg.UpdateGlobalConfig("", false, []string{"client-key"}); err != nil {
 		t.Fatalf("更新全局配置失败: %v", err)
 	}
 
-	type providerSetup struct {
-		name string
-		pt   config.ProviderType
-		key  string
-	}
-	setups := []providerSetup{
-		{name: "openai", pt: config.OpenAIChat, key: "upstream-key"},
-		{name: "responses", pt: config.OpenAIResponses, key: "upstream-key"},
-		{name: "claude", pt: config.Claude, key: "claude-key"},
-		{name: "gemini", pt: config.Gemini, key: "gemini-key"},
-	}
-
-	for _, setup := range setups {
-		setup := setup
+	upstreamBaseURLs := make(map[string]string, len(seenUpstreamProviders))
+	for providerName, providerType := range seenUpstreamProviders {
+		setupName := providerName
+		setupType := providerType
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -504,14 +730,14 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 				Body: body,
 			}
 
-			key := randomTrafficKey(setup.name, request)
+			key := randomTrafficKey(setupName, request)
 
 			harness.mu.Lock()
-			harness.callsByProvider[setup.name]++
+			harness.callsByProvider[setupName]++
 			response, ok := harness.responseByKey[key]
 			harness.mu.Unlock()
 			if !ok {
-				t.Fatalf("未找到 provider=%s 的随机流量上游响应，path=%s body=%s", setup.name, request.Path, string(body))
+				t.Fatalf("未找到 provider=%s 的随机流量上游响应，path=%s body=%s", setupName, request.Path, string(body))
 			}
 
 			for headerKey, headerValue := range response.ResponseHeaders {
@@ -521,18 +747,60 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 			_, _ = w.Write([]byte(response.ResponseBody))
 		}))
 		harness.servers = append(harness.servers, server)
+		upstreamBaseURLs[providerName] = server.URL
 
 		if err := cfg.SaveProvider(config.Provider{
-			Name:            setup.name,
-			Type:            setup.pt,
+			Name:            providerName,
+			Type:            providerType,
 			BaseURL:         server.URL,
 			CacheEnabled:    true,
 			CacheMaxEntries: 16,
 			Keys: []config.Key{
-				{Value: setup.key},
+				{Value: upstreamKeyForProvider(setupType)},
 			},
 		}); err != nil {
-			t.Fatalf("保存 provider %s 失败: %v", setup.name, err)
+			t.Fatalf("保存 provider %s 失败: %v", providerName, err)
+		}
+	}
+
+	groupByName := make(map[string]config.Group)
+	for _, tc := range traffic {
+		if tc.GroupCollectionName == "" {
+			continue
+		}
+
+		group := groupByName[tc.ProviderName]
+		if group.Name == "" {
+			group = config.Group{
+				Name:            tc.ProviderName,
+				Type:            tc.ProviderType,
+				CacheEnabled:    true,
+				CacheMaxEntries: 16,
+			}
+		}
+		if findGroupCollectionIndex(group.Collections, tc.GroupCollectionName) >= 0 {
+			groupByName[tc.ProviderName] = group
+			continue
+		}
+		upstreamProviderName := effectiveUpstreamProviderName(tc)
+		group.Collections = append(group.Collections, config.GroupCollection{
+			Name:     tc.GroupCollectionName,
+			Strategy: config.GroupStrategyWeightedRandom,
+			Entries: []config.GroupEntry{
+				{
+					Provider: upstreamProviderName,
+					Model:    tc.GroupTargetModel,
+					BaseURL:  upstreamBaseURLs[upstreamProviderName],
+					Weight:   1,
+					Priority: 1,
+				},
+			},
+		})
+		groupByName[tc.ProviderName] = group
+	}
+	for groupName, group := range groupByName {
+		if err := cfg.SaveGroup(group); err != nil {
+			t.Fatalf("保存 group %s 失败: %v", groupName, err)
 		}
 	}
 
@@ -554,8 +822,8 @@ func (h *randomTrafficHarness) Close() {
 	}
 }
 
-func (h *randomTrafficHarness) ProviderNames() []string {
-	return append([]string(nil), h.providerNames...)
+func (h *randomTrafficHarness) RouteNames() []string {
+	return append([]string(nil), h.routeNames...)
 }
 
 func (h *randomTrafficHarness) TotalUpstreamCalls() int {
@@ -571,8 +839,8 @@ func (h *randomTrafficHarness) TotalUpstreamCalls() int {
 func (h *randomTrafficHarness) TotalCacheEntries(t *testing.T) int {
 	t.Helper()
 	total := 0
-	for _, providerName := range h.providerNames {
-		total += sqliteEntryCount(t, filepath.Join(h.cacheDir, providerName, "cache.db"))
+	for _, routeName := range h.routeNames {
+		total += sqliteEntryCount(t, filepath.Join(h.cacheDir, routeName, "cache.db"))
 	}
 	return total
 }
@@ -584,8 +852,8 @@ func (h *randomTrafficHarness) TotalCacheLimit() int {
 func (h *randomTrafficHarness) TotalCacheHitCount() int64 {
 	snapshot := h.stats.Snapshot()
 	var total int64
-	for _, providerName := range h.providerNames {
-		total += snapshot[providerName].CacheHits
+	for _, routeName := range h.routeNames {
+		total += snapshot[routeName].CacheHits
 	}
 	return total
 }
@@ -654,6 +922,7 @@ func buildRandomOpenAIChatCase(marker string, stream bool, cacheRoute bool) rand
 		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
 		ProviderName:        "openai",
+		ProviderType:        config.OpenAIChat,
 		ResponseStatusCode:  http.StatusOK,
 		ResponseHeaders:     responseHeaders,
 		ResponseBody:        responseBody,
@@ -677,6 +946,7 @@ func buildRandomOpenAIResponsesCase(marker string, stream bool, cacheRoute bool)
 		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
 		ProviderName:        "responses",
+		ProviderType:        config.OpenAIResponses,
 		ResponseStatusCode:  http.StatusOK,
 		ResponseHeaders:     responseHeaders,
 		ResponseBody:        responseBody,
@@ -700,6 +970,7 @@ func buildRandomClaudeCase(marker string, stream bool, cacheRoute bool) randomTr
 		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
 		ProviderName:        "claude",
+		ProviderType:        config.Claude,
 		ResponseStatusCode:  http.StatusOK,
 		ResponseHeaders:     responseHeaders,
 		ResponseBody:        responseBody,
@@ -723,15 +994,72 @@ func buildRandomGeminiCase(marker string, stream bool, cacheRoute bool) randomTr
 		ExpectedStatusCode:  http.StatusOK,
 		ExpectedBodyMarkers: expectedMarkers,
 		ProviderName:        "gemini",
+		ProviderType:        config.Gemini,
 		ResponseStatusCode:  http.StatusOK,
 		ResponseHeaders:     responseHeaders,
 		ResponseBody:        responseBody,
 	}
 }
 
+func buildRandomOpenAIChatGroupCase(marker string, stream bool, cacheRoute bool) randomTrafficCase {
+	request := buildOpenAIChatRequestForRouteName(marker, "router-openai", "chat-router", stream, cacheRoute)
+	upstreamRequest := buildOpenAIChatRequestForRouteName(marker, "openai-upstream", "gpt-4.1", stream, false)
+	base := buildRandomOpenAIChatCase(marker, stream, cacheRoute)
+	base.Request = request
+	base.UpstreamRequest = upstreamRequest
+	base.ProviderName = "router-openai"
+	base.UpstreamProviderName = "openai-upstream"
+	base.GroupCollectionName = "chat-router"
+	base.GroupTargetModel = "gpt-4.1"
+	return base
+}
+
+func buildRandomOpenAIResponsesGroupCase(marker string, stream bool, cacheRoute bool) randomTrafficCase {
+	request := buildOpenAIResponsesRequestForRouteName(marker, "router-responses", "responses-router", stream, cacheRoute)
+	upstreamRequest := buildOpenAIResponsesRequestForRouteName(marker, "responses-upstream", "gpt-5", stream, false)
+	base := buildRandomOpenAIResponsesCase(marker, stream, cacheRoute)
+	base.Request = request
+	base.UpstreamRequest = upstreamRequest
+	base.ProviderName = "router-responses"
+	base.UpstreamProviderName = "responses-upstream"
+	base.GroupCollectionName = "responses-router"
+	base.GroupTargetModel = "gpt-5"
+	return base
+}
+
+func buildRandomClaudeGroupCase(marker string, stream bool, cacheRoute bool) randomTrafficCase {
+	request := withProtocolClientAuth(buildClaudeRequestForRouteName(marker, "router-claude", "claude-router", stream, cacheRoute), config.Claude)
+	upstreamRequest := buildClaudeRequestForRouteName(marker, "claude-upstream", "claude-sonnet-4-5", stream, false)
+	base := buildRandomClaudeCase(marker, stream, cacheRoute)
+	base.Request = request
+	base.UpstreamRequest = upstreamRequest
+	base.ProviderName = "router-claude"
+	base.UpstreamProviderName = "claude-upstream"
+	base.GroupCollectionName = "claude-router"
+	base.GroupTargetModel = "claude-sonnet-4-5"
+	return base
+}
+
+func buildRandomGeminiGroupCase(marker string, stream bool, cacheRoute bool) randomTrafficCase {
+	request := withProtocolClientAuth(buildGeminiRequestForRouteName(marker, "router-gemini", "gemini-router", stream, cacheRoute), config.Gemini)
+	upstreamRequest := buildGeminiRequestForRouteName(marker, "gemini-upstream", "gemini-2.5-flash", stream, false)
+	base := buildRandomGeminiCase(marker, stream, cacheRoute)
+	base.Request = request
+	base.UpstreamRequest = upstreamRequest
+	base.ProviderName = "router-gemini"
+	base.UpstreamProviderName = "gemini-upstream"
+	base.GroupCollectionName = "gemini-router"
+	base.GroupTargetModel = "gemini-2.5-flash"
+	return base
+}
+
 func buildOpenAIChatRequest(marker string, stream bool, cacheRoute bool) proxyScenarioRequest {
+	return buildOpenAIChatRequestForRouteName(marker, "openai", "gpt-4.1", stream, cacheRoute)
+}
+
+func buildOpenAIChatRequestForRouteName(marker, routeName, model string, stream bool, cacheRoute bool) proxyScenarioRequest {
 	requestBody := mustMarshalJSON(map[string]any{
-		"model": "gpt-4.1",
+		"model": model,
 		"messages": []any{
 			map[string]any{"role": "developer", "content": "Return concise but complete answers."},
 			map[string]any{
@@ -756,7 +1084,7 @@ func buildOpenAIChatRequest(marker string, stream bool, cacheRoute bool) proxySc
 	}
 	return proxyScenarioRequest{
 		Method:  http.MethodPost,
-		Path:    routePrefix(cacheRoute, "openai") + "/v1/chat/completions",
+		Path:    routePrefix(cacheRoute, routeName) + "/v1/chat/completions",
 		Headers: headers,
 		Body:    requestBody,
 	}
@@ -767,8 +1095,12 @@ func buildOpenAIResponsesRequest(marker string, stream bool) proxyScenarioReques
 }
 
 func buildOpenAIResponsesRequestForRoute(marker string, stream bool, cacheRoute bool) proxyScenarioRequest {
+	return buildOpenAIResponsesRequestForRouteName(marker, "responses", "gpt-5", stream, cacheRoute)
+}
+
+func buildOpenAIResponsesRequestForRouteName(marker, routeName, model string, stream bool, cacheRoute bool) proxyScenarioRequest {
 	requestBody := mustMarshalJSON(map[string]any{
-		"model": "gpt-5",
+		"model": model,
 		"input": []any{
 			map[string]any{
 				"role": "user",
@@ -787,7 +1119,7 @@ func buildOpenAIResponsesRequestForRoute(marker string, stream bool, cacheRoute 
 	}
 	return proxyScenarioRequest{
 		Method:  http.MethodPost,
-		Path:    routePrefix(cacheRoute, "responses") + "/v1/responses",
+		Path:    routePrefix(cacheRoute, routeName) + "/v1/responses",
 		Headers: headers,
 		Body:    requestBody,
 	}
@@ -798,8 +1130,12 @@ func buildClaudeRequest(marker string, stream bool) proxyScenarioRequest {
 }
 
 func buildClaudeRequestForRoute(marker string, stream bool, cacheRoute bool) proxyScenarioRequest {
+	return buildClaudeRequestForRouteName(marker, "claude", "claude-sonnet-4-5", stream, cacheRoute)
+}
+
+func buildClaudeRequestForRouteName(marker, routeName, model string, stream bool, cacheRoute bool) proxyScenarioRequest {
 	requestBody := mustMarshalJSON(map[string]any{
-		"model":      "claude-sonnet-4-5",
+		"model":      model,
 		"max_tokens": 512,
 		"system":     "Return concise but complete answers.",
 		"messages": []any{
@@ -828,7 +1164,7 @@ func buildClaudeRequestForRoute(marker string, stream bool, cacheRoute bool) pro
 	}
 	return proxyScenarioRequest{
 		Method:  http.MethodPost,
-		Path:    routePrefix(cacheRoute, "claude") + "/v1/messages",
+		Path:    routePrefix(cacheRoute, routeName) + "/v1/messages",
 		Headers: headers,
 		Body:    requestBody,
 	}
@@ -839,13 +1175,17 @@ func buildGeminiRequest(marker string, stream bool) proxyScenarioRequest {
 }
 
 func buildGeminiRequestForRoute(marker string, stream bool, cacheRoute bool) proxyScenarioRequest {
-	return buildGeminiRequestForModelPath(marker, "gemini-2.5-flash", stream, cacheRoute)
+	return buildGeminiRequestForRouteName(marker, "gemini", "gemini-2.5-flash", stream, cacheRoute)
 }
 
 func buildGeminiRequestForModelPath(marker, modelName string, stream bool, cacheRoute bool) proxyScenarioRequest {
-	path := routePrefix(cacheRoute, "gemini") + "/v1beta/models/" + modelName + ":generateContent"
+	return buildGeminiRequestForRouteName(marker, "gemini", modelName, stream, cacheRoute)
+}
+
+func buildGeminiRequestForRouteName(marker, routeName, modelName string, stream bool, cacheRoute bool) proxyScenarioRequest {
+	path := routePrefix(cacheRoute, routeName) + "/v1beta/models/" + modelName + ":generateContent"
 	if stream {
-		path = routePrefix(cacheRoute, "gemini") + "/v1beta/models/" + modelName + ":streamGenerateContent?alt=sse"
+		path = routePrefix(cacheRoute, routeName) + "/v1beta/models/" + modelName + ":streamGenerateContent?alt=sse"
 	}
 
 	requestBody := mustMarshalJSON(map[string]any{
@@ -887,6 +1227,24 @@ func buildGeminiRequestForModelPath(marker, modelName string, stream bool, cache
 		Headers: headers,
 		Body:    requestBody,
 	}
+}
+
+func withProtocolClientAuth(request proxyScenarioRequest, providerType config.ProviderType) proxyScenarioRequest {
+	headers := make(map[string]string, len(request.Headers))
+	for key, value := range request.Headers {
+		headers[key] = value
+	}
+	delete(headers, "Authorization")
+	switch providerType {
+	case config.Claude:
+		headers["x-api-key"] = "client-key"
+	case config.Gemini:
+		headers["x-goog-api-key"] = "client-key"
+	default:
+		headers["Authorization"] = "Bearer client-key"
+	}
+	request.Headers = headers
+	return request
 }
 
 func buildOpenAIChatResponse(marker, content string, promptTokens, completionTokens int64) string {
@@ -1112,6 +1470,20 @@ func randomTrafficKey(providerName string, request proxyScenarioRequest) string 
 	return providerName + "|" + request.Method + "|" + normalizeProxyRoute(providerName, request.Path) + "|" + request.Headers["Accept"] + "|" + string(request.Body)
 }
 
+func effectiveUpstreamProviderName(tc randomTrafficCase) string {
+	if tc.UpstreamProviderName != "" {
+		return tc.UpstreamProviderName
+	}
+	return tc.ProviderName
+}
+
+func effectiveUpstreamRequest(tc randomTrafficCase) proxyScenarioRequest {
+	if tc.UpstreamRequest.Method != "" {
+		return tc.UpstreamRequest
+	}
+	return tc.Request
+}
+
 func requestPathWithQuery(path, rawQuery string) string {
 	if rawQuery == "" {
 		return path
@@ -1126,6 +1498,15 @@ func normalizeProxyRoute(providerName, rawPath string) string {
 		}
 	}
 	return rawPath
+}
+
+func findGroupCollectionIndex(collections []config.GroupCollection, name string) int {
+	for index, collection := range collections {
+		if collection.Name == name {
+			return index
+		}
+	}
+	return -1
 }
 
 func mustMarshalJSON(value any) []byte {

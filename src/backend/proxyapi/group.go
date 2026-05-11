@@ -10,6 +10,66 @@ import (
 	"simple-api-pool/providerapi"
 )
 
+func buildGroupModelDiscoveryResponse(group config.Group) ([]byte, error) {
+	switch group.Type {
+	case config.OpenAIChat, config.OpenAIResponses:
+		type openAIModel struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			OwnedBy string `json:"owned_by"`
+		}
+		response := struct {
+			Object string        `json:"object"`
+			Data   []openAIModel `json:"data"`
+		}{
+			Object: "list",
+			Data:   make([]openAIModel, 0, len(group.Collections)),
+		}
+		for _, collection := range group.Collections {
+			response.Data = append(response.Data, openAIModel{
+				ID:      collection.Name,
+				Object:  "model",
+				OwnedBy: "group:" + group.Name,
+			})
+		}
+		return json.Marshal(response)
+	case config.Claude:
+		type claudeModel struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}
+		response := struct {
+			Data []claudeModel `json:"data"`
+		}{
+			Data: make([]claudeModel, 0, len(group.Collections)),
+		}
+		for _, collection := range group.Collections {
+			response.Data = append(response.Data, claudeModel{
+				ID:   collection.Name,
+				Type: "model",
+			})
+		}
+		return json.Marshal(response)
+	case config.Gemini:
+		type geminiModel struct {
+			Name string `json:"name"`
+		}
+		response := struct {
+			Models []geminiModel `json:"models"`
+		}{
+			Models: make([]geminiModel, 0, len(group.Collections)),
+		}
+		for _, collection := range group.Collections {
+			response.Models = append(response.Models, geminiModel{
+				Name: "models/" + collection.Name,
+			})
+		}
+		return json.Marshal(response)
+	default:
+		return nil, os.ErrInvalid
+	}
+}
+
 func buildGroupCandidates(group config.Group, suffix, rawQuery, logicalModel string, requestBody []byte) ([]upstreamCandidate, error) {
 	collection := findGroupCollection(group.Collections, logicalModel)
 	if collection == nil {

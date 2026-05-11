@@ -2,6 +2,7 @@ package providerapi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/tidwall/gjson"
 
@@ -18,6 +19,9 @@ func newOpenAIChatCapability() Capability {
 		clientKeyFunc: extractAuthorizationCredential,
 		modelFunc: func(_ string, body []byte) string {
 			return gjson.GetBytes(body, "model").String()
+		},
+		discoveryFunc: func(method, suffix string) bool {
+			return method == http.MethodGet && strings.TrimSuffix(suffix, "/") == "/v1/models"
 		},
 		responseUsageFunc:        extractOpenAIResponseUsage,
 		streamUsageFunc:          extractOpenAIStreamUsage,
@@ -37,6 +41,9 @@ func newOpenAIResponsesCapability() Capability {
 		clientKeyFunc: extractAuthorizationCredential,
 		modelFunc: func(_ string, body []byte) string {
 			return gjson.GetBytes(body, "model").String()
+		},
+		discoveryFunc: func(method, suffix string) bool {
+			return method == http.MethodGet && strings.TrimSuffix(suffix, "/") == "/v1/models"
 		},
 		responseUsageFunc:        extractOpenAIResponseUsage,
 		streamUsageFunc:          extractOpenAIStreamUsage,

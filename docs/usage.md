@@ -368,6 +368,7 @@ Authorization: Bearer <CLIENT_KEY>
 - 如果命中的是 group，请求体里的 `model` 应填写逻辑模型名，也就是 collection 名
 - group 会在转发前覆写上游 `model` 和 `base_url`
 - Gemini 类型的 group 还会同步改写路径里的模型名
+- 如果命中的是 group 的模型发现端点，服务会直接返回 collection 列表，不访问上游
 
 ## 代理请求示例
 
@@ -496,3 +497,30 @@ curl -X POST http://127.0.0.1:18080/router/v1/chat/completions \
 ```
 
 如果这个 group 的 `type` 是 `gemini`，除了请求体里的 `model` 外，路径中的模型段也会按选中的 entry 一起改写。
+
+### Group 模型发现
+
+group 也支持按协议风格暴露模型发现端点，但返回的是该 group 下的 collection 名。
+
+OpenAI Chat / OpenAI Responses 类型 group：
+
+```bash
+curl http://127.0.0.1:18080/router/v1/models \
+  -H "Authorization: Bearer client-demo"
+```
+
+Claude 类型 group 可以继续使用 `x-api-key`：
+
+```bash
+curl http://127.0.0.1:18080/router-claude/v1/models \
+  -H "x-api-key: client-demo"
+```
+
+Gemini 类型 group 可以继续使用 `x-goog-api-key`：
+
+```bash
+curl http://127.0.0.1:18080/router-gemini/v1beta/models \
+  -H "x-goog-api-key: client-demo"
+```
+
+如果 group 里有 `chat-router`、`vision-router` 两个 collection，那么这些接口返回的就是这两个逻辑模型名；下游后续发推理请求时，应继续把它们填到请求体的 `model` 字段中。

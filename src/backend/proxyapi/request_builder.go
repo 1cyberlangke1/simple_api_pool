@@ -15,6 +15,7 @@ func (h *ProxyHandler) buildUpstreamRequest(r *http.Request, proxyReq resolvedPr
 	}
 
 	copyHeaders(upstreamReq.Header, r.Header)
+	clearProxyForwardingHeaders(upstreamReq.Header)
 	clearClientAuth(upstreamReq, proxyReq.routeType)
 	setAuthHeader(upstreamReq, proxyReq.routeType, upstreamKey)
 	return upstreamReq, true

@@ -269,6 +269,183 @@ func TestAdminGroupErrorBranches(t *testing.T) {
 	}
 }
 
+func TestGroupModelDiscoveryRoutesReturnCollections(t *testing.T) {
+	testCases := []struct {
+		name              string
+		groupName         string
+		providerName      string
+		providerType      config.ProviderType
+		path              string
+		headerKey         string
+		headerValue       string
+		expectOpenAIList  bool
+		expectClaudeList  bool
+		expectGeminiList  bool
+		expectFirstModel  string
+		expectSecondModel string
+	}{
+		{
+			name:              "openai_chat_cache_route",
+			groupName:         "router-chat",
+			providerName:      "openai-a",
+			providerType:      config.OpenAIChat,
+			path:              "/cache/router-chat/v1/models",
+			headerKey:         "Authorization",
+			headerValue:       "Bearer client-key",
+			expectOpenAIList:  true,
+			expectFirstModel:  "chat-router",
+			expectSecondModel: "vision-router",
+		},
+		{
+			name:              "openai_responses",
+			groupName:         "router-responses",
+			providerName:      "responses-a",
+			providerType:      config.OpenAIResponses,
+			path:              "/router-responses/v1/models",
+			headerKey:         "Authorization",
+			headerValue:       "Bearer client-key",
+			expectOpenAIList:  true,
+			expectFirstModel:  "chat-router",
+			expectSecondModel: "vision-router",
+		},
+		{
+			name:              "claude_protocol_auth",
+			groupName:         "router-claude",
+			providerName:      "claude-a",
+			providerType:      config.Claude,
+			path:              "/router-claude/v1/models",
+			headerKey:         "x-api-key",
+			headerValue:       "client-key",
+			expectClaudeList:  true,
+			expectFirstModel:  "chat-router",
+			expectSecondModel: "vision-router",
+		},
+		{
+			name:              "gemini_protocol_auth",
+			groupName:         "router-gemini",
+			providerName:      "gemini-a",
+			providerType:      config.Gemini,
+			path:              "/router-gemini/v1beta/models",
+			headerKey:         "x-goog-api-key",
+			headerValue:       "client-key",
+			expectGeminiList:  true,
+			expectFirstModel:  "models/chat-router",
+			expectSecondModel: "models/vision-router",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestConfig(t)
+			cfg.UpdateGlobalConfig("", false, []string{"client-key"})
+			if err := cfg.SaveProvider(config.Provider{
+				Name:    tc.providerName,
+				Type:    tc.providerType,
+				BaseURL: "https://example.com",
+			}); err != nil {
+				t.Fatalf("保存提供商失败: %v", err)
+			}
+			if err := cfg.SaveGroup(config.Group{
+				Name:         tc.groupName,
+				Type:         tc.providerType,
+				CacheEnabled: true,
+				Collections: []config.GroupCollection{
+					{
+						Name:     "chat-router",
+						Strategy: config.GroupStrategyWeightedRandom,
+						Entries: []config.GroupEntry{
+							{
+								Provider: tc.providerName,
+								Model:    "upstream-chat",
+								BaseURL:  "https://example.com",
+								Weight:   1,
+							},
+						},
+					},
+					{
+						Name:     "vision-router",
+						Strategy: config.GroupStrategyWeightedRandom,
+						Entries: []config.GroupEntry{
+							{
+								Provider: tc.providerName,
+								Model:    "upstream-vision",
+								BaseURL:  "https://example.com",
+								Weight:   1,
+							},
+						},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("保存分组失败: %v", err)
+			}
+
+			statsManager := stats.NewManager(store.New(t.TempDir()))
+			defer statsManager.Stop()
+			proxy := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set(tc.headerKey, tc.headerValue)
+			rec := httptest.NewRecorder()
+
+			proxy.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("模型发现请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+			}
+
+			if contentType := rec.Header().Get("Content-Type"); !strings.Contains(strings.ToLower(contentType), "application/json") {
+				t.Fatalf("期望返回 JSON，实际 Content-Type=%q", contentType)
+			}
+
+			if tc.expectOpenAIList {
+				var payload struct {
+					Object string `json:"object"`
+					Data   []struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+					t.Fatalf("解析 OpenAI 模型列表失败: %v", err)
+				}
+				if payload.Object != "list" {
+					t.Fatalf("期望 object=list，实际是 %q", payload.Object)
+				}
+				if len(payload.Data) != 2 || payload.Data[0].ID != tc.expectFirstModel || payload.Data[1].ID != tc.expectSecondModel {
+					t.Fatalf("期望返回集合 [%s %s]，实际是 %+v", tc.expectFirstModel, tc.expectSecondModel, payload.Data)
+				}
+			}
+
+			if tc.expectClaudeList {
+				var payload struct {
+					Data []struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+					t.Fatalf("解析 Claude 模型列表失败: %v", err)
+				}
+				if len(payload.Data) != 2 || payload.Data[0].ID != tc.expectFirstModel || payload.Data[1].ID != tc.expectSecondModel {
+					t.Fatalf("期望返回集合 [%s %s]，实际是 %+v", tc.expectFirstModel, tc.expectSecondModel, payload.Data)
+				}
+			}
+
+			if tc.expectGeminiList {
+				var payload struct {
+					Models []struct {
+						Name string `json:"name"`
+					} `json:"models"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+					t.Fatalf("解析 Gemini 模型列表失败: %v", err)
+				}
+				if len(payload.Models) != 2 || payload.Models[0].Name != tc.expectFirstModel || payload.Models[1].Name != tc.expectSecondModel {
+					t.Fatalf("期望返回集合 [%s %s]，实际是 %+v", tc.expectFirstModel, tc.expectSecondModel, payload.Models)
+				}
+			}
+		})
+	}
+}
+
 func TestGroupCacheRouteRewritesModelAndCachesPerGroup(t *testing.T) {
 	upstreamCalls := 0
 	var receivedBody string

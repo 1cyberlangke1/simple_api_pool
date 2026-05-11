@@ -404,7 +404,11 @@ func (ah *Handler) decodeAndValidateJSON(w http.ResponseWriter, r *http.Request,
 }
 
 func parseImportedKeys(raw string) []string {
-	raw = strings.ReplaceAll(raw, "\n", ",")
+	raw = strings.NewReplacer(
+		"\r", "",
+		"\n", ",",
+		"，", ",",
+	).Replace(raw)
 	parts := strings.Split(raw, ",")
 	var out []string
 	for _, p := range parts {

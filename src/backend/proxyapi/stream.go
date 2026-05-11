@@ -3,7 +3,6 @@ package proxyapi
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -77,11 +76,11 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 		logFields.Model = analysis.model
 	}
 	if streamErr != nil {
-		if errors.Is(streamErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		if isDownstreamDisconnect(ctx, streamErr) {
 			logFields.Error = "客户端已断开流式连接"
-		} else {
-			logFields.Error = "上游流式透传中断: " + streamErr.Error()
+			return
 		}
+		logFields.Error = "上游流式透传中断: " + streamErr.Error()
 		h.stats.RecordError(routeName, http.StatusBadGateway)
 		return
 	}

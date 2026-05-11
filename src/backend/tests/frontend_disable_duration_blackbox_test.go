@@ -42,7 +42,7 @@ func TestFrontendDisableDurationCapabilitiesExistInBundle(t *testing.T) {
 		"max_disable_secs",
 		"parseImportedKeys",
 		"splitImportedKeys",
-		"每行一个，或用半角逗号分隔",
+		"data-cache-clear-icon",
 	} {
 		if !strings.Contains(appBundle, requiredMarker) {
 			t.Fatalf("期望前端 bundle 保留定时禁用或批量导入能力标记 %q", requiredMarker)
@@ -52,7 +52,7 @@ func TestFrontendDisableDurationCapabilitiesExistInBundle(t *testing.T) {
 	if strings.Contains(apiSource, `/\s+/`) {
 		t.Fatal("期望前端导入 key 的源码不再把空格当作分隔符")
 	}
-	if !strings.Contains(apiSource, `.split(/[,\n]/)`) {
-		t.Fatal("期望前端导入 key 的源码继续只按换行或半角逗号切分")
+	if !strings.Contains(apiSource, `.split(/[，,\n]/)`) {
+		t.Fatal("期望前端导入 key 的源码支持半角、全角逗号和换行混合切分")
 	}
 }
