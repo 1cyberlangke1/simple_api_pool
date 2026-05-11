@@ -66,11 +66,18 @@ func (r *disconnectAfterWritesRecorder) Write(p []byte) (int, error) {
 	if r.statusCode == 0 {
 		r.statusCode = http.StatusOK
 	}
-	if r.writes >= r.failAfter {
+	if r.failAfter <= 0 || r.writes >= r.failAfter {
 		return 0, io.ErrClosedPipe
 	}
 	r.writes++
-	return r.body.Write(p)
+	writtenBytes, err := r.body.Write(p)
+	if err != nil {
+		return writtenBytes, err
+	}
+	if r.writes >= r.failAfter {
+		return writtenBytes, io.ErrClosedPipe
+	}
+	return writtenBytes, nil
 }
 
 func (r *disconnectAfterWritesRecorder) Flush() {}

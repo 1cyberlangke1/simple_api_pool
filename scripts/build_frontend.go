@@ -317,7 +317,14 @@ func hasUsableInstalledDependencies(frontendRoot string) bool {
 			return false
 		}
 	}
-	return true
+	return frontendDependenciesLoadableOnCurrentPlatform(frontendRoot)
+}
+
+func frontendDependenciesLoadableOnCurrentPlatform(frontendRoot string) bool {
+	return runFrontendCommand(frontendRoot, "node", []string{
+		"-e",
+		"require('lightningcss')",
+	}, nil) == nil
 }
 
 func dependencyFilesMatch(frontendRoot string, candidateRoot string) bool {
