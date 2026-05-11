@@ -26,10 +26,40 @@ type AdminProviderSnapshot struct {
 	MaxDisableSecs  int                 `json:"max_disable_secs"`
 }
 
+type AdminGroupEntrySnapshot struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	BaseURL  string `json:"base_url"`
+	Weight   int    `json:"weight"`
+	Priority int    `json:"priority"`
+}
+
+type AdminGroupCollectionSnapshot struct {
+	Name     string                    `json:"name"`
+	Strategy string                    `json:"strategy"`
+	Entries  []AdminGroupEntrySnapshot `json:"entries"`
+}
+
+type AdminGroupSnapshot struct {
+	Name            string                         `json:"name"`
+	Type            config.ProviderType            `json:"type"`
+	CacheEnabled    bool                           `json:"cache_enabled"`
+	CacheMaxEntries int                            `json:"cache_max_entries"`
+	Collections     []AdminGroupCollectionSnapshot `json:"collections"`
+}
+
 func buildAdminProviderSnapshots(providers []config.Provider) []AdminProviderSnapshot {
 	snapshots := make([]AdminProviderSnapshot, 0, len(providers))
 	for _, provider := range providers {
 		snapshots = append(snapshots, buildAdminProviderSnapshot(provider))
+	}
+	return snapshots
+}
+
+func buildAdminGroupSnapshots(groups []config.Group) []AdminGroupSnapshot {
+	snapshots := make([]AdminGroupSnapshot, 0, len(groups))
+	for _, group := range groups {
+		snapshots = append(snapshots, buildAdminGroupSnapshot(group))
 	}
 	return snapshots
 }
@@ -51,6 +81,35 @@ func buildAdminProviderSnapshot(provider config.Provider) AdminProviderSnapshot 
 		FailThreshold:   provider.FailThreshold,
 		MinDisableSecs:  provider.MinDisableSecs,
 		MaxDisableSecs:  provider.MaxDisableSecs,
+	}
+}
+
+func buildAdminGroupSnapshot(group config.Group) AdminGroupSnapshot {
+	collectionSnapshots := make([]AdminGroupCollectionSnapshot, 0, len(group.Collections))
+	for _, collection := range group.Collections {
+		entrySnapshots := make([]AdminGroupEntrySnapshot, 0, len(collection.Entries))
+		for _, entry := range collection.Entries {
+			entrySnapshots = append(entrySnapshots, AdminGroupEntrySnapshot{
+				Provider: entry.Provider,
+				Model:    entry.Model,
+				BaseURL:  entry.BaseURL,
+				Weight:   entry.Weight,
+				Priority: entry.Priority,
+			})
+		}
+		collectionSnapshots = append(collectionSnapshots, AdminGroupCollectionSnapshot{
+			Name:     collection.Name,
+			Strategy: collection.Strategy,
+			Entries:  entrySnapshots,
+		})
+	}
+
+	return AdminGroupSnapshot{
+		Name:            group.Name,
+		Type:            group.Type,
+		CacheEnabled:    group.CacheEnabled,
+		CacheMaxEntries: group.CacheMaxEntries,
+		Collections:     collectionSnapshots,
 	}
 }
 

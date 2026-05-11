@@ -15,6 +15,7 @@ import {
   Trash2
 } from "lucide-react";
 
+import { normalizeErrorMessage } from "@/api.js";
 import { ProviderBadgeIcon } from "@/components/provider/ProviderBadgeIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,14 +27,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { AdminKeySnapshot, AdminLogEntry, AdminProviderSnapshot, AdminProviderStatsSnapshot } from "@/lib/admin";
-import { buildBulkDisableRequest, isKeyDisabledAt } from "@/lib/admin";
+import { buildGroupPayload, createDefaultGroupCollectionDraft, createDefaultGroupDraft, createDefaultGroupEntryDraft, createGroupDraftFromSnapshot } from "@/forms/group_form.js";
+import type { AdminGroupSnapshot, AdminKeySnapshot, AdminLogEntry, AdminProviderSnapshot, AdminProviderStatsSnapshot } from "@/lib/admin";
+import { buildBulkDisableRequest, filterGroupsBySearch, isKeyDisabledAt } from "@/lib/admin";
 import { formatDateTime, formatDisabledUntil, formatErrorRate, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
 import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
+import { deleteGroup, saveGroup } from "@/services/admin_service.js";
 import { useAppStore } from "@/store/appStore";
 
 const providerTypeOptions = ["openai_chat", "openai_responses", "claude", "gemini"] as const;
 const keyStrategyOptions = ["round_robin", "fill"] as const;
+const groupStrategyOptions = ["weighted_random", "failover"] as const;
 
 const sectionVariants = {
   hidden: { opacity: 0, y: 18 },
@@ -310,11 +314,263 @@ function ProviderDialogBody(props: {
   );
 }
 
+function GroupDialogBody(props: {
+  availableProviders: AdminProviderSnapshot[];
+  draft: ReturnType<typeof createDefaultGroupDraft>;
+  onAddCollection: () => void;
+  onAddEntry: (collectionIndex: number) => void;
+  onCollectionChange: (collectionIndex: number, fieldName: string, fieldValue: string) => void;
+  onEntryChange: (collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) => void;
+  onGroupChange: (fieldName: string, fieldValue: boolean | number | string) => void;
+  onRemoveCollection: (collectionIndex: number) => void;
+  onRemoveEntry: (collectionIndex: number, entryIndex: number) => void;
+  readOnlyName: boolean;
+  translate: (key: string, params?: Record<string, unknown>) => string;
+}) {
+  return (
+    <div className="space-y-6 py-2">
+      <div className="grid gap-4 md:grid-cols-2">
+        <ProviderField
+          id="group-name"
+          label={props.translate("group.name")}
+          onChange={function handleGroupNameChange(value) {
+            props.onGroupChange("name", value);
+          }}
+          readOnly={props.readOnlyName}
+          value={props.draft.name}
+        />
+        <div className="space-y-2">
+          <Label htmlFor="group-type">{props.translate("group.type")}</Label>
+          <Select
+            disabled={props.readOnlyName}
+            onValueChange={function handleGroupTypeChange(value) {
+              props.onGroupChange("type", value);
+            }}
+            value={String(props.draft.type || "openai_chat")}
+          >
+            <SelectTrigger id="group-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {providerTypeOptions.map(function renderGroupTypeOption(value) {
+                return (
+                  <SelectItem key={value} value={value}>
+                    {props.translate(`provider.type.${value}`)}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <ProviderField
+          id="group-cache-entries"
+          label={props.translate("group.cacheMaxEntries")}
+          onChange={function handleGroupCacheEntriesChange(value) {
+            props.onGroupChange("cache_max_entries", Number(value || 0));
+          }}
+          type="number"
+          value={props.draft.cache_max_entries}
+        />
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="space-y-1">
+            <Label htmlFor="group-cache-enabled">{props.translate("group.cacheEnabled")}</Label>
+            <p className="text-xs text-muted-foreground">{props.translate("state.enabled")}</p>
+          </div>
+          <Switch
+            checked={Boolean(props.draft.cache_enabled)}
+            id="group-cache-enabled"
+            onCheckedChange={function handleGroupCacheEnabledChange(checked) {
+              props.onGroupChange("cache_enabled", checked);
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border bg-muted/20 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold">{props.translate("group.collections")}</h4>
+            <p className="text-xs text-muted-foreground">{props.translate("group.collectionsHint")}</p>
+          </div>
+          <Button onClick={props.onAddCollection} size="sm" type="button" variant="outline">
+            <Plus className="mr-2 h-4 w-4" />
+            {props.translate("group.addCollection")}
+          </Button>
+        </div>
+
+        {props.draft.collections.length === 0 ? (
+          <div className="rounded-lg border border-dashed bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
+            {props.translate("group.emptyCollections")}
+          </div>
+        ) : null}
+
+        <div className="space-y-4">
+          {props.draft.collections.map(function renderCollection(collection, collectionIndex) {
+            return (
+              <div className="space-y-4 rounded-xl border bg-background p-4 shadow-sm" key={`group-collection-${collectionIndex}`}>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="grid flex-1 gap-4 md:grid-cols-2">
+                    <ProviderField
+                      id={`group-collection-name-${collectionIndex}`}
+                      label={props.translate("group.collectionName")}
+                      onChange={function handleCollectionNameChange(value) {
+                        props.onCollectionChange(collectionIndex, "name", value);
+                      }}
+                      value={collection.name}
+                    />
+                    <div className="space-y-2">
+                      <Label htmlFor={`group-collection-strategy-${collectionIndex}`}>{props.translate("group.strategy")}</Label>
+                      <Select
+                        onValueChange={function handleCollectionStrategyChange(value) {
+                          props.onCollectionChange(collectionIndex, "strategy", value);
+                        }}
+                        value={String(collection.strategy || "weighted_random")}
+                      >
+                        <SelectTrigger id={`group-collection-strategy-${collectionIndex}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {groupStrategyOptions.map(function renderStrategyOption(value) {
+                            return (
+                              <SelectItem key={value} value={value}>
+                                {props.translate(`group.strategy.${value}`)}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={function handleRemoveCollectionClick() {
+                      props.onRemoveCollection(collectionIndex);
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h5 className="text-sm font-medium">{props.translate("group.entries")}</h5>
+                      <p className="text-xs text-muted-foreground">{props.translate("group.entriesHint")}</p>
+                    </div>
+                    <Button
+                      onClick={function handleAddEntryClick() {
+                        props.onAddEntry(collectionIndex);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      {props.translate("group.addEntry")}
+                    </Button>
+                  </div>
+
+                  {collection.entries.map(function renderEntry(entry, entryIndex) {
+                    return (
+                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_88px_88px_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
+                        <div className="space-y-2">
+                          <Label htmlFor={`group-entry-provider-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryProvider")}</Label>
+                          <Select
+                            onValueChange={function handleEntryProviderChange(value) {
+                              props.onEntryChange(collectionIndex, entryIndex, "provider", value);
+                            }}
+                            value={String(entry.provider || "")}
+                          >
+                            <SelectTrigger id={`group-entry-provider-${collectionIndex}-${entryIndex}`}>
+                              <SelectValue placeholder={props.translate("group.entryProviderPlaceholder")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {props.availableProviders.map(function renderProviderOption(providerSnapshot) {
+                                return (
+                                  <SelectItem key={providerSnapshot.name} value={providerSnapshot.name}>
+                                    {providerSnapshot.name}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <ProviderField
+                          id={`group-entry-model-${collectionIndex}-${entryIndex}`}
+                          label={props.translate("group.entryModel")}
+                          onChange={function handleEntryModelChange(value) {
+                            props.onEntryChange(collectionIndex, entryIndex, "model", value);
+                          }}
+                          value={entry.model}
+                        />
+                        <ProviderField
+                          id={`group-entry-base-url-${collectionIndex}-${entryIndex}`}
+                          label={props.translate("group.entryBaseUrl")}
+                          onChange={function handleEntryBaseUrlChange(value) {
+                            props.onEntryChange(collectionIndex, entryIndex, "base_url", value);
+                          }}
+                          placeholder={props.translate("provider.baseUrlPlaceholder")}
+                          value={entry.base_url}
+                        />
+                        <ProviderField
+                          id={`group-entry-weight-${collectionIndex}-${entryIndex}`}
+                          label={props.translate("group.entryWeight")}
+                          onChange={function handleEntryWeightChange(value) {
+                            props.onEntryChange(collectionIndex, entryIndex, "weight", Number(value || 0));
+                          }}
+                          type="number"
+                          value={entry.weight}
+                        />
+                        <ProviderField
+                          id={`group-entry-priority-${collectionIndex}-${entryIndex}`}
+                          label={props.translate("group.entryPriority")}
+                          onChange={function handleEntryPriorityChange(value) {
+                            props.onEntryChange(collectionIndex, entryIndex, "priority", Number(value || 0));
+                          }}
+                          type="number"
+                          value={entry.priority}
+                        />
+                        <div className="flex items-end">
+                          <Button
+                            className="w-full"
+                            onClick={function handleRemoveEntryClick() {
+                              props.onRemoveEntry(collectionIndex, entryIndex);
+                            }}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminPage() {
   const [bulkDisableDialogOpen, setBulkDisableDialogOpen] = useState(false);
   const [bulkDisableMode, setBulkDisableMode] = useState<"duration" | "forever" | "until">("duration");
   const [bulkDisableSeconds, setBulkDisableSeconds] = useState(3600);
   const [bulkDisableUntil, setBulkDisableUntil] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupDialogMode, setGroupDialogMode] = useState<"create" | "edit">("create");
+  const [groupDraft, setGroupDraft] = useState(createDefaultGroupDraft());
+  const [groupMessage, setGroupMessage] = useState<{ kind: "" | "error" | "ok"; text: string }>({ kind: "", text: "" });
   const language = useAppStore(function selectLanguage(state) {
     return state.language;
   });
@@ -337,6 +593,14 @@ export function AdminPage() {
   const activeKeyCount = formatNumber(derived.selectedProviderStats.available_keys || 0);
   const totalKeyCount = formatNumber(derived.selectedProviderStats.total_keys || selectedProviderKeys.length);
   const providerDialogDraft = state.providerDialogMode === "create" ? state.createProviderDraft : state.providerDraft;
+  const visibleGroups = useMemo(function computeVisibleGroups() {
+    return filterGroupsBySearch(state.overview.groups || [], groupSearch);
+  }, [groupSearch, state.overview.groups]);
+  const availableGroupProviders = useMemo(function computeAvailableGroupProviders() {
+    return (state.overview.providers || []).filter(function keepProvider(providerSnapshot) {
+      return providerSnapshot.type === String(groupDraft.type || "openai_chat");
+    });
+  }, [groupDraft.type, state.overview.providers]);
   const disablePresetSeconds = useMemo(function computeDisablePresetSeconds() {
     return createDisablePresetSeconds(derived.disableBounds);
   }, [derived.disableBounds]);
@@ -345,6 +609,155 @@ export function AdminPage() {
     setBulkDisableSeconds(nextSeconds);
     setBulkDisableUntil(toDateTimeLocalValue(Date.now() + nextSeconds * 1000));
   }, [derived.disableBounds.max, derived.disableBounds.min, selectedProviderName]);
+
+  function openCreateGroupDialog() {
+    setGroupMessage({ kind: "", text: "" });
+    setGroupDialogMode("create");
+    setGroupDraft(createDefaultGroupDraft());
+    setGroupDialogOpen(true);
+  }
+
+  function openEditGroupDialog(groupSnapshot: AdminGroupSnapshot) {
+    setGroupMessage({ kind: "", text: "" });
+    setGroupDialogMode("edit");
+    setGroupDraft(createGroupDraftFromSnapshot(groupSnapshot) || createDefaultGroupDraft());
+    setGroupDialogOpen(true);
+  }
+
+  function closeGroupDialog() {
+    setGroupDialogOpen(false);
+  }
+
+  function updateGroupField(fieldName: string, fieldValue: boolean | number | string) {
+    setGroupDraft(function applyGroupField(previousDraft) {
+      return {
+        ...previousDraft,
+        [fieldName]: fieldValue
+      };
+    });
+  }
+
+  function updateGroupCollectionField(collectionIndex: number, fieldName: string, fieldValue: string) {
+    setGroupDraft(function applyCollectionField(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.map(function mapCollection(collectionDraft, index) {
+          if (index !== collectionIndex) {
+            return collectionDraft;
+          }
+          return {
+            ...collectionDraft,
+            [fieldName]: fieldValue
+          };
+        })
+      };
+    });
+  }
+
+  function updateGroupEntryField(collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) {
+    setGroupDraft(function applyEntryField(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.map(function mapCollection(collectionDraft, currentCollectionIndex) {
+          if (currentCollectionIndex !== collectionIndex) {
+            return collectionDraft;
+          }
+          return {
+            ...collectionDraft,
+            entries: collectionDraft.entries.map(function mapEntry(entryDraft, currentEntryIndex) {
+              if (currentEntryIndex !== entryIndex) {
+                return entryDraft;
+              }
+              return {
+                ...entryDraft,
+                [fieldName]: fieldValue
+              };
+            })
+          };
+        })
+      };
+    });
+  }
+
+  function addGroupCollection() {
+    setGroupDraft(function appendCollection(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.concat([createDefaultGroupCollectionDraft()])
+      };
+    });
+  }
+
+  function removeGroupCollection(collectionIndex: number) {
+    setGroupDraft(function deleteCollection(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.filter(function keepCollection(_collectionDraft, index) {
+          return index !== collectionIndex;
+        })
+      };
+    });
+  }
+
+  function addGroupEntry(collectionIndex: number) {
+    setGroupDraft(function appendEntry(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.map(function mapCollection(collectionDraft, index) {
+          if (index !== collectionIndex) {
+            return collectionDraft;
+          }
+          return {
+            ...collectionDraft,
+            entries: collectionDraft.entries.concat([createDefaultGroupEntryDraft()])
+          };
+        })
+      };
+    });
+  }
+
+  function removeGroupEntry(collectionIndex: number, entryIndex: number) {
+    setGroupDraft(function deleteEntry(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.map(function mapCollection(collectionDraft, index) {
+          if (index !== collectionIndex) {
+            return collectionDraft;
+          }
+          return {
+            ...collectionDraft,
+            entries: collectionDraft.entries.filter(function keepEntry(_entryDraft, currentEntryIndex) {
+              return currentEntryIndex !== entryIndex;
+            })
+          };
+        })
+      };
+    });
+  }
+
+  async function saveGroupDraftState() {
+    try {
+      await saveGroup(buildGroupPayload(groupDraft));
+      setGroupMessage({ kind: "ok", text: translate(groupDialogMode === "create" ? "group.createSuccess" : "group.saveSuccess") });
+      setGroupDialogOpen(false);
+      await actions.loadOverview(true);
+    } catch (error) {
+      setGroupMessage({ kind: "error", text: normalizeErrorMessage(error, translate(groupDialogMode === "create" ? "group.createFailed" : "group.saveFailed")) });
+    }
+  }
+
+  async function deleteGroupByName(groupName: string) {
+    if (!window.confirm(translate("group.deleteConfirm"))) {
+      return;
+    }
+    try {
+      await deleteGroup(groupName);
+      setGroupMessage({ kind: "ok", text: translate("group.deleteSuccess") });
+      await actions.loadOverview(true);
+    } catch (error) {
+      setGroupMessage({ kind: "error", text: normalizeErrorMessage(error, translate("group.deleteFailed")) });
+    }
+  }
 
   if (!state.checkedAuth && state.pending) {
     return (
@@ -446,6 +859,18 @@ export function AdminPage() {
         </div>
       ) : null}
 
+      {groupMessage.text ? (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            groupMessage.kind === "error"
+              ? "border-destructive/20 bg-destructive/10 text-destructive"
+              : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          }`}
+        >
+          {groupMessage.text}
+        </div>
+      ) : null}
+
       <Tabs
         className="w-full"
         onValueChange={function handleTabChange(value) {
@@ -453,7 +878,7 @@ export function AdminPage() {
         }}
         value={state.activeTab}
       >
-        <TabsList className="mb-4 h-auto flex-wrap">
+        <TabsList className="mb-4 h-auto w-full flex-nowrap justify-start overflow-x-auto">
           <TabsTrigger className="flex items-center gap-2" value="global">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">{translate("admin.tab.global")}</span>
@@ -461,6 +886,10 @@ export function AdminPage() {
           <TabsTrigger className="flex items-center gap-2" value="providers">
             <Server className="h-4 w-4" />
             <span className="hidden sm:inline">{translate("admin.tab.providers")}</span>
+          </TabsTrigger>
+          <TabsTrigger className="flex items-center gap-2" value="groups">
+            <Server className="h-4 w-4" />
+            <span className="hidden sm:inline">{translate("admin.tab.groups")}</span>
           </TabsTrigger>
           <TabsTrigger className="flex items-center gap-2" value="keys">
             <Key className="h-4 w-4" />
@@ -832,6 +1261,167 @@ export function AdminPage() {
           )}
         </TabsContent>
 
+        <TabsContent className="space-y-4" value="groups">
+          <div className="flex flex-col gap-3 rounded-lg border bg-muted/50 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-medium">{translate("group.listTitle")}</h3>
+              <p className="text-sm text-muted-foreground">{translate("group.sectionSummary")}</p>
+            </div>
+            <Button onClick={openCreateGroupDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              {translate("action.createGroup")}
+            </Button>
+          </div>
+
+          <div className="rounded-lg border bg-background p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                onChange={function handleGroupSearchChange(event) {
+                  setGroupSearch(event.target.value);
+                }}
+                placeholder={translate("group.searchPlaceholder")}
+                value={groupSearch}
+              />
+            </div>
+          </div>
+
+          {visibleGroups.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                {translate("group.listEmpty")}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {visibleGroups.map(function renderGroupCard(groupSnapshot) {
+                return (
+                  <Card key={groupSnapshot.name}>
+                    <CardHeader className="py-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-1">
+                          <CardTitle className="text-lg">{groupSnapshot.name}</CardTitle>
+                          <CardDescription>
+                            {translate(`provider.type.${groupSnapshot.type}`)}
+                            {" · "}
+                            {translate("group.collectionCount", { count: groupSnapshot.collections.length })}
+                          </CardDescription>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={groupSnapshot.cache_enabled ? "success" : "secondary"}>
+                            {groupSnapshot.cache_enabled ? translate("state.enabled") : translate("state.disabled")}
+                          </Badge>
+                          <Button
+                            onClick={function handleEditGroupClick() {
+                              openEditGroupDialog(groupSnapshot);
+                            }}
+                            size="sm"
+                            variant="outline"
+                          >
+                            <Edit3 className="mr-2 h-4 w-4" />
+                            {translate("action.edit")}
+                          </Button>
+                          <Button
+                            onClick={function handleDeleteGroupClick() {
+                              void deleteGroupByName(groupSnapshot.name);
+                            }}
+                            size="sm"
+                            variant="destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground md:grid-cols-3">
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("group.cacheMaxEntries")}
+                          </span>
+                          <span className="text-foreground">{formatNumber(groupSnapshot.cache_max_entries)}</span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("group.collections")}
+                          </span>
+                          <span className="text-foreground">{formatNumber(groupSnapshot.collections.length)}</span>
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("group.routes")}
+                          </span>
+                          <span className="font-mono text-foreground">/{groupSnapshot.name}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {groupSnapshot.collections.map(function renderGroupCollection(collectionSnapshot, collectionIndex) {
+                          return (
+                            <div className="rounded-xl border bg-background p-4" key={`${groupSnapshot.name}-collection-${collectionIndex}`}>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h4 className="font-medium">{collectionSnapshot.name}</h4>
+                                  <p className="text-xs text-muted-foreground">
+                                    {translate(`group.strategy.${collectionSnapshot.strategy}`)}
+                                  </p>
+                                </div>
+                                <Badge variant="outline">
+                                  {translate("group.entryCount", { count: collectionSnapshot.entries.length })}
+                                </Badge>
+                              </div>
+
+                              <div className="mt-3 grid gap-3">
+                                {collectionSnapshot.entries.map(function renderGroupEntry(entrySnapshot, entryIndex) {
+                                  return (
+                                    <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_92px_92px]" key={`${groupSnapshot.name}-entry-${collectionIndex}-${entryIndex}`}>
+                                      <div>
+                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                          {translate("group.entryProvider")}
+                                        </span>
+                                        <div className="text-foreground">{entrySnapshot.provider}</div>
+                                      </div>
+                                      <div>
+                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                          {translate("group.entryModel")}
+                                        </span>
+                                        <div className="break-all font-mono text-foreground">{entrySnapshot.model}</div>
+                                      </div>
+                                      <div>
+                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                          {translate("group.entryWeight")}
+                                        </span>
+                                        <div className="text-foreground">{formatNumber(entrySnapshot.weight)}</div>
+                                      </div>
+                                      <div>
+                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                          {translate("group.entryPriority")}
+                                        </span>
+                                        <div className="text-foreground">{formatNumber(entrySnapshot.priority)}</div>
+                                      </div>
+                                      <div className="lg:col-span-4">
+                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                          {translate("group.entryBaseUrl")}
+                                        </span>
+                                        <code className="break-all text-foreground">{entrySnapshot.base_url}</code>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent className="space-y-4" value="keys">
           <Card>
             <CardHeader className="border-b pb-4">
@@ -1151,6 +1741,51 @@ export function AdminPage() {
       </Dialog>
 
       <Dialog
+        onOpenChange={function handleGroupDialogChange(open) {
+          if (!open) {
+            closeGroupDialog();
+          }
+        }}
+        open={groupDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[960px]">
+          <DialogHeader>
+            <DialogTitle>
+              {groupDialogMode === "create" ? translate("group.dialogCreateTitle") : translate("group.dialogEditTitle")}
+            </DialogTitle>
+          </DialogHeader>
+
+          <GroupDialogBody
+            availableProviders={availableGroupProviders}
+            draft={groupDraft}
+            onAddCollection={addGroupCollection}
+            onAddEntry={addGroupEntry}
+            onCollectionChange={updateGroupCollectionField}
+            onEntryChange={updateGroupEntryField}
+            onGroupChange={updateGroupField}
+            onRemoveCollection={removeGroupCollection}
+            onRemoveEntry={removeGroupEntry}
+            readOnlyName={groupDialogMode === "edit"}
+            translate={translate}
+          />
+
+          <DialogFooter>
+            <Button onClick={closeGroupDialog} type="button" variant="outline">
+              {translate("action.cancel")}
+            </Button>
+            <Button
+              onClick={function handleSaveGroupDialogClick() {
+                void saveGroupDraftState();
+              }}
+              type="button"
+            >
+              {translate("action.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         onOpenChange={function handleImportDialogChange(open) {
           if (!open) {
             actions.closeDialogs();
@@ -1219,44 +1854,47 @@ export function AdminPage() {
         open={state.logModalOpen}
       >
         <DialogContent className="log-modal max-w-6xl">
-          <div className="overflow-hidden rounded-lg border bg-[#1e1e1e] text-[#d4d4d4] shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-              <h3 className="text-lg font-semibold">{translate("admin.logsTitle")}</h3>
-            </div>
-            <div className="max-h-[70vh] overflow-auto p-6">
-              <div className="space-y-1 rounded-md border border-white/10 bg-black/20 p-4 font-mono text-xs">
-                {derived.filteredLogs.length === 0 ? (
-                  <div className="py-8 text-center text-slate-400">{translate("admin.logsEmpty")}</div>
-                ) : (
-                  derived.filteredLogs.map(function renderLogEntry(entry, index) {
-                    const level = readLogLevel(entry);
-                    return (
-                      <div className="grid gap-2 border-b border-white/10 py-2 last:border-b-0 lg:grid-cols-[150px_72px_220px_minmax(0,1fr)]" key={`${entry.time || "log"}-${index}`}>
-                        <span className="text-slate-500">{String(entry.time || "").replace("T", " ").slice(0, 23)}</span>
-                        <span
-                          className={
-                            level === "ERROR"
-                              ? "font-semibold tracking-[0.18em] text-[#f14c4c]"
-                              : level === "WARN"
-                                ? "font-semibold tracking-[0.18em] text-[#cca700]"
-                                : level === "DEBUG"
-                                  ? "font-semibold tracking-[0.18em] text-[#c586c0]"
-                                  : "font-semibold tracking-[0.18em] text-[#3794ff]"
-                          }
-                        >
-                          {level}
-                        </span>
-                        <span>{String(entry.msg || "")}</span>
-                        <span className="break-all text-slate-400">
-                          {formatLogSummary(entry as { attrs?: Record<string, unknown> })}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+          <DialogHeader>
+            <DialogTitle>{translate("admin.logsTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-auto rounded-xl border bg-[#1e1e1e] p-4 text-[#d4d4d4] shadow-xl">
+            <div className="space-y-1 rounded-md border border-white/10 bg-black/20 p-4 font-mono text-xs">
+              {derived.filteredLogs.length === 0 ? (
+                <div className="py-8 text-center text-slate-400">{translate("admin.logsEmpty")}</div>
+              ) : (
+                derived.filteredLogs.map(function renderLogEntry(entry, index) {
+                  const level = readLogLevel(entry);
+                  return (
+                    <div className="grid gap-2 border-b border-white/10 py-2 last:border-b-0 lg:grid-cols-[150px_72px_220px_minmax(0,1fr)]" key={`${entry.time || "log"}-${index}`}>
+                      <span className="text-slate-500">{String(entry.time || "").replace("T", " ").slice(0, 23)}</span>
+                      <span
+                        className={
+                          level === "ERROR"
+                            ? "font-semibold tracking-[0.18em] text-[#f14c4c]"
+                            : level === "WARN"
+                              ? "font-semibold tracking-[0.18em] text-[#cca700]"
+                              : level === "DEBUG"
+                                ? "font-semibold tracking-[0.18em] text-[#c586c0]"
+                                : "font-semibold tracking-[0.18em] text-[#3794ff]"
+                        }
+                      >
+                        {level}
+                      </span>
+                      <span>{String(entry.msg || "")}</span>
+                      <span className="break-all text-slate-400">
+                        {formatLogSummary(entry as { attrs?: Record<string, unknown> })}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
+          <DialogFooter>
+            <Button onClick={actions.closeDialogs} type="button" variant="outline">
+              {translate("action.close")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

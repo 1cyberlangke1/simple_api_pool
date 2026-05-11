@@ -9,15 +9,15 @@ import (
 )
 
 func (h *ProxyHandler) serveCacheHit(w http.ResponseWriter, proxyReq resolvedProxyRequest, analysis requestAnalysis, entry *cache.Entry, logFields *proxyLogFields) {
-	h.stats.RecordCacheHit(proxyReq.parts.provider, entry.InputTokens+entry.OutputTokens)
+	h.stats.RecordCacheHit(proxyReq.routeName, entry.InputTokens+entry.OutputTokens)
 	logFields.CacheHit = true
 	logFields.Status = entry.StatusCode
 	logFields.UpstreamStatus = entry.StatusCode
 	logFields.ResponseBytes = len(entry.ResponseBody)
 	h.logCacheEvent(cacheEventLogFields{
 		Event:         "hit",
-		Provider:      proxyReq.parts.provider,
-		ProviderType:  string(proxyReq.provider.Type),
+		Provider:      proxyReq.routeName,
+		ProviderType:  string(proxyReq.routeType),
 		Model:         analysis.model,
 		CacheKey:      analysis.cacheKey,
 		CacheRoute:    proxyReq.parts.useCache,
@@ -40,22 +40,22 @@ func (h *ProxyHandler) serveCacheHit(w http.ResponseWriter, proxyReq resolvedPro
 
 func (h *ProxyHandler) storeNonStreamCacheEntry(proxyReq resolvedProxyRequest, preparation requestPreparation, resp *http.Response, respBody []byte, inputTokens, outputTokens int64) {
 	stored := h.cache.SetForRequestByKey(
-		proxyReq.parts.provider,
-		proxyReq.provider.Type,
+		proxyReq.routeName,
+		proxyReq.routeType,
 		preparation.analysis.cacheKey,
 		respBody,
 		resp.StatusCode,
 		cacheableHeaders(resp.Header, false),
 		inputTokens,
 		outputTokens,
-		int64(proxyReq.provider.CacheMaxEntries),
+		int64(proxyReq.cacheMaxEntries),
 		false,
 	)
 	if stored {
 		h.logCacheEvent(cacheEventLogFields{
 			Event:         "store",
-			Provider:      proxyReq.parts.provider,
-			ProviderType:  string(proxyReq.provider.Type),
+			Provider:      proxyReq.routeName,
+			ProviderType:  string(proxyReq.routeType),
 			Model:         preparation.analysis.model,
 			CacheKey:      preparation.analysis.cacheKey,
 			CacheRoute:    proxyReq.parts.useCache,

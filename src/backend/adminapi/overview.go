@@ -17,6 +17,7 @@ type AdminOverviewResponse struct {
 	Health        statusapi.ServiceHealthSnapshot `json:"health"`
 	GlobalConfig  GlobalConfigSnapshot            `json:"global_config"`
 	Providers     []AdminProviderSnapshot         `json:"providers"`
+	Groups        []AdminGroupSnapshot            `json:"groups"`
 	ProviderStats map[string]statusapi.Snapshot   `json:"provider_stats"`
 }
 
@@ -30,6 +31,7 @@ func newAdminOverviewResponse(cfg *config.Config, statsManager *stats.Manager) A
 			ClientKeyCount:         overview.GlobalConfig.ClientKeyCount,
 		},
 		Providers:     buildAdminProviderSnapshots(cfg.Providers()),
+		Groups:        buildAdminGroupSnapshots(cfg.Groups()),
 		ProviderStats: overview.ProviderStats,
 	}
 }

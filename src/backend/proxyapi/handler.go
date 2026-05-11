@@ -124,48 +124,80 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	isStream := isStreamingRequestHint(r)
 	logFields.Stream = isStream
 
-	preparation, ok := h.prepareRequestForUpstream(w, r, proxyReq, isStream, &logFields)
+	preparation, ok := h.prepareRequestForUpstream(w, r, &proxyReq, isStream, &logFields)
 	if !ok {
 		return
 	}
 
-	upstreamKey, ok := h.resolveUpstreamKey(w, proxyReq, &logFields)
-	if !ok {
-		return
-	}
+	for candidateIndex, candidate := range proxyReq.candidates {
+		proxyReq.provider = &candidate.provider
+		proxyReq.targetURL = candidate.targetURL
+		logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(candidate.targetURL)
 
-	upstreamReq, ok := h.buildUpstreamRequest(r, proxyReq, preparation.upstreamBodyReader, upstreamKey, &logFields)
-	if !ok {
-		writeErrorResponse(w, http.StatusInternalServerError, "创建上游请求失败")
-		return
-	}
+		upstreamKey, err := h.resolveUpstreamKeyForProvider(candidate.provider.Name)
+		if err != nil {
+			statusCode, message := translateUpstreamKeyError(err)
+			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+				continue
+			}
+			h.writeUpstreamKeyError(w, proxyReq, statusCode, message, &logFields)
+			return
+		}
+		logFields.KeyRef = applog.MaskSecret(upstreamKey)
 
-	upstreamStart := time.Now()
-	resp, err := h.client.Do(upstreamReq)
-	if err != nil {
-		h.handleUpstreamDoError(w, proxyReq, upstreamKey, err, &logFields)
-		return
-	}
-	defer resp.Body.Close()
-	logFields.UpstreamStatus = resp.StatusCode
-	logFields.UpstreamHeaderMs = time.Since(upstreamStart).Milliseconds()
-	if preparation.recordedRequestBody != nil {
-		preparation.analysis.requestBytes = preparation.recordedRequestBody.BytesRead()
-		logFields.RequestBytes = preparation.analysis.requestBytes
-	}
+		bodyReader := preparation.upstreamBodyReader
+		if candidate.requestBody != nil {
+			bodyReader = bytes.NewReader(candidate.requestBody)
+		}
 
-	if resp.StatusCode >= 400 {
-		h.handleUpstreamErrorResponse(w, resp, proxyReq, upstreamKey, preparation, &logFields)
-		return
-	}
+		upstreamReq, ok := h.buildUpstreamRequest(r, proxyReq, bodyReader, upstreamKey, &logFields)
+		if !ok {
+			writeErrorResponse(w, http.StatusInternalServerError, "创建上游请求失败")
+			return
+		}
 
-	streamResponse := isStream || isStreamingResponse(resp.Header)
-	logFields.Stream = streamResponse
-	if streamResponse {
-		h.handleStream(r.Context(), w, resp, upstreamStart, proxyReq.parts.provider, upstreamKey, proxyReq.provider.Type, proxyReq.parts.suffix, preparation.analysis, preparation.recordedRequestBody, preparation.cacheEligible, proxyReq.parts.useCache, int64(proxyReq.provider.CacheMaxEntries), &logFields)
+		upstreamStart := time.Now()
+		resp, err := h.client.Do(upstreamReq)
+		if err != nil {
+			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+				h.keyring.RecordFailure(candidate.provider.Name, upstreamKey)
+				continue
+			}
+			h.handleUpstreamDoError(w, proxyReq, candidate.provider.Name, upstreamKey, err, &logFields)
+			return
+		}
+
+		logFields.UpstreamStatus = resp.StatusCode
+		logFields.UpstreamHeaderMs = time.Since(upstreamStart).Milliseconds()
+		if preparation.recordedRequestBody != nil {
+			preparation.analysis.requestBytes = preparation.recordedRequestBody.BytesRead()
+			logFields.RequestBytes = preparation.analysis.requestBytes
+		}
+
+		if resp.StatusCode >= 400 {
+			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+				if shouldRecordUpstreamFailure(resp.StatusCode) {
+					h.keyring.RecordFailure(candidate.provider.Name, upstreamKey)
+				}
+				_ = resp.Body.Close()
+				continue
+			}
+			h.handleUpstreamErrorResponse(w, resp, proxyReq, candidate.provider.Name, upstreamKey, preparation, &logFields)
+			_ = resp.Body.Close()
+			return
+		}
+
+		streamResponse := isStream || isStreamingResponse(resp.Header)
+		logFields.Stream = streamResponse
+		if streamResponse {
+			h.handleStream(r.Context(), w, resp, upstreamStart, proxyReq.routeName, candidate.provider.Name, upstreamKey, proxyReq.routeType, proxyReq.parts.suffix, preparation.analysis, preparation.recordedRequestBody, preparation.cacheEligible, proxyReq.parts.useCache, int64(proxyReq.cacheMaxEntries), &logFields)
+			_ = resp.Body.Close()
+			return
+		}
+		h.handleNonStreamResponse(w, resp, upstreamStart, proxyReq, candidate.provider.Name, upstreamKey, preparation, &logFields)
+		_ = resp.Body.Close()
 		return
 	}
-	h.handleNonStreamResponse(w, resp, upstreamStart, proxyReq, upstreamKey, preparation, &logFields)
 }
 
 func shouldRecordUpstreamFailure(statusCode int) bool {

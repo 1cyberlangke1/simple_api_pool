@@ -77,6 +77,7 @@ function normalizeAdminOverview(payload: Partial<AdminOverview> | null | undefin
     provider_stats: {
       ...(nextOverview.provider_stats || {})
     },
+    groups: Array.isArray(nextOverview.groups) ? nextOverview.groups.slice() : [],
     providers: Array.isArray(nextOverview.providers) ? nextOverview.providers.slice() : []
   };
 }

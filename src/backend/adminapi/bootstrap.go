@@ -17,6 +17,7 @@ type BootstrapResponse struct {
 	Health        statusapi.ServiceHealthSnapshot `json:"health"`
 	GlobalConfig  GlobalConfigDetailSnapshot      `json:"global_config"`
 	Providers     []AdminProviderSnapshot         `json:"providers"`
+	Groups        []AdminGroupSnapshot            `json:"groups"`
 	ProviderStats map[string]statusapi.Snapshot   `json:"provider_stats"`
 	RecentLogs    []applog.Entry                  `json:"recent_logs"`
 }
@@ -30,6 +31,7 @@ func (ah *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		Health:        overview.Health,
 		GlobalConfig:  ah.configSvc.Snapshot(),
 		Providers:     ah.providerSvc.ListSnapshots(),
+		Groups:        ah.groupSvc.ListSnapshots(),
 		ProviderStats: overview.ProviderStats,
 		RecentLogs:    applog.RecentEntries(adminBootstrapRecentLogLimit),
 	})

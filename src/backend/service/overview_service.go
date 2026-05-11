@@ -89,7 +89,10 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 	}
 
 	now := time.Now().Unix()
-	for _, provider := range service.cfg.Providers() {
+	providers := service.cfg.Providers()
+	providersByName := make(map[string]config.Provider, len(providers))
+	for _, provider := range providers {
+		providersByName[provider.Name] = provider
 		entry := providerStats[provider.Name]
 		entry.TotalKeys = int64(len(provider.Keys))
 		for _, key := range provider.Keys {
@@ -99,6 +102,30 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 			entry.AvailableKeys++
 		}
 		providerStats[provider.Name] = entry
+	}
+	for _, group := range service.cfg.Groups() {
+		entry := providerStats[group.Name]
+		seenProviders := make(map[string]struct{})
+		for _, collection := range group.Collections {
+			for _, item := range collection.Entries {
+				if _, exists := seenProviders[item.Provider]; exists {
+					continue
+				}
+				seenProviders[item.Provider] = struct{}{}
+				provider, exists := providersByName[item.Provider]
+				if !exists {
+					continue
+				}
+				entry.TotalKeys += int64(len(provider.Keys))
+				for _, key := range provider.Keys {
+					if key.DisabledUntil > now {
+						continue
+					}
+					entry.AvailableKeys++
+				}
+			}
+		}
+		providerStats[group.Name] = entry
 	}
 
 	return providerStats
@@ -114,6 +141,9 @@ func (service *OverviewService) ProviderTypeSnapshots() map[string]string {
 	providerTypes := make(map[string]string)
 	for _, provider := range service.cfg.Providers() {
 		providerTypes[provider.Name] = string(provider.Type)
+	}
+	for _, group := range service.cfg.Groups() {
+		providerTypes[group.Name] = string(group.Type)
 	}
 	return providerTypes
 }

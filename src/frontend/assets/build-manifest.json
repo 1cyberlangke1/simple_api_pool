@@ -1,8 +1,8 @@
 {
-  "version": "v0.1.39-2-gfef7e57-dirty",
-  "revision": "fef7e57",
-  "build_time": "2026-05-10T23:25:02Z",
-  "asset_version": "fef7e57-2026-05-10T23-25-02Z",
+  "version": "v0.1.40-dirty",
+  "revision": "ac9cc2f",
+  "build_time": "2026-05-11T02:36:53Z",
+  "asset_version": "ac9cc2f-2026-05-11T02-36-53Z",
   "frontend_root": "src/frontend",
   "source_dir": "src/frontend/src",
   "assets": [

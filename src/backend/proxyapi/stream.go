@@ -12,7 +12,7 @@ import (
 	"simple-api-pool/token"
 )
 
-func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, provider, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
+func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, upstreamStart time.Time, routeName, upstreamProviderName, upstreamKey string, providerType config.ProviderType, suffix string, analysis requestAnalysis, recordedRequestBody *recordedRequestBody, cacheEnabled bool, cacheRoute bool, cacheMaxEntries int64, logFields *proxyLogFields) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logFields.Status = http.StatusInternalServerError
@@ -82,19 +82,19 @@ func (h *ProxyHandler) handleStream(ctx context.Context, w http.ResponseWriter, 
 		} else {
 			logFields.Error = "上游流式透传中断: " + streamErr.Error()
 		}
-		h.stats.RecordError(provider, http.StatusBadGateway)
+		h.stats.RecordError(routeName, http.StatusBadGateway)
 		return
 	}
 
 	usage := token.ExtractFromStream(string(providerType), collected.Bytes(), h.cfg.TokenEstimationEnabled())
-	h.stats.RecordSuccess(provider, usage.InputTokens, usage.OutputTokens)
-	h.stats.RecordCacheTokens(provider, usage.CacheTokens)
-	h.keyring.RecordSuccess(provider, upstreamKey)
+	h.stats.RecordSuccess(routeName, usage.InputTokens, usage.OutputTokens)
+	h.stats.RecordCacheTokens(routeName, usage.CacheTokens)
+	h.keyring.RecordSuccess(upstreamProviderName, upstreamKey)
 
 	if allowStreamCache {
 		analysis = ensureCacheAnalysis(analysis, providerType, suffix, recordedRequestBody)
 		if analysis.cacheKeyReady {
-			h.storeStreamCacheEntry(provider, providerType, analysis.cacheKey, resp, collected.Bytes(), cacheMaxEntries, usage.InputTokens, usage.OutputTokens, analysis, cacheRoute)
+			h.storeStreamCacheEntry(routeName, providerType, analysis.cacheKey, resp, collected.Bytes(), cacheMaxEntries, usage.InputTokens, usage.OutputTokens, analysis, cacheRoute)
 		}
 	}
 }

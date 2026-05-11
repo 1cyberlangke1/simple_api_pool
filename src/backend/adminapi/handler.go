@@ -27,6 +27,7 @@ type Handler struct {
 	cache        *cache.Store
 	keyActionSvc *KeyActionService
 	providerSvc  *ProviderService
+	groupSvc     *GroupService
 	configSvc    *ConfigService
 	authSvc      *AuthService
 	validate     *validator.Validate
@@ -49,6 +50,7 @@ func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler
 		cache:        cs,
 		keyActionSvc: NewKeyActionService(cfg),
 		providerSvc:  NewProviderService(cfg, sm, cs),
+		groupSvc:     NewGroupService(cfg, sm, cs),
 		configSvc:    NewConfigService(cfg),
 		authSvc:      NewAuthService(cfg, limiter),
 		validate:     validator.New(validator.WithRequiredStructEnabled()),
@@ -90,6 +92,11 @@ func (ah *Handler) newRouter() chi.Router {
 		r.Post("/api/admin/providers/{provider}/keys/bulk", ah.handleProviderKeyBulkAction)
 		r.Delete("/api/admin/providers/{provider}/cache", ah.handleProviderCache)
 		r.Delete("/api/admin/providers/{provider}/{key}", ah.handleProviderKeys)
+
+		r.Get("/api/admin/groups", ah.handleGroups)
+		r.Post("/api/admin/groups", ah.handleGroups)
+		r.Get("/api/admin/groups/{group}", ah.handleSingleGroup)
+		r.Delete("/api/admin/groups/{group}", ah.handleSingleGroup)
 	})
 
 	return router
@@ -172,6 +179,31 @@ func (ah *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (ah *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		httpapi.WriteJSONResponse(w, http.StatusOK, ah.groupSvc.ListSnapshots())
+	case http.MethodPost:
+		var group config.Group
+		if !ah.decodeJSON(w, r, &group) {
+			return
+		}
+		snapshot, _, err := ah.groupSvc.SaveGroup(group)
+		if err != nil {
+			if errors.Is(err, os.ErrInvalid) {
+				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "分组配置无效")
+				return
+			}
+			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "保存分组失败")
+			return
+		}
+		realtime.PublishProvidersChanged()
+		httpapi.WriteJSONResponse(w, http.StatusCreated, snapshot)
+	default:
+		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+	}
+}
+
 func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 	switch r.Method {
@@ -179,6 +211,10 @@ func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request) 
 		if err := ah.providerSvc.DeleteProvider(providerName); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
+				return
+			}
+			if errors.Is(err, os.ErrInvalid) {
+				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商仍被分组引用")
 				return
 			}
 			httpapi.WriteErrorResponse(w, http.StatusInternalServerError, "删除提供商失败")
@@ -190,6 +226,30 @@ func (ah *Handler) handleSingleProvider(w http.ResponseWriter, r *http.Request) 
 		snapshot, err := ah.providerSvc.GetSnapshot(providerName)
 		if err != nil {
 			httpapi.WriteErrorResponse(w, http.StatusNotFound, "提供商不存在")
+			return
+		}
+		httpapi.WriteJSONResponse(w, http.StatusOK, snapshot)
+	}
+}
+
+func (ah *Handler) handleSingleGroup(w http.ResponseWriter, r *http.Request) {
+	groupName := chi.URLParam(r, "group")
+	switch r.Method {
+	case http.MethodDelete:
+		if err := ah.groupSvc.DeleteGroup(groupName); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				httpapi.WriteErrorResponse(w, http.StatusNotFound, "分组不存在")
+				return
+			}
+			httpapi.WriteErrorResponse(w, http.StatusInternalServerError, "删除分组失败")
+			return
+		}
+		realtime.PublishProvidersChanged()
+		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+	default:
+		snapshot, err := ah.groupSvc.GetSnapshot(groupName)
+		if err != nil {
+			httpapi.WriteErrorResponse(w, http.StatusNotFound, "分组不存在")
 			return
 		}
 		httpapi.WriteJSONResponse(w, http.StatusOK, snapshot)

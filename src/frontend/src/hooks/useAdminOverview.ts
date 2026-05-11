@@ -47,7 +47,7 @@ import {
 import { createAdminLiveSnapshot, reduceAdminLiveEvent } from "@/lib/live";
 import { buildStreamURL, openLiveStream } from "@/services/live_service.js";
 
-export type AdminTab = "global" | "providers" | "keys" | "logs";
+export type AdminTab = "global" | "providers" | "groups" | "keys" | "logs";
 export type BulkMode = "disable_until" | "disable_forever";
 
 interface MessageState {

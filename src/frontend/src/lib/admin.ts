@@ -21,6 +21,28 @@ export interface AdminProviderSnapshot {
   max_disable_secs: number;
 }
 
+export interface AdminGroupEntrySnapshot {
+  provider: string;
+  model: string;
+  base_url: string;
+  weight: number;
+  priority: number;
+}
+
+export interface AdminGroupCollectionSnapshot {
+  name: string;
+  strategy: string;
+  entries: AdminGroupEntrySnapshot[];
+}
+
+export interface AdminGroupSnapshot {
+  name: string;
+  type: string;
+  cache_enabled: boolean;
+  cache_max_entries: number;
+  collections: AdminGroupCollectionSnapshot[];
+}
+
 export interface AdminProviderStatsSnapshot {
   available_keys?: number;
   total_keys?: number;
@@ -42,6 +64,7 @@ export interface AdminOverview {
     client_key_count: number;
   };
   providers: AdminProviderSnapshot[];
+  groups: AdminGroupSnapshot[];
   provider_stats: Record<string, AdminProviderStatsSnapshot>;
 }
 
@@ -85,6 +108,7 @@ export function createEmptyAdminOverview(): AdminOverview {
       client_key_count: 0
     },
     providers: [],
+    groups: [],
     provider_stats: {}
   };
 }
@@ -101,6 +125,15 @@ export function getProviderByName(providers: AdminProviderSnapshot[], providerNa
   for (let index = 0; index < providers.length; index += 1) {
     if (providers[index].name === providerName) {
       return providers[index];
+    }
+  }
+  return null;
+}
+
+export function getGroupByName(groups: AdminGroupSnapshot[], groupName: string) {
+  for (let index = 0; index < groups.length; index += 1) {
+    if (groups[index].name === groupName) {
+      return groups[index];
     }
   }
   return null;
@@ -125,6 +158,16 @@ export function filterProvidersBySearch(providers: AdminProviderSnapshot[], sear
   }
   return providers.filter(function keepMatchingProvider(providerSnapshot) {
     return String(providerSnapshot.name || "").toLowerCase().includes(normalizedSearch);
+  });
+}
+
+export function filterGroupsBySearch(groups: AdminGroupSnapshot[], searchText: string) {
+  const normalizedSearch = String(searchText || "").trim().toLowerCase();
+  if (!normalizedSearch) {
+    return groups;
+  }
+  return groups.filter(function keepMatchingGroup(groupSnapshot) {
+    return String(groupSnapshot.name || "").toLowerCase().includes(normalizedSearch);
   });
 }
 

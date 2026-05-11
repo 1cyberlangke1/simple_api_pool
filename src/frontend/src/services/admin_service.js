@@ -55,8 +55,21 @@ export async function saveProvider(payload) {
   });
 }
 
+export async function saveGroup(payload) {
+  return requestJSON("/api/admin/groups", {
+    body: payload,
+    method: "POST"
+  });
+}
+
 export async function deleteProvider(providerName) {
   return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName), {
+    method: "DELETE"
+  });
+}
+
+export async function deleteGroup(groupName) {
+  return requestJSON("/api/admin/groups/" + encodeURIComponent(groupName), {
     method: "DELETE"
   });
 }

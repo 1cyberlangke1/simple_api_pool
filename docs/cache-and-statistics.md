@@ -6,10 +6,12 @@
 
 代理入口有两类：
 
-- `/{provider}/...`：普通代理入口
-- `/cache/{provider}/...`：缓存代理入口
+- `/{routeName}/...`：普通代理入口
+- `/cache/{routeName}/...`：缓存代理入口
 
-如果某个提供商没有启用缓存，那么 `/cache/{provider}/...` 的行为等同于普通代理入口。
+`routeName` 可以是 provider，也可以是 group。
+
+如果某个路由名没有启用缓存，那么 `/cache/{routeName}/...` 的行为等同于普通代理入口。
 
 ## 缓存命中规则
 
@@ -21,6 +23,11 @@
 - `Gemini`：`model + contents`
 
 当前缓存键不包含 `routeKey`，也不包含其他生成参数。
+
+对于 group，还要额外注意两点：
+
+- 缓存命中和写入都落在 group 自己的缓存命名空间，不会写回真实命中的 provider 缓存库
+- group 的缓存键使用 group 类型对应的核心消息字段，并基于逻辑模型名计算，不区分本次实际命中的 entry
 
 缓存命中还会区分响应形态：
 
@@ -40,6 +47,26 @@ curl -X POST http://127.0.0.1:18080/cache/openai/v1/chat/completions \
     "model": "gpt-4.1",
     "messages": [{"role": "user", "content": "缓存测试"}]
   }'
+```
+
+### 分组缓存
+
+下面示例假设你已经创建了一个名为 `router` 的 group，其中集合名为 `chat-router`：
+
+```bash
+curl -X POST http://127.0.0.1:18080/cache/router/v1/chat/completions \
+  -H "Authorization: Bearer client-demo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "chat-router",
+    "messages": [{"role": "user", "content": "走分组缓存"}]
+  }'
+```
+
+这个请求的缓存目录会写到：
+
+```text
+data/cache/router/cache.db
 ```
 
 ### 流式和非流式分别缓存
@@ -92,6 +119,7 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 - 全局客户端 key 配置
 - Token 估算开关
 - 提供商新增、修改、删除
+- 分组新增、修改、删除
 - 轮询 / 填充策略配置
 - 连续失败阈值和禁用恢复参数配置
 - 缓存开关和缓存最大条目数配置
@@ -119,12 +147,12 @@ curl -X POST http://127.0.0.1:18080/cache/gemini/v1beta/models/gemini-2.5-flash:
 ## 存储与内存边界
 
 - 状态数据统一写入 `data/simple-api-pool.db`
-- 缓存按提供商分别写入 `data/cache/<provider>/cache.db`
+- 缓存按路由名分别写入 `data/cache/<routeName>/cache.db`
 - 状态库与缓存库都带有 schema version 元数据，便于后续演进
 - 状态数据和缓存数据分离：
-  - 状态库负责 provider 配置、key 状态、全局配置、统计快照
-  - 缓存库只负责对应 provider 的响应缓存
-- 缓存按提供商独立存储为 SQLite 文件，不会为每条记录创建零碎小文件
+  - 状态库负责 provider 配置、group 配置、key 状态、全局配置、统计快照
+  - 缓存库只负责对应路由名的响应缓存
+- 缓存按路由名独立存储为 SQLite 文件，不会为每条记录创建零碎小文件
 - 同一组 `model + 核心消息字段` 的流式响应和非流式响应会分别占用独立缓存条目
 - `/cache/...` 请求体只有在不超过 `CACHEABLE_REQUEST_BODY_LIMIT_BYTES` 时才会参与本地缓存判定；默认值是 `524288` 字节
 - 非流式上游响应会先按 `UPSTREAM_RESPONSE_LIMIT_BYTES` 作为本地可缓存体上限做探测；在上限内仍按整包路径处理，超过上限时改为直接透传，并放弃依赖完整响应体的缓存和整包后处理
