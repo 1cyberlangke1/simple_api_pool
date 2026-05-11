@@ -100,6 +100,175 @@ func TestAdminOverviewReturnsGroups(t *testing.T) {
 	}
 }
 
+func TestAdminGroupCrudFlow(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai-a",
+		Type:    config.OpenAIChat,
+		BaseURL: "https://api.openai.com",
+		Keys: []config.Key{
+			{Value: "upstream-key"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	cacheStore := newTestCacheStore(t)
+	handler := adminapi.NewHandler(cfg, statsManager, cacheStore)
+
+	createBody := []byte(`{
+		"name":"router",
+		"type":"openai_chat",
+		"cache_enabled":true,
+		"cache_max_entries":32,
+		"collections":[
+			{
+				"name":"chat-router",
+				"strategy":"weighted_random",
+				"entries":[
+					{
+						"provider":"openai-a",
+						"model":"gpt-4.1",
+						"base_url":"https://api.openai.com",
+						"weight":2,
+						"priority":1
+					}
+				]
+			}
+		]
+	}`)
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/groups", bytes.NewReader(createBody))
+	createRequest.Header.Set("Authorization", "Bearer secret-admin")
+	createRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("创建分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusCreated, createRecorder.Code, createRecorder.Body.String())
+	}
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/groups", nil)
+	listRequest.Header.Set("Authorization", "Bearer secret-admin")
+	listRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("获取分组列表期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, listRecorder.Code, listRecorder.Body.String())
+	}
+	if !bytes.Contains(listRecorder.Body.Bytes(), []byte(`"name":"router"`)) {
+		t.Fatalf("期望列表返回 router 分组，实际是 %s", listRecorder.Body.String())
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/admin/groups/router", nil)
+	getRequest.Header.Set("Authorization", "Bearer secret-admin")
+	getRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(getRecorder, getRequest)
+	if getRecorder.Code != http.StatusOK {
+		t.Fatalf("获取单个分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, getRecorder.Code, getRecorder.Body.String())
+	}
+	if !bytes.Contains(getRecorder.Body.Bytes(), []byte(`"strategy":"weighted_random"`)) {
+		t.Fatalf("期望单个分组响应包含策略定义，实际是 %s", getRecorder.Body.String())
+	}
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/groups/router", nil)
+	deleteRequest.Header.Set("Authorization", "Bearer secret-admin")
+	deleteRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRecorder, deleteRequest)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("删除分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+
+	missingRequest := httptest.NewRequest(http.MethodGet, "/api/admin/groups/router", nil)
+	missingRequest.Header.Set("Authorization", "Bearer secret-admin")
+	missingRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(missingRecorder, missingRequest)
+	if missingRecorder.Code != http.StatusNotFound {
+		t.Fatalf("已删除分组再次获取期望状态码 %d，实际是 %d，响应体: %s", http.StatusNotFound, missingRecorder.Code, missingRecorder.Body.String())
+	}
+}
+
+func TestAdminGroupErrorBranches(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai-a",
+		Type:    config.OpenAIChat,
+		BaseURL: "https://api.openai.com",
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	handler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	invalidCreateRequest := httptest.NewRequest(http.MethodPost, "/api/admin/groups", bytes.NewReader([]byte(`{`)))
+	invalidCreateRequest.Header.Set("Authorization", "Bearer secret-admin")
+	invalidCreateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(invalidCreateRecorder, invalidCreateRequest)
+	if invalidCreateRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("非法分组请求期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, invalidCreateRecorder.Code, invalidCreateRecorder.Body.String())
+	}
+
+	missingProviderRequest := httptest.NewRequest(http.MethodPost, "/api/admin/groups", bytes.NewReader([]byte(`{
+		"name":"router",
+		"type":"openai_chat",
+		"collections":[
+			{
+				"name":"chat-router",
+				"strategy":"weighted_random",
+				"entries":[
+					{"provider":"missing","model":"gpt-4.1","base_url":"https://api.openai.com","weight":1,"priority":1}
+				]
+			}
+		]
+	}`)))
+	missingProviderRequest.Header.Set("Authorization", "Bearer secret-admin")
+	missingProviderRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(missingProviderRecorder, missingProviderRequest)
+	if missingProviderRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("引用不存在提供商的分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, missingProviderRecorder.Code, missingProviderRecorder.Body.String())
+	}
+
+	if err := cfg.SaveGroup(config.Group{
+		Name: "router",
+		Type: config.OpenAIChat,
+		Collections: []config.GroupCollection{
+			{
+				Name:     "chat-router",
+				Strategy: config.GroupStrategyWeightedRandom,
+				Entries: []config.GroupEntry{
+					{
+						Provider: "openai-a",
+						Model:    "gpt-4.1",
+						BaseURL:  "https://api.openai.com",
+						Weight:   1,
+						Priority: 1,
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("保存分组失败: %v", err)
+	}
+
+	deleteReferencedProviderRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/providers/openai-a", nil)
+	deleteReferencedProviderRequest.Header.Set("Authorization", "Bearer secret-admin")
+	deleteReferencedProviderRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(deleteReferencedProviderRecorder, deleteReferencedProviderRequest)
+	if deleteReferencedProviderRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("删除被分组引用的提供商期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, deleteReferencedProviderRecorder.Code, deleteReferencedProviderRecorder.Body.String())
+	}
+
+	missingGroupDeleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/groups/missing", nil)
+	missingGroupDeleteRequest.Header.Set("Authorization", "Bearer secret-admin")
+	missingGroupDeleteRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(missingGroupDeleteRecorder, missingGroupDeleteRequest)
+	if missingGroupDeleteRecorder.Code != http.StatusNotFound {
+		t.Fatalf("删除不存在分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusNotFound, missingGroupDeleteRecorder.Code, missingGroupDeleteRecorder.Body.String())
+	}
+}
+
 func TestGroupCacheRouteRewritesModelAndCachesPerGroup(t *testing.T) {
 	upstreamCalls := 0
 	var receivedBody string
