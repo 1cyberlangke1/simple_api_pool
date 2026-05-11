@@ -115,15 +115,15 @@ export function buildErrorTypeSummaries(snapshot: ProviderStatusSnapshot, limit 
 }
 
 export function buildErrorTypeSummaryClassName() {
-  return "inline-flex min-h-7 items-center rounded-full border border-red-200 bg-red-100 px-2.5 py-1 font-mono text-xs font-semibold text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+  return "inline-flex min-h-8 items-center rounded-full border border-[#fecaca] bg-[#fee2e2] px-3 py-1.5 text-sm font-semibold leading-none text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
 }
 
 export function buildStatusErrorCountClassName() {
-  return "inline-flex min-h-11 items-center rounded-xl border border-red-200 bg-red-100 px-3 py-1.5 font-mono text-2xl font-bold text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+  return "inline-flex min-h-11 items-center rounded-xl border border-[#fecaca] bg-[#fee2e2] px-3 py-1.5 font-mono text-2xl font-bold text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
 }
 
 export function buildStatusErrorAlertClassName() {
-  return "rounded-lg border border-red-200 bg-red-100 px-4 py-3 text-sm font-medium text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+  return "rounded-lg border border-[#fecaca] bg-[#fee2e2] px-4 py-3 text-sm font-medium text-[#b91c1c] shadow-sm dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
 }
 
 export function computeStatusRefreshCountdownSeconds(nextRefreshAt: number, nowMs = Date.now()) {
