@@ -163,7 +163,7 @@ func TestStatusAndAdminPagesServeSingleBundleFrontend(t *testing.T) {
 		".app-shell",
 		".status-grid",
 		".provider-layout",
-		".log-modal",
+		".animate-spin-slow",
 	} {
 		if !strings.Contains(stylesCSS, requiredStyle) {
 			t.Fatalf("期望前端样式包含 %q", requiredStyle)

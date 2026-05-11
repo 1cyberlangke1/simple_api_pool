@@ -8,6 +8,7 @@ import {
   countAvailableProviderKeys,
   chooseSelectedProviderName,
   extractProviderModelNames,
+  filterProviderModelNames,
   filterSelectedRefs,
   findNearestDisabledUntilMs,
   getDisableBounds,
@@ -166,6 +167,20 @@ describe("status helpers", function () {
         { name: "models/gemini-2.5-pro" }
       ]
     })).toEqual(["gemini-2.5-flash", "gemini-2.5-pro"]);
+  });
+
+  it("会为模型补全按关键字筛选，并限制返回数量", function () {
+    expect(filterProviderModelNames([
+      "gpt-4.1",
+      "gpt-4.1-mini",
+      "gemini-2.5-pro"
+    ], "4.1")).toEqual(["gpt-4.1", "gpt-4.1-mini"]);
+
+    expect(filterProviderModelNames([
+      "a",
+      "b",
+      "c"
+    ], "", 2)).toEqual(["a", "b"]);
   });
 });
 

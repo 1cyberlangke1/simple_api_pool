@@ -219,6 +219,17 @@ export function extractProviderModelNames(providerType: string, payload: unknown
   return modelNames;
 }
 
+export function filterProviderModelNames(modelNames: string[], searchText: string, limit = 50) {
+  const normalizedSearch = String(searchText || "").trim().toLowerCase();
+  const sourceNames = Array.isArray(modelNames) ? modelNames : [];
+  const filteredNames = normalizedSearch
+    ? sourceNames.filter(function keepMatchingModel(modelName) {
+      return String(modelName || "").toLowerCase().includes(normalizedSearch);
+    })
+    : sourceNames;
+  return filteredNames.slice(0, Math.max(1, limit));
+}
+
 export function filterSelectedRefs(selectedRefs: string[], providerSnapshot: AdminProviderSnapshot | null) {
   if (!providerSnapshot || !providerSnapshot.keys) {
     return [];

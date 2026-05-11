@@ -127,7 +127,7 @@ func TestFrontendSourceUsesReactEntryAndPages(t *testing.T) {
 		`BrowserRouter`,
 		`<StatusPage />`,
 		`<AdminPage />`,
-		`syncThemeWithSystemPreference`,
+		`syncThemeWithAutoMode`,
 	} {
 		if !strings.Contains(appShell, requiredSnippet) {
 			t.Fatalf("期望 App.tsx 包含 %q，以保证路由和主题同步逻辑真正接入", requiredSnippet)

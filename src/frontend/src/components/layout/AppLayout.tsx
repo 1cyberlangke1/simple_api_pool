@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Activity, Globe, Moon, Shield, Sun } from "lucide-react";
+import { Activity, Globe, Moon, Shield, Sun, SunMoon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { buildVersionLabel, useAppStore } from "@/store/appStore";
@@ -44,7 +44,7 @@ export function AppLayout(props: AppLayoutProps) {
   }, [language, location.pathname, theme, translate]);
 
   function cycleThemeMode() {
-    if (themeMode === "system") {
+    if (themeMode === "auto") {
       setThemeMode("dark");
       return;
     }
@@ -52,7 +52,7 @@ export function AppLayout(props: AppLayoutProps) {
       setThemeMode("light");
       return;
     }
-    setThemeMode("system");
+    setThemeMode("auto");
   }
 
   return (
@@ -91,7 +91,13 @@ export function AppLayout(props: AppLayoutProps) {
               onClick={cycleThemeMode}
               title={`${translate("theme.label")}: ${translate(`theme.mode.${themeMode}`)}`}
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {themeMode === "auto" ? (
+                <SunMoon className="h-4 w-4" />
+              ) : theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
               <span className="sr-only">{translate("theme.label")}</span>
             </Button>
           </div>

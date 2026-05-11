@@ -11,8 +11,8 @@ function AppShell() {
   const setRuntimeError = useAppStore(function selectSetRuntimeError(state) {
     return state.setRuntimeError;
   });
-  const syncThemeWithSystemPreference = useAppStore(function selectSyncTheme(state) {
-    return state.syncThemeWithSystemPreference;
+  const syncThemeWithAutoMode = useAppStore(function selectSyncTheme(state) {
+    return state.syncThemeWithAutoMode;
   });
   const themeMode = useAppStore(function selectThemeMode(state) {
     return state.themeMode;
@@ -44,23 +44,19 @@ function AppShell() {
     };
   }, [setRuntimeError, translate]);
 
-  useEffect(function bindSystemThemePreference() {
-    if (themeMode !== "system" || typeof window.matchMedia !== "function") {
+  useEffect(function bindAutomaticThemeRefresh() {
+    if (themeMode !== "auto") {
       return undefined;
     }
 
-    const themeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    syncThemeWithSystemPreference();
-
-    function handleThemeChange() {
-      syncThemeWithSystemPreference();
-    }
-
-    themeQuery.addEventListener("change", handleThemeChange);
-    return function cleanupThemePreference() {
-      themeQuery.removeEventListener("change", handleThemeChange);
+    syncThemeWithAutoMode();
+    const timerId = window.setInterval(function refreshAutomaticTheme() {
+      syncThemeWithAutoMode();
+    }, 60_000);
+    return function cleanupAutomaticThemeRefresh() {
+      window.clearInterval(timerId);
     };
-  }, [syncThemeWithSystemPreference, themeMode]);
+  }, [syncThemeWithAutoMode, themeMode]);
 
   return (
     <BrowserRouter>

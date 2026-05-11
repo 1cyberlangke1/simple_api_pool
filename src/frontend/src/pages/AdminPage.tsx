@@ -46,6 +46,7 @@ import type { AdminGroupSnapshot, AdminKeySnapshot, AdminLogEntry, AdminProvider
 import {
   buildBulkDisableRequest,
   extractProviderModelNames,
+  filterProviderModelNames,
   filterGroupsBySearch,
   isKeyDisabledAt
 } from "@/lib/admin";
@@ -150,16 +151,73 @@ function ProviderStatusCapsule(props: {
 }) {
   const className =
     props.status === "error"
-      ? "border-destructive/30 bg-destructive/12 text-destructive"
+      ? "border-[#fecaca] bg-[#fee2e2] text-[#b91c1c] dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]"
       : props.status === "warning"
-        ? "border-warning/40 bg-warning/15 text-warning"
-        : "border-emerald-500/25 bg-emerald-500/12 text-emerald-600 dark:text-emerald-300";
+        ? "border-[#fde68a] bg-[#fef3c7] text-[#92400e] dark:border-[rgba(251,191,36,0.35)] dark:bg-[rgba(245,158,11,0.2)] dark:text-[#fde68a]"
+        : "border-[#bbf7d0] bg-[#dcfce7] text-[#166534] dark:border-[rgba(74,222,128,0.35)] dark:bg-[rgba(34,197,94,0.18)] dark:text-[#bbf7d0]";
 
   return (
     <div
       className={`inline-flex h-8 w-[92px] items-center justify-center rounded-full border text-center text-[11px] font-semibold uppercase tracking-[0.24em] ${className}`}
     >
       {props.status}
+    </div>
+  );
+}
+
+function buildErrorAlertClassName() {
+  return "rounded-lg border border-[#fecaca] bg-[#fee2e2] px-4 py-3 text-sm font-medium text-[#b91c1c] dark:border-[rgba(248,113,113,0.35)] dark:bg-[rgba(239,68,68,0.2)] dark:text-[#fecaca]";
+}
+
+function buildSuccessAlertClassName() {
+  return "rounded-lg border border-[#bbf7d0] bg-[#dcfce7] px-4 py-3 text-sm font-medium text-[#166534] dark:border-[rgba(74,222,128,0.35)] dark:bg-[rgba(34,197,94,0.18)] dark:text-[#bbf7d0]";
+}
+
+function buildLogLevelClassName(level: string) {
+  if (level === "ERROR") {
+    return "font-semibold tracking-[0.18em] text-[#b91c1c] dark:text-[#fecaca]";
+  }
+  if (level === "WARN") {
+    return "font-semibold tracking-[0.18em] text-[#92400e] dark:text-[#fde68a]";
+  }
+  if (level === "DEBUG") {
+    return "font-semibold tracking-[0.18em] text-[#7c3aed] dark:text-[#ddd6fe]";
+  }
+  return "font-semibold tracking-[0.18em] text-[#1d4ed8] dark:text-[#93c5fd]";
+}
+
+function AdminLogPanel(props: {
+  entries: AdminLogEntry[];
+  emptyText: string;
+  heightClassName: string;
+  showFullTimestamp?: boolean;
+}) {
+  return (
+    <div className={`${props.heightClassName} overflow-auto rounded-xl border bg-muted/20 shadow-sm`}>
+      <div className="min-w-full divide-y divide-border/60 font-mono text-xs">
+        {props.entries.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">{props.emptyText}</div>
+        ) : (
+          props.entries.map(function renderLogEntry(entry, index) {
+            const level = readLogLevel(entry);
+            const summaryText = formatLogSummary(entry as { attrs?: Record<string, unknown> }) || String(entry.msg || "");
+            const timestampText = String(entry.time || "").replace("T", " ");
+            return (
+              <div
+                className="grid gap-2 px-4 py-3 transition-colors hover:bg-background/80 md:grid-cols-[132px_84px_180px_minmax(0,1fr)]"
+                key={`${entry.time || "log"}-${index}`}
+              >
+                <span className="text-[11px] text-muted-foreground">
+                  {props.showFullTimestamp ? timestampText.slice(0, 23) : timestampText.slice(11, 19)}
+                </span>
+                <span className={buildLogLevelClassName(level)}>{level}</span>
+                <span className="truncate text-foreground/90">{String(entry.msg || "-")}</span>
+                <span className="break-all text-muted-foreground">{summaryText}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -315,18 +373,17 @@ function ProviderDialogBody(props: {
           type="number"
           value={props.draft.cache_max_entries}
         />
-        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="space-y-1">
-            <Label htmlFor="provider-cache-enabled">{props.translate("provider.cacheEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">{props.translate("state.enabled")}</p>
+        <div className="space-y-2">
+          <Label htmlFor="provider-cache-enabled">{props.translate("provider.cacheEnabled")}</Label>
+          <div className="flex h-10 items-center justify-end rounded-md border bg-muted/30 px-3">
+            <Switch
+              checked={Boolean(props.draft.cache_enabled)}
+              id="provider-cache-enabled"
+              onCheckedChange={function handleCacheEnabledChange(checked) {
+                props.onChange("cache_enabled", checked);
+              }}
+            />
           </div>
-          <Switch
-            checked={Boolean(props.draft.cache_enabled)}
-            id="provider-cache-enabled"
-            onCheckedChange={function handleCacheEnabledChange(checked) {
-              props.onChange("cache_enabled", checked);
-            }}
-          />
         </div>
       </div>
     </div>
@@ -335,6 +392,7 @@ function ProviderDialogBody(props: {
 
 function GroupDialogBody(props: {
   availableProviders: AdminProviderSnapshot[];
+  activeEntryModelPickerKey: string;
   draft: ReturnType<typeof createDefaultGroupDraft>;
   getEntryModelOptions: (collectionIndex: number, entryIndex: number) => string[];
   isEntryModelLoading: (collectionIndex: number, entryIndex: number) => boolean;
@@ -344,9 +402,12 @@ function GroupDialogBody(props: {
   onEntryChange: (collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) => void;
   onFetchEntryModels: (collectionIndex: number, entryIndex: number) => void;
   onGroupChange: (fieldName: string, fieldValue: boolean | number | string) => void;
+  onOpenEntryModelPicker: (collectionIndex: number, entryIndex: number) => void;
+  onCloseEntryModelPicker: () => void;
   onMoveEntry: (collectionIndex: number, entryIndex: number, direction: "down" | "up") => void;
   onRemoveCollection: (collectionIndex: number) => void;
   onRemoveEntry: (collectionIndex: number, entryIndex: number) => void;
+  onSelectEntryModel: (collectionIndex: number, entryIndex: number, modelName: string) => void;
   readOnlyName: boolean;
   translate: (key: string, params?: Record<string, unknown>) => string;
 }) {
@@ -397,17 +458,17 @@ function GroupDialogBody(props: {
           type="number"
           value={props.draft.cache_max_entries}
         />
-        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="space-y-1">
-            <Label htmlFor="group-cache-enabled">{props.translate("group.cacheEnabled")}</Label>
+        <div className="space-y-2">
+          <Label htmlFor="group-cache-enabled">{props.translate("group.cacheEnabled")}</Label>
+          <div className="flex h-10 items-center justify-end rounded-md border bg-muted/30 px-3">
+            <Switch
+              checked={Boolean(props.draft.cache_enabled)}
+              id="group-cache-enabled"
+              onCheckedChange={function handleGroupCacheEnabledChange(checked) {
+                props.onGroupChange("cache_enabled", checked);
+              }}
+            />
           </div>
-          <Switch
-            checked={Boolean(props.draft.cache_enabled)}
-            id="group-cache-enabled"
-            onCheckedChange={function handleGroupCacheEnabledChange(checked) {
-              props.onGroupChange("cache_enabled", checked);
-            }}
-          />
         </div>
       </div>
 
@@ -501,9 +562,14 @@ function GroupDialogBody(props: {
                     const showWeightField = shouldShowWeightField(collection.strategy);
                     const showPriorityField = shouldShowPriorityField(collection.strategy);
                     const modelOptions = props.getEntryModelOptions(collectionIndex, entryIndex);
-                    const modelListId = `group-entry-model-options-${collectionIndex}-${entryIndex}`;
+                    const pickerKey = `group-entry-model-${collectionIndex}:${entryIndex}`;
+                    const visibleModelOptions = filterProviderModelNames(modelOptions, String(entry.model || ""));
+                    const modelPickerOpen = props.activeEntryModelPickerKey === pickerKey && visibleModelOptions.length > 0;
                     return (
-                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
+                      <div
+                        className="grid gap-3 rounded-lg border bg-muted/20 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(180px,220px)_44px]"
+                        key={`group-entry-${collectionIndex}-${entryIndex}`}
+                      >
                         <div className="space-y-2">
                           <Label htmlFor={`group-entry-provider-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryProvider")}</Label>
                           <Select
@@ -528,38 +594,68 @@ function GroupDialogBody(props: {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor={`group-entry-model-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryModel")}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id={`group-entry-model-${collectionIndex}-${entryIndex}`}
-                              list={modelOptions.length > 0 ? modelListId : undefined}
-                              onChange={function handleEntryModelChange(event) {
-                                props.onEntryChange(collectionIndex, entryIndex, "model", event.target.value);
-                              }}
-                              value={String(entry.model || "")}
-                            />
-                            <Button
-                              disabled={!entry.provider || props.isEntryModelLoading(collectionIndex, entryIndex)}
-                              onClick={function handleFetchEntryModelsClick() {
-                                props.onFetchEntryModels(collectionIndex, entryIndex);
-                              }}
-                              size="icon"
-                              type="button"
-                              variant="outline"
-                            >
-                              {props.isEntryModelLoading(collectionIndex, entryIndex) ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Search className="h-4 w-4" />
-                              )}
-                            </Button>
+                          <div className="relative">
+                            <div className="flex items-stretch gap-2">
+                              <Input
+                                autoComplete="off"
+                                id={`group-entry-model-${collectionIndex}-${entryIndex}`}
+                                onBlur={function handleEntryModelBlur() {
+                                  window.setTimeout(function closeEntryModelPicker() {
+                                    props.onCloseEntryModelPicker();
+                                  }, 120);
+                                }}
+                                onChange={function handleEntryModelChange(event) {
+                                  props.onEntryChange(collectionIndex, entryIndex, "model", event.target.value);
+                                  if (modelOptions.length > 0) {
+                                    props.onOpenEntryModelPicker(collectionIndex, entryIndex);
+                                  }
+                                }}
+                                onFocus={function handleEntryModelFocus() {
+                                  if (modelOptions.length > 0) {
+                                    props.onOpenEntryModelPicker(collectionIndex, entryIndex);
+                                  }
+                                }}
+                                placeholder={props.translate("group.entryModelPlaceholder")}
+                                value={String(entry.model || "")}
+                              />
+                              <Button
+                                disabled={!entry.provider || props.isEntryModelLoading(collectionIndex, entryIndex)}
+                                onClick={function handleFetchEntryModelsClick() {
+                                  props.onFetchEntryModels(collectionIndex, entryIndex);
+                                }}
+                                size="icon"
+                                type="button"
+                                variant="outline"
+                              >
+                                {props.isEntryModelLoading(collectionIndex, entryIndex) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Search className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                            {modelPickerOpen ? (
+                              <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-64 overflow-auto rounded-xl border bg-popover p-1 shadow-lg">
+                                {visibleModelOptions.map(function renderModelOption(modelName) {
+                                  return (
+                                    <button
+                                      className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-muted"
+                                      key={modelName}
+                                      onClick={function handleSelectModelClick() {
+                                        props.onSelectEntryModel(collectionIndex, entryIndex, modelName);
+                                      }}
+                                      onMouseDown={function handleSelectModelMouseDown(event) {
+                                        event.preventDefault();
+                                      }}
+                                      type="button"
+                                    >
+                                      <span className="truncate">{modelName}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
                           </div>
-                          {modelOptions.length > 0 ? (
-                            <datalist id={modelListId}>
-                              {modelOptions.map(function renderModelOption(modelName) {
-                                return <option key={modelName} value={modelName} />;
-                              })}
-                            </datalist>
-                          ) : null}
                         </div>
                         {showWeightField ? (
                           <ProviderField
@@ -575,8 +671,8 @@ function GroupDialogBody(props: {
                         {showPriorityField ? (
                           <div className="space-y-2">
                             <Label>{props.translate("group.entryPriority")}</Label>
-                            <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2.5">
-                              <span className="min-w-8 font-mono text-sm text-foreground">#{entryIndex + 1}</span>
+                            <div className="flex h-10 items-center justify-between gap-2 rounded-md border bg-background px-3">
+                              <span className="min-w-10 font-mono text-base font-semibold text-foreground">#{entryIndex + 1}</span>
                               <Button
                                 disabled={entryIndex === 0}
                                 onClick={function handleMoveUpClick() {
@@ -602,13 +698,12 @@ function GroupDialogBody(props: {
                             </div>
                           </div>
                         ) : null}
-                        <div className="flex items-end">
+                        <div className="flex h-10 items-center justify-end xl:self-end">
                           <Button
-                            className="w-full"
                             onClick={function handleRemoveEntryClick() {
                               props.onRemoveEntry(collectionIndex, entryIndex);
                             }}
-                            size="sm"
+                            size="icon"
                             type="button"
                             variant="ghost"
                           >
@@ -637,6 +732,7 @@ export function AdminPage() {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupDialogMode, setGroupDialogMode] = useState<"create" | "edit">("create");
   const [groupDraft, setGroupDraft] = useState(createDefaultGroupDraft());
+  const [groupModelPickerKey, setGroupModelPickerKey] = useState("");
   const [groupModelOptions, setGroupModelOptions] = useState<Record<string, string[]>>({});
   const [groupModelLoadingKey, setGroupModelLoadingKey] = useState("");
   const [groupMessage, setGroupMessage] = useState<{ kind: "" | "error" | "ok"; text: string }>({ kind: "", text: "" });
@@ -687,6 +783,7 @@ export function AdminPage() {
     setGroupMessage({ kind: "", text: "" });
     setGroupDialogMode("create");
     setGroupDraft(createDefaultGroupDraft());
+    setGroupModelPickerKey("");
     setGroupModelOptions({});
     setGroupModelLoadingKey("");
     setGroupDialogOpen(true);
@@ -696,6 +793,7 @@ export function AdminPage() {
     setGroupMessage({ kind: "", text: "" });
     setGroupDialogMode("edit");
     setGroupDraft(createGroupDraftFromSnapshot(groupSnapshot) || createDefaultGroupDraft());
+    setGroupModelPickerKey("");
     setGroupModelOptions({});
     setGroupModelLoadingKey("");
     setGroupDialogOpen(true);
@@ -703,6 +801,7 @@ export function AdminPage() {
 
   function closeGroupDialog() {
     setGroupDialogOpen(false);
+    setGroupModelPickerKey("");
     setGroupModelLoadingKey("");
   }
 
@@ -735,6 +834,9 @@ export function AdminPage() {
   function updateGroupEntryField(collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) {
     if (fieldName === "provider") {
       const entryKey = getGroupEntryKey(collectionIndex, entryIndex);
+      setGroupModelPickerKey(function clearPickerKey(previousKey) {
+        return previousKey === `group-entry-model-${entryKey}` ? "" : previousKey;
+      });
       setGroupModelOptions(function clearEntryModelOptions(previousOptions) {
         if (!(entryKey in previousOptions)) {
           return previousOptions;
@@ -845,6 +947,19 @@ export function AdminPage() {
     return groupModelOptions[getGroupEntryKey(collectionIndex, entryIndex)] || [];
   }
 
+  function openGroupEntryModelPicker(collectionIndex: number, entryIndex: number) {
+    setGroupModelPickerKey(`group-entry-model-${getGroupEntryKey(collectionIndex, entryIndex)}`);
+  }
+
+  function closeGroupEntryModelPicker() {
+    setGroupModelPickerKey("");
+  }
+
+  function selectGroupEntryModel(collectionIndex: number, entryIndex: number, modelName: string) {
+    updateGroupEntryField(collectionIndex, entryIndex, "model", modelName);
+    setGroupModelPickerKey("");
+  }
+
   function isGroupEntryModelLoading(collectionIndex: number, entryIndex: number) {
     return groupModelLoadingKey === getGroupEntryKey(collectionIndex, entryIndex);
   }
@@ -887,6 +1002,7 @@ export function AdminPage() {
       if (modelNames.length === 0) {
         setGroupMessage({ kind: "error", text: translate("group.modelDiscoveryEmpty") });
       } else {
+        openGroupEntryModelPicker(collectionIndex, entryIndex);
         setGroupMessage({ kind: "", text: "" });
       }
     } catch (error) {
@@ -1010,26 +1126,20 @@ export function AdminPage() {
 
       {state.flashMessage.text ? (
         <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
+          className={
             state.flashMessage.kind === "error"
-              ? "border-destructive/20 bg-destructive/10 text-destructive"
+              ? buildErrorAlertClassName()
               : state.flashMessage.kind === "warning"
-                ? "border-warning/20 bg-warning/10 text-warning"
-                : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          }`}
+                ? "rounded-lg border border-[#fde68a] bg-[#fef3c7] px-4 py-3 text-sm font-medium text-[#92400e] dark:border-[rgba(251,191,36,0.35)] dark:bg-[rgba(245,158,11,0.2)] dark:text-[#fde68a]"
+                : buildSuccessAlertClassName()
+          }
         >
           {state.flashMessage.text}
         </div>
       ) : null}
 
       {groupMessage.text ? (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            groupMessage.kind === "error"
-              ? "border-destructive/20 bg-destructive/10 text-destructive"
-              : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          }`}
-        >
+        <div className={groupMessage.kind === "error" ? buildErrorAlertClassName() : buildSuccessAlertClassName()}>
           {groupMessage.text}
         </div>
       ) : null}
@@ -1807,36 +1917,11 @@ export function AdminPage() {
                   }}
                 />
               </div>
-              <div className="h-[400px] overflow-auto rounded-md border bg-[#1e1e1e] p-4 font-mono text-xs text-[#d4d4d4]">
-                {derived.filteredLogs.length === 0 ? (
-                  <div className="py-8 text-center text-slate-400">{translate("admin.logsEmpty")}</div>
-                ) : (
-                  derived.filteredLogs.map(function renderLogEntry(entry, index) {
-                    const level = readLogLevel(entry);
-                    return (
-                      <div className="mb-1.5 flex gap-4 opacity-90 hover:opacity-100" key={`${entry.time || "log"}-${index}`}>
-                        <span className="w-24 shrink-0 text-[#858585]">
-                          {String(entry.time || "").replace("T", " ").slice(11, 19)}
-                        </span>
-                        <span
-                          className={`w-14 shrink-0 ${
-                            level === "ERROR"
-                              ? "text-[#f14c4c]"
-                              : level === "WARN"
-                                ? "text-[#cca700]"
-                                : level === "DEBUG"
-                                  ? "text-[#c586c0]"
-                                  : "text-[#3794ff]"
-                          }`}
-                        >
-                          [{level}]
-                        </span>
-                        <span className="truncate">{formatLogSummary(entry as { attrs?: Record<string, unknown> }) || String(entry.msg || "")}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              <AdminLogPanel
+                emptyText={translate("admin.logsEmpty")}
+                entries={derived.filteredLogs}
+                heightClassName="h-[400px]"
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1926,19 +2011,23 @@ export function AdminPage() {
           </DialogHeader>
 
           <GroupDialogBody
+            activeEntryModelPickerKey={groupModelPickerKey}
             availableProviders={availableGroupProviders}
             draft={groupDraft}
             getEntryModelOptions={getGroupEntryModelOptions}
             isEntryModelLoading={isGroupEntryModelLoading}
             onAddCollection={addGroupCollection}
             onAddEntry={addGroupEntry}
+            onCloseEntryModelPicker={closeGroupEntryModelPicker}
             onCollectionChange={updateGroupCollectionField}
             onEntryChange={updateGroupEntryField}
             onFetchEntryModels={fetchGroupEntryModels}
             onGroupChange={updateGroupField}
             onMoveEntry={moveGroupCollectionEntry}
+            onOpenEntryModelPicker={openGroupEntryModelPicker}
             onRemoveCollection={removeGroupCollection}
             onRemoveEntry={removeGroupEntry}
+            onSelectEntryModel={selectGroupEntryModel}
             readOnlyName={groupDialogMode === "edit"}
             translate={translate}
           />
@@ -2027,43 +2116,16 @@ export function AdminPage() {
         }}
         open={state.logModalOpen}
       >
-        <DialogContent className="log-modal max-w-6xl">
+        <DialogContent className="sm:max-w-[1100px]">
           <DialogHeader>
             <DialogTitle>{translate("admin.logsTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[70vh] overflow-auto rounded-xl border bg-[#1e1e1e] p-4 text-[#d4d4d4] shadow-xl">
-            <div className="space-y-1 rounded-md border border-white/10 bg-black/20 p-4 font-mono text-xs">
-              {derived.filteredLogs.length === 0 ? (
-                <div className="py-8 text-center text-slate-400">{translate("admin.logsEmpty")}</div>
-              ) : (
-                derived.filteredLogs.map(function renderLogEntry(entry, index) {
-                  const level = readLogLevel(entry);
-                  return (
-                    <div className="grid gap-2 border-b border-white/10 py-2 last:border-b-0 lg:grid-cols-[150px_72px_220px_minmax(0,1fr)]" key={`${entry.time || "log"}-${index}`}>
-                      <span className="text-slate-500">{String(entry.time || "").replace("T", " ").slice(0, 23)}</span>
-                      <span
-                        className={
-                          level === "ERROR"
-                            ? "font-semibold tracking-[0.18em] text-[#f14c4c]"
-                            : level === "WARN"
-                              ? "font-semibold tracking-[0.18em] text-[#cca700]"
-                              : level === "DEBUG"
-                                ? "font-semibold tracking-[0.18em] text-[#c586c0]"
-                                : "font-semibold tracking-[0.18em] text-[#3794ff]"
-                        }
-                      >
-                        {level}
-                      </span>
-                      <span>{String(entry.msg || "")}</span>
-                      <span className="break-all text-slate-400">
-                        {formatLogSummary(entry as { attrs?: Record<string, unknown> })}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          <AdminLogPanel
+            emptyText={translate("admin.logsEmpty")}
+            entries={derived.filteredLogs}
+            heightClassName="max-h-[70vh]"
+            showFullTimestamp={true}
+          />
           <DialogFooter>
             <Button onClick={actions.closeDialogs} type="button" variant="outline">
               {translate("action.close")}

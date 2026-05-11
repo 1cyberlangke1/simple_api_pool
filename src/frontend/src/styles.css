@@ -164,10 +164,6 @@
     @apply grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)];
   }
 
-  .log-modal {
-    @apply border-none bg-transparent p-0 shadow-none;
-  }
-
   .animate-spin-slow {
     animation: spin 3s linear infinite;
   }

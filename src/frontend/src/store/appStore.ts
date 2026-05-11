@@ -2,10 +2,12 @@ import { create } from "zustand";
 
 import { createTranslator, detectInitialLanguage, persistLanguage, type Language } from "@/lib/i18n";
 
-export type ThemeMode = "system" | "light" | "dark";
+export type ThemeMode = "auto" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 const themeStorageKey = "simple-api-pool.theme";
+const autoThemeLightStartHour = 7;
+const autoThemeDarkStartHour = 19;
 const buildVersion = typeof __APP_VERSION__ === "undefined" ? "dev" : __APP_VERSION__;
 const buildRevision = typeof __APP_REVISION__ === "undefined" ? "local" : __APP_REVISION__;
 const buildTime = typeof __APP_BUILD_TIME__ === "undefined" ? "unknown" : __APP_BUILD_TIME__;
@@ -25,7 +27,7 @@ export interface AppState {
   toggleLanguage: () => void;
   setRuntimeError: (message: string) => void;
   setThemeMode: (themeMode: ThemeMode) => void;
-  syncThemeWithSystemPreference: () => void;
+  syncThemeWithAutoMode: () => void;
   translate: ReturnType<typeof createTranslator>;
 }
 
@@ -35,27 +37,37 @@ export function buildVersionLabel() {
 
 export function readStoredThemeMode(targetWindow: Window = window): ThemeMode {
   const storedTheme = targetWindow.localStorage.getItem(themeStorageKey);
-  if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") {
+  if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "auto") {
     return storedTheme;
   }
-  return "system";
+  if (storedTheme === "system") {
+    return "auto";
+  }
+  return "auto";
 }
 
 export function persistThemeMode(themeMode: ThemeMode, targetWindow: Window = window) {
   targetWindow.localStorage.setItem(themeStorageKey, themeMode);
 }
 
-export function resolveThemeMode(themeMode: ThemeMode, targetWindow: Window = window): ResolvedTheme {
+export function resolveAutomaticThemeForHour(hour: number): ResolvedTheme {
+  if (!Number.isFinite(hour)) {
+    return "light";
+  }
+  if (hour >= autoThemeLightStartHour && hour < autoThemeDarkStartHour) {
+    return "light";
+  }
+  return "dark";
+}
+
+export function resolveThemeMode(themeMode: ThemeMode, _targetWindow: Window = window): ResolvedTheme {
   if (themeMode === "dark") {
     return "dark";
   }
   if (themeMode === "light") {
     return "light";
   }
-  if (targetWindow.matchMedia && targetWindow.matchMedia("(prefers-color-scheme: dark)").matches) {
-    return "dark";
-  }
-  return "light";
+  return resolveAutomaticThemeForHour(new Date().getHours());
 }
 
 const initialLanguage = detectInitialLanguage();
@@ -88,11 +100,11 @@ export const useAppStore = create<AppState>(function createAppStore(set, get) {
         themeMode
       });
     },
-    syncThemeWithSystemPreference() {
-      if (get().themeMode !== "system") {
+    syncThemeWithAutoMode() {
+      if (get().themeMode !== "auto") {
         return;
       }
-      const nextTheme = resolveThemeMode("system");
+      const nextTheme = resolveThemeMode("auto");
       if (nextTheme !== get().theme) {
         set({ theme: nextTheme });
       }
