@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  ArrowDown,
+  ArrowUp,
   DatabaseZap,
   Edit3,
   FileText,
   Key,
   KeyRound,
+  Loader2,
   LogOut,
   Workflow,
   Plus,
@@ -29,12 +32,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { buildGroupPayload, createDefaultGroupCollectionDraft, createDefaultGroupDraft, createDefaultGroupEntryDraft, createGroupDraftFromSnapshot } from "@/forms/group_form.js";
+import {
+  buildGroupPayload,
+  createDefaultGroupCollectionDraft,
+  createDefaultGroupDraft,
+  createDefaultGroupEntryDraft,
+  createGroupDraftFromSnapshot,
+  moveGroupEntry,
+  shouldShowPriorityField,
+  shouldShowWeightField
+} from "@/forms/group_form.js";
 import type { AdminGroupSnapshot, AdminKeySnapshot, AdminLogEntry, AdminProviderSnapshot, AdminProviderStatsSnapshot } from "@/lib/admin";
-import { buildBulkDisableRequest, filterGroupsBySearch, isKeyDisabledAt } from "@/lib/admin";
-import { formatDateTime, formatDisabledUntil, formatErrorRate, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
+import {
+  buildBulkDisableRequest,
+  extractProviderModelNames,
+  filterGroupsBySearch,
+  isKeyDisabledAt
+} from "@/lib/admin";
+import { formatDateTime, formatDisabledUntil, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
 import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
-import { deleteGroup, saveGroup } from "@/services/admin_service.js";
+import { deleteGroup, fetchProviderModelDiscovery, saveGroup } from "@/services/admin_service.js";
 import { useAppStore } from "@/store/appStore";
 
 const providerTypeOptions = ["openai_chat", "openai_responses", "claude", "gemini"] as const;
@@ -319,11 +336,15 @@ function ProviderDialogBody(props: {
 function GroupDialogBody(props: {
   availableProviders: AdminProviderSnapshot[];
   draft: ReturnType<typeof createDefaultGroupDraft>;
+  getEntryModelOptions: (collectionIndex: number, entryIndex: number) => string[];
+  isEntryModelLoading: (collectionIndex: number, entryIndex: number) => boolean;
   onAddCollection: () => void;
   onAddEntry: (collectionIndex: number) => void;
   onCollectionChange: (collectionIndex: number, fieldName: string, fieldValue: string) => void;
   onEntryChange: (collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) => void;
+  onFetchEntryModels: (collectionIndex: number, entryIndex: number) => void;
   onGroupChange: (fieldName: string, fieldValue: boolean | number | string) => void;
+  onMoveEntry: (collectionIndex: number, entryIndex: number, direction: "down" | "up") => void;
   onRemoveCollection: (collectionIndex: number) => void;
   onRemoveEntry: (collectionIndex: number, entryIndex: number) => void;
   readOnlyName: boolean;
@@ -379,7 +400,6 @@ function GroupDialogBody(props: {
         <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
           <div className="space-y-1">
             <Label htmlFor="group-cache-enabled">{props.translate("group.cacheEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">{props.translate("state.enabled")}</p>
           </div>
           <Switch
             checked={Boolean(props.draft.cache_enabled)}
@@ -478,8 +498,12 @@ function GroupDialogBody(props: {
                   </div>
 
                   {collection.entries.map(function renderEntry(entry, entryIndex) {
+                    const showWeightField = shouldShowWeightField(collection.strategy);
+                    const showPriorityField = shouldShowPriorityField(collection.strategy);
+                    const modelOptions = props.getEntryModelOptions(collectionIndex, entryIndex);
+                    const modelListId = `group-entry-model-options-${collectionIndex}-${entryIndex}`;
                     return (
-                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_88px_88px_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
+                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
                         <div className="space-y-2">
                           <Label htmlFor={`group-entry-provider-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryProvider")}</Label>
                           <Select
@@ -502,32 +526,82 @@ function GroupDialogBody(props: {
                             </SelectContent>
                           </Select>
                         </div>
-                        <ProviderField
-                          id={`group-entry-model-${collectionIndex}-${entryIndex}`}
-                          label={props.translate("group.entryModel")}
-                          onChange={function handleEntryModelChange(value) {
-                            props.onEntryChange(collectionIndex, entryIndex, "model", value);
-                          }}
-                          value={entry.model}
-                        />
-                        <ProviderField
-                          id={`group-entry-weight-${collectionIndex}-${entryIndex}`}
-                          label={props.translate("group.entryWeight")}
-                          onChange={function handleEntryWeightChange(value) {
-                            props.onEntryChange(collectionIndex, entryIndex, "weight", Number(value || 0));
-                          }}
-                          type="number"
-                          value={entry.weight}
-                        />
-                        <ProviderField
-                          id={`group-entry-priority-${collectionIndex}-${entryIndex}`}
-                          label={props.translate("group.entryPriority")}
-                          onChange={function handleEntryPriorityChange(value) {
-                            props.onEntryChange(collectionIndex, entryIndex, "priority", Number(value || 0));
-                          }}
-                          type="number"
-                          value={entry.priority}
-                        />
+                        <div className="space-y-2">
+                          <Label htmlFor={`group-entry-model-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryModel")}</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id={`group-entry-model-${collectionIndex}-${entryIndex}`}
+                              list={modelOptions.length > 0 ? modelListId : undefined}
+                              onChange={function handleEntryModelChange(event) {
+                                props.onEntryChange(collectionIndex, entryIndex, "model", event.target.value);
+                              }}
+                              value={String(entry.model || "")}
+                            />
+                            <Button
+                              disabled={!entry.provider || props.isEntryModelLoading(collectionIndex, entryIndex)}
+                              onClick={function handleFetchEntryModelsClick() {
+                                props.onFetchEntryModels(collectionIndex, entryIndex);
+                              }}
+                              size="icon"
+                              type="button"
+                              variant="outline"
+                            >
+                              {props.isEntryModelLoading(collectionIndex, entryIndex) ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Search className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                          {modelOptions.length > 0 ? (
+                            <datalist id={modelListId}>
+                              {modelOptions.map(function renderModelOption(modelName) {
+                                return <option key={modelName} value={modelName} />;
+                              })}
+                            </datalist>
+                          ) : null}
+                        </div>
+                        {showWeightField ? (
+                          <ProviderField
+                            id={`group-entry-weight-${collectionIndex}-${entryIndex}`}
+                            label={props.translate("group.entryWeight")}
+                            onChange={function handleEntryWeightChange(value) {
+                              props.onEntryChange(collectionIndex, entryIndex, "weight", Number(value || 0));
+                            }}
+                            type="number"
+                            value={entry.weight}
+                          />
+                        ) : null}
+                        {showPriorityField ? (
+                          <div className="space-y-2">
+                            <Label>{props.translate("group.entryPriority")}</Label>
+                            <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2.5">
+                              <span className="min-w-8 font-mono text-sm text-foreground">#{entryIndex + 1}</span>
+                              <Button
+                                disabled={entryIndex === 0}
+                                onClick={function handleMoveUpClick() {
+                                  props.onMoveEntry(collectionIndex, entryIndex, "up");
+                                }}
+                                size="icon"
+                                type="button"
+                                variant="outline"
+                              >
+                                <ArrowUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                disabled={entryIndex >= collection.entries.length - 1}
+                                onClick={function handleMoveDownClick() {
+                                  props.onMoveEntry(collectionIndex, entryIndex, "down");
+                                }}
+                                size="icon"
+                                type="button"
+                                variant="outline"
+                              >
+                                <ArrowDown className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="flex items-end">
                           <Button
                             className="w-full"
@@ -563,6 +637,8 @@ export function AdminPage() {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupDialogMode, setGroupDialogMode] = useState<"create" | "edit">("create");
   const [groupDraft, setGroupDraft] = useState(createDefaultGroupDraft());
+  const [groupModelOptions, setGroupModelOptions] = useState<Record<string, string[]>>({});
+  const [groupModelLoadingKey, setGroupModelLoadingKey] = useState("");
   const [groupMessage, setGroupMessage] = useState<{ kind: "" | "error" | "ok"; text: string }>({ kind: "", text: "" });
   const language = useAppStore(function selectLanguage(state) {
     return state.language;
@@ -603,10 +679,16 @@ export function AdminPage() {
     setBulkDisableUntil(toDateTimeLocalValue(Date.now() + nextSeconds * 1000));
   }, [derived.disableBounds.max, derived.disableBounds.min, selectedProviderName]);
 
+  function getGroupEntryKey(collectionIndex: number, entryIndex: number) {
+    return `${collectionIndex}:${entryIndex}`;
+  }
+
   function openCreateGroupDialog() {
     setGroupMessage({ kind: "", text: "" });
     setGroupDialogMode("create");
     setGroupDraft(createDefaultGroupDraft());
+    setGroupModelOptions({});
+    setGroupModelLoadingKey("");
     setGroupDialogOpen(true);
   }
 
@@ -614,11 +696,14 @@ export function AdminPage() {
     setGroupMessage({ kind: "", text: "" });
     setGroupDialogMode("edit");
     setGroupDraft(createGroupDraftFromSnapshot(groupSnapshot) || createDefaultGroupDraft());
+    setGroupModelOptions({});
+    setGroupModelLoadingKey("");
     setGroupDialogOpen(true);
   }
 
   function closeGroupDialog() {
     setGroupDialogOpen(false);
+    setGroupModelLoadingKey("");
   }
 
   function updateGroupField(fieldName: string, fieldValue: boolean | number | string) {
@@ -648,6 +733,17 @@ export function AdminPage() {
   }
 
   function updateGroupEntryField(collectionIndex: number, entryIndex: number, fieldName: string, fieldValue: number | string) {
+    if (fieldName === "provider") {
+      const entryKey = getGroupEntryKey(collectionIndex, entryIndex);
+      setGroupModelOptions(function clearEntryModelOptions(previousOptions) {
+        if (!(entryKey in previousOptions)) {
+          return previousOptions;
+        }
+        const nextOptions = { ...previousOptions };
+        delete nextOptions[entryKey];
+        return nextOptions;
+      });
+    }
     setGroupDraft(function applyEntryField(previousDraft) {
       return {
         ...previousDraft,
@@ -726,6 +822,80 @@ export function AdminPage() {
         })
       };
     });
+  }
+
+  function moveGroupCollectionEntry(collectionIndex: number, entryIndex: number, direction: "down" | "up") {
+    setGroupDraft(function reorderCollectionEntries(previousDraft) {
+      return {
+        ...previousDraft,
+        collections: previousDraft.collections.map(function mapCollection(collectionDraft, index) {
+          if (index !== collectionIndex) {
+            return collectionDraft;
+          }
+          return {
+            ...collectionDraft,
+            entries: moveGroupEntry(collectionDraft.entries, entryIndex, direction)
+          };
+        })
+      };
+    });
+  }
+
+  function getGroupEntryModelOptions(collectionIndex: number, entryIndex: number) {
+    return groupModelOptions[getGroupEntryKey(collectionIndex, entryIndex)] || [];
+  }
+
+  function isGroupEntryModelLoading(collectionIndex: number, entryIndex: number) {
+    return groupModelLoadingKey === getGroupEntryKey(collectionIndex, entryIndex);
+  }
+
+  async function fetchGroupEntryModels(collectionIndex: number, entryIndex: number) {
+    const entrySnapshot = groupDraft.collections[collectionIndex]?.entries?.[entryIndex];
+    const providerName = String(entrySnapshot?.provider || "").trim();
+    if (!providerName) {
+      setGroupMessage({ kind: "error", text: translate("group.modelDiscoveryProviderRequired") });
+      return;
+    }
+
+    const clientKey = (state.globalDraft.client_keys || []).find(function findClientKey(keyValue) {
+      return String(keyValue || "").trim() !== "";
+    });
+    if (!clientKey) {
+      setGroupMessage({ kind: "error", text: translate("group.modelDiscoveryMissingClientKey") });
+      return;
+    }
+
+    const providerSnapshot = (state.overview.providers || []).find(function findProvider(provider) {
+      return provider.name === providerName;
+    });
+    if (!providerSnapshot) {
+      setGroupMessage({ kind: "error", text: translate("group.modelDiscoveryProviderRequired") });
+      return;
+    }
+
+    const loadingKey = getGroupEntryKey(collectionIndex, entryIndex);
+    setGroupModelLoadingKey(loadingKey);
+    try {
+      const response = await fetchProviderModelDiscovery(providerSnapshot.name, providerSnapshot.type, clientKey);
+      const modelNames = extractProviderModelNames(providerSnapshot.type, response.data);
+      setGroupModelOptions(function updateGroupModelOptions(previousOptions) {
+        return {
+          ...previousOptions,
+          [loadingKey]: modelNames
+        };
+      });
+      if (modelNames.length === 0) {
+        setGroupMessage({ kind: "error", text: translate("group.modelDiscoveryEmpty") });
+      } else {
+        setGroupMessage({ kind: "", text: "" });
+      }
+    } catch (error) {
+      setGroupMessage({ kind: "error", text: normalizeErrorMessage(error, translate("group.modelDiscoveryFailed")) });
+    } finally {
+      setGroupModelLoadingKey(function clearLoadingKey(previousKey) {
+        return previousKey === loadingKey ? "" : previousKey;
+      });
+    }
   }
 
   async function saveGroupDraftState() {
@@ -897,14 +1067,7 @@ export function AdminPage() {
         <TabsContent className="space-y-4" value="global">
           <Card>
             <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <CardTitle>{translate("admin.globalTitle")}</CardTitle>
-                <Badge variant={state.overview.global_config.admin_key_configured ? "success" : "warning"}>
-                  {state.overview.global_config.admin_key_configured
-                    ? translate("admin.adminKeyConfigured")
-                    : translate("admin.adminKeyMissing")}
-                </Badge>
-              </div>
+              <CardTitle>{translate("admin.globalTitle")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -1217,10 +1380,10 @@ export function AdminPage() {
                         </div>
                         <div>
                           <span className="block text-[10px] uppercase tracking-wider opacity-70">
-                            {translate("status.errorRate")}
+                            {translate("status.requestCount")}
                           </span>
                           <strong className="mt-1 block text-foreground">
-                            {formatErrorRate(stats.success_count, stats.error_count)}
+                            {formatNumber((stats.success_count || 0) + (stats.error_count || 0))}
                           </strong>
                         </div>
                         <div>
@@ -1297,18 +1460,20 @@ export function AdminPage() {
                   <Card key={groupSnapshot.name}>
                     <CardHeader className="py-4">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-lg">{groupSnapshot.name}</CardTitle>
-                          <CardDescription>
-                            {translate(`provider.type.${groupSnapshot.type}`)}
-                            {" · "}
-                            {translate("group.collectionCount", { count: groupSnapshot.collections.length })}
-                          </CardDescription>
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-md border bg-background p-2 text-muted-foreground shadow-sm">
+                            <Workflow className="h-5 w-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <CardTitle className="text-lg">{groupSnapshot.name}</CardTitle>
+                            <CardDescription>
+                              {translate(`provider.type.${groupSnapshot.type}`)}
+                              {" · "}
+                              {translate("group.collectionCount", { count: groupSnapshot.collections.length })}
+                            </CardDescription>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant={groupSnapshot.cache_enabled ? "success" : "secondary"}>
-                            {groupSnapshot.cache_enabled ? translate("state.enabled") : translate("state.disabled")}
-                          </Badge>
                           <Button
                             onClick={function handleEditGroupClick() {
                               openEditGroupDialog(groupSnapshot);
@@ -1332,7 +1497,15 @@ export function AdminPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="grid gap-4 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground md:grid-cols-3">
+                      <div className="grid gap-4 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground md:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                          <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
+                            {translate("group.cacheEnabled")}
+                          </span>
+                          <span className="text-foreground">
+                            {groupSnapshot.cache_enabled ? translate("state.enabled") : translate("state.disabled")}
+                          </span>
+                        </div>
                         <div>
                           <span className="mb-1 block text-[10px] uppercase tracking-wider opacity-70">
                             {translate("group.cacheMaxEntries")}
@@ -1371,8 +1544,10 @@ export function AdminPage() {
 
                               <div className="mt-3 grid gap-3">
                                 {collectionSnapshot.entries.map(function renderGroupEntry(entrySnapshot, entryIndex) {
+                                  const showWeightField = shouldShowWeightField(collectionSnapshot.strategy);
+                                  const showPriorityField = shouldShowPriorityField(collectionSnapshot.strategy);
                                   return (
-                                    <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_92px_92px]" key={`${groupSnapshot.name}-entry-${collectionIndex}-${entryIndex}`}>
+                                    <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_92px]" key={`${groupSnapshot.name}-entry-${collectionIndex}-${entryIndex}`}>
                                       <div>
                                         <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
                                           {translate("group.entryProvider")}
@@ -1385,18 +1560,22 @@ export function AdminPage() {
                                         </span>
                                         <div className="break-all font-mono text-foreground">{entrySnapshot.model}</div>
                                       </div>
-                                      <div>
-                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
-                                          {translate("group.entryWeight")}
-                                        </span>
-                                        <div className="text-foreground">{formatNumber(entrySnapshot.weight)}</div>
-                                      </div>
-                                      <div>
-                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
-                                          {translate("group.entryPriority")}
-                                        </span>
-                                        <div className="text-foreground">{formatNumber(entrySnapshot.priority)}</div>
-                                      </div>
+                                      {showWeightField ? (
+                                        <div>
+                                          <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                            {translate("group.entryWeight")}
+                                          </span>
+                                          <div className="text-foreground">{formatNumber(entrySnapshot.weight)}</div>
+                                        </div>
+                                      ) : null}
+                                      {showPriorityField ? (
+                                        <div>
+                                          <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
+                                            {translate("group.entryPriority")}
+                                          </span>
+                                          <div className="text-foreground">{formatNumber(entryIndex + 1)}</div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   );
                                 })}
@@ -1749,11 +1928,15 @@ export function AdminPage() {
           <GroupDialogBody
             availableProviders={availableGroupProviders}
             draft={groupDraft}
+            getEntryModelOptions={getGroupEntryModelOptions}
+            isEntryModelLoading={isGroupEntryModelLoading}
             onAddCollection={addGroupCollection}
             onAddEntry={addGroupEntry}
             onCollectionChange={updateGroupCollectionField}
             onEntryChange={updateGroupEntryField}
+            onFetchEntryModels={fetchGroupEntryModels}
             onGroupChange={updateGroupField}
+            onMoveEntry={moveGroupCollectionEntry}
             onRemoveCollection={removeGroupCollection}
             onRemoveEntry={removeGroupEntry}
             readOnlyName={groupDialogMode === "edit"}

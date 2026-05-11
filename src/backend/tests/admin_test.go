@@ -409,6 +409,9 @@ func TestAdminOverviewReturnsConfigProvidersStatsWithoutRecentLogs(t *testing.T)
 	if payload.ProviderStats["openai"].InputTokens != 3 || payload.ProviderStats["openai"].OutputTokens != 4 {
 		t.Fatalf("期望返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
 	}
+	if !payload.ProviderStats["openai"].CacheEnabled {
+		t.Fatalf("期望返回 cache_enabled=true，实际是 %+v", payload.ProviderStats["openai"])
+	}
 	if strings.Contains(rec.Body.String(), `"recent_logs"`) {
 		t.Fatalf("期望管理总览不再返回 recent_logs，实际响应是 %s", rec.Body.String())
 	}

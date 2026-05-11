@@ -2035,8 +2035,9 @@ func TestStatusEndpointReturnsKeyOverviewWithoutRequestStats(t *testing.T) {
 func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 	cfg := newTestConfig(t)
 	if err := cfg.SaveProvider(config.Provider{
-		Name: "openai",
-		Type: config.OpenAIChat,
+		Name:         "openai",
+		Type:         config.OpenAIChat,
+		CacheEnabled: true,
 		Keys: []config.Key{
 			{Value: "key-1"},
 		},
@@ -2073,6 +2074,9 @@ func TestStatusOverviewReturnsHealthAndProviderStats(t *testing.T) {
 	}
 	if payload.ProviderStats["openai"].InputTokens != 7 || payload.ProviderStats["openai"].OutputTokens != 5 {
 		t.Fatalf("期望状态总览返回提供商统计，实际是 %+v", payload.ProviderStats["openai"])
+	}
+	if !payload.ProviderStats["openai"].CacheEnabled {
+		t.Fatalf("期望状态总览返回 cache_enabled=true，实际是 %+v", payload.ProviderStats["openai"])
 	}
 	if payload.ProviderTypes["openai"] != string(config.OpenAIChat) {
 		t.Fatalf("期望状态总览返回提供商类型，实际是 %+v", payload.ProviderTypes)

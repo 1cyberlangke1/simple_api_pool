@@ -48,14 +48,6 @@ function calculateSuccessRate(successCount: number, errorCount: number) {
   return (successCount / total) * 100;
 }
 
-function calculateErrorRate(successCount: number, errorCount: number) {
-  const total = successCount + errorCount;
-  if (total <= 0) {
-    return 0;
-  }
-  return (errorCount / total) * 100;
-}
-
 function readStatusPresentation(status: string) {
   if (status === "ok") {
     return {
@@ -106,13 +98,14 @@ export function StatusPage() {
     const errorCount = Number(card.snapshot.error_count || 0);
     return {
       availableKeys: Number(card.snapshot.available_keys || 0),
+      cacheEnabled: Boolean(card.snapshot.cache_enabled),
       cacheTokens: Number(card.snapshot.cache_tokens || 0),
       cacheHits: Number(card.snapshot.cache_hits || 0),
-      errorRate: calculateErrorRate(successCount, errorCount),
       id: String(card.name || ""),
       inputTokens: Number(card.snapshot.input_tokens || 0),
       name: String(card.name || ""),
       outputTokens: Number(card.snapshot.output_tokens || 0),
+      requestCount: successCount + errorCount,
       rps: 0,
       snapshot: card.snapshot,
       status: String(card.status || "unknown"),
@@ -258,9 +251,14 @@ export function StatusPage() {
                           </CardDescription>
                         </div>
                       </div>
-                      <Badge variant={providerStatusPresentation.badgeVariant} className="uppercase tracking-wider text-[10px]">
-                        {providerCard.status}
-                      </Badge>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Badge variant={providerStatusPresentation.badgeVariant} className="uppercase tracking-wider text-[10px]">
+                          {providerCard.status}
+                        </Badge>
+                        <Badge variant={providerCard.cacheEnabled ? "success" : "secondary"} className="uppercase tracking-wider text-[10px]">
+                          {providerCard.cacheEnabled ? translate("status.cacheOn") : translate("status.cacheOff")}
+                        </Badge>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-4 flex-1">
@@ -270,8 +268,8 @@ export function StatusPage() {
                         <p className="font-mono font-medium">{providerCard.successRate.toFixed(1)}%</p>
                       </div>
                       <div>
-                        <p className="mb-1 text-xs text-muted-foreground">{translate("status.errorRate")}</p>
-                        <p className="font-mono font-medium">{providerCard.errorRate.toFixed(1)}%</p>
+                        <p className="mb-1 text-xs text-muted-foreground">{translate("status.requestCount")}</p>
+                        <p className="font-mono font-medium">{formatNumber(providerCard.requestCount)}</p>
                       </div>
                       <div>
                         <p className="mb-1 text-xs text-muted-foreground">{translate("status.inputTokens")}</p>
@@ -285,10 +283,12 @@ export function StatusPage() {
                         <p className="mb-1 text-xs text-muted-foreground">{translate("status.cacheTokens")}</p>
                         <p className="font-mono font-medium">{formatNumber(providerCard.cacheTokens)}</p>
                       </div>
-                      <div>
-                        <p className="mb-1 text-xs text-muted-foreground">{translate("status.cacheHits")}</p>
-                        <p className="font-mono font-medium">{formatNumber(providerCard.cacheHits)}</p>
-                      </div>
+                      {providerCard.cacheEnabled ? (
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">{translate("status.cacheHits")}</p>
+                          <p className="font-mono font-medium">{formatNumber(providerCard.cacheHits)}</p>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="mt-4 border-t border-border/50 pt-4">
                       <p className="mb-2 text-xs text-muted-foreground">{translate("status.errorTypes")}</p>

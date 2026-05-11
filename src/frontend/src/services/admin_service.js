@@ -1,5 +1,7 @@
 import { requestJSON } from "../api.js";
 
+import { buildProviderModelDiscoveryPath } from "@/lib/admin";
+
 export async function fetchAdminBootstrap() {
   return requestJSON("/api/admin/bootstrap");
 }
@@ -97,5 +99,13 @@ export async function applyProviderBulkAction(providerName, payload) {
 export async function deleteProviderKey(providerName, keyRef) {
   return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/" + encodeURIComponent(keyRef), {
     method: "DELETE"
+  });
+}
+
+export async function fetchProviderModelDiscovery(providerName, providerType, clientKey) {
+  return requestJSON(buildProviderModelDiscoveryPath(providerName, providerType), {
+    headers: {
+      Authorization: "Bearer " + String(clientKey || "").trim()
+    }
   });
 }

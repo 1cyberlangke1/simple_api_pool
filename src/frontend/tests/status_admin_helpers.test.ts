@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { normalizeErrorMessage, shouldIgnoreRuntimeFailure } from "@/api.js";
 import { createMessage, resolveMessageText } from "@/hooks/useAdminOverview";
 import {
+  buildProviderModelDiscoveryPath,
   buildBulkDisableRequest,
   countAvailableProviderKeys,
   chooseSelectedProviderName,
+  extractProviderModelNames,
   filterSelectedRefs,
   findNearestDisabledUntilMs,
   getDisableBounds,
@@ -80,6 +82,7 @@ describe("status helpers", function () {
     })).toEqual(["alpha", "middle", "zebra"]);
     expect(cards[0].status).toBe("warning");
     expect(cards[0].type).toBe("claude");
+    expect(cards[1].snapshot.cache_enabled).toBeUndefined();
   });
 
   it("会优先按 @lobehub/icons 支持集匹配供应商 icon，再做模糊匹配与协议兜底", function () {
@@ -131,6 +134,26 @@ describe("status helpers", function () {
     expect(formatStatusRefreshCountdownLabel(5)).toBe("5s");
     expect(formatStatusRefreshCountdownLabel(0)).toBe("0s");
     expect(formatStatusRefreshCountdownLabel(-3)).toBe("0s");
+  });
+
+  it("会按协议生成模型发现路径，并提取模型名列表", function () {
+    expect(buildProviderModelDiscoveryPath("openai-router", "openai_chat")).toBe("/openai-router/v1/models");
+    expect(buildProviderModelDiscoveryPath("gemini-router", "gemini")).toBe("/gemini-router/v1beta/models");
+
+    expect(extractProviderModelNames("openai_chat", {
+      data: [
+        { id: "gpt-4.1" },
+        { id: "gpt-4.1-mini" },
+        { id: "gpt-4.1" }
+      ]
+    })).toEqual(["gpt-4.1", "gpt-4.1-mini"]);
+
+    expect(extractProviderModelNames("gemini", {
+      models: [
+        { name: "models/gemini-2.5-flash" },
+        { name: "models/gemini-2.5-pro" }
+      ]
+    })).toEqual(["gemini-2.5-flash", "gemini-2.5-pro"]);
   });
 });
 

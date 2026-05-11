@@ -5,6 +5,7 @@ export interface HealthSnapshot {
 export interface ProviderStatusSnapshot {
   available_keys?: number;
   total_keys?: number;
+  cache_enabled?: boolean;
   success_count?: number;
   error_count?: number;
   error_types?: Record<string, number>;

@@ -45,6 +45,7 @@ export interface AdminGroupSnapshot {
 export interface AdminProviderStatsSnapshot {
   available_keys?: number;
   total_keys?: number;
+  cache_enabled?: boolean;
   success_count?: number;
   error_count?: number;
   error_types?: Record<string, number>;
@@ -168,6 +169,54 @@ export function filterGroupsBySearch(groups: AdminGroupSnapshot[], searchText: s
   return groups.filter(function keepMatchingGroup(groupSnapshot) {
     return String(groupSnapshot.name || "").toLowerCase().includes(normalizedSearch);
   });
+}
+
+export function buildProviderModelDiscoveryPath(providerName: string, providerType: string) {
+  const normalizedProviderName = encodeURIComponent(String(providerName || "").trim());
+  if (String(providerType || "") === "gemini") {
+    return `/${normalizedProviderName}/v1beta/models`;
+  }
+  return `/${normalizedProviderName}/v1/models`;
+}
+
+function normalizeModelName(modelName: unknown) {
+  const trimmedName = String(modelName || "").trim();
+  if (!trimmedName) {
+    return "";
+  }
+  if (trimmedName.startsWith("models/")) {
+    return trimmedName.slice("models/".length);
+  }
+  return trimmedName;
+}
+
+export function extractProviderModelNames(providerType: string, payload: unknown) {
+  const normalizedProviderType = String(providerType || "");
+  const sourceEntries = normalizedProviderType === "gemini"
+    ? Array.isArray((payload as { models?: unknown[] } | null | undefined)?.models)
+      ? (payload as { models: unknown[] }).models
+      : []
+    : Array.isArray((payload as { data?: unknown[] } | null | undefined)?.data)
+      ? (payload as { data: unknown[] }).data
+      : [];
+
+  const modelNames = [];
+  const seenNames = new Set();
+  for (let index = 0; index < sourceEntries.length; index += 1) {
+    const entry = sourceEntries[index];
+    const rawName = typeof entry === "object" && entry
+      ? "id" in entry
+        ? (entry as { id?: unknown }).id
+        : (entry as { name?: unknown }).name
+      : "";
+    const normalizedName = normalizeModelName(rawName);
+    if (!normalizedName || seenNames.has(normalizedName)) {
+      continue;
+    }
+    seenNames.add(normalizedName);
+    modelNames.push(normalizedName);
+  }
+  return modelNames;
 }
 
 export function filterSelectedRefs(selectedRefs: string[], providerSnapshot: AdminProviderSnapshot | null) {

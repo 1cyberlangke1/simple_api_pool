@@ -53,6 +53,55 @@ export function createDefaultGroupEntryDraft() {
   };
 }
 
+export function shouldShowWeightField(strategy) {
+  return String(strategy || "weighted_random") === "weighted_random";
+}
+
+export function shouldShowPriorityField(strategy) {
+  return String(strategy || "") === "failover";
+}
+
+function normalizeEntryDraft(entrySnapshot, fallbackPriority) {
+  return {
+    provider: entrySnapshot.provider || "",
+    model: entrySnapshot.model || "",
+    weight: Math.max(1, toInteger(entrySnapshot.weight, 1)),
+    priority: Math.max(1, toInteger(entrySnapshot.priority, fallbackPriority))
+  };
+}
+
+function normalizeEntriesForStrategy(entries, strategy) {
+  const nextEntries = Array.isArray(entries) ? entries.slice() : [];
+  if (shouldShowPriorityField(strategy)) {
+    return nextEntries.map(function normalizeEntry(entryDraft, entryIndex) {
+      return {
+        ...normalizeEntryDraft(entryDraft || {}, entryIndex + 1),
+        priority: entryIndex + 1
+      };
+    });
+  }
+  return nextEntries.map(function normalizeEntry(entryDraft, entryIndex) {
+    return normalizeEntryDraft(entryDraft || {}, entryIndex + 1);
+  });
+}
+
+export function moveGroupEntry(entries, entryIndex, direction) {
+  const nextEntries = Array.isArray(entries) ? entries.slice() : [];
+  if (entryIndex < 0 || entryIndex >= nextEntries.length) {
+    return normalizeEntriesForStrategy(nextEntries, "failover");
+  }
+
+  const targetIndex = direction === "up" ? entryIndex - 1 : direction === "down" ? entryIndex + 1 : entryIndex;
+  if (targetIndex < 0 || targetIndex >= nextEntries.length || targetIndex === entryIndex) {
+    return normalizeEntriesForStrategy(nextEntries, "failover");
+  }
+
+  const movedEntry = nextEntries[entryIndex];
+  nextEntries[entryIndex] = nextEntries[targetIndex];
+  nextEntries[targetIndex] = movedEntry;
+  return normalizeEntriesForStrategy(nextEntries, "failover");
+}
+
 export function createGroupDraftFromSnapshot(groupSnapshot) {
   if (!groupSnapshot) {
     return null;
@@ -64,19 +113,26 @@ export function createGroupDraftFromSnapshot(groupSnapshot) {
     cache_max_entries: toInteger(groupSnapshot.cache_max_entries, 1000),
     collections: Array.isArray(groupSnapshot.collections)
       ? groupSnapshot.collections.map(function mapCollection(collectionSnapshot) {
+        const strategy = collectionSnapshot.strategy || "weighted_random";
+        const rawEntries = Array.isArray(collectionSnapshot.entries)
+          ? collectionSnapshot.entries.map(function mapEntry(entrySnapshot, entryIndex) {
+            return normalizeEntryDraft(entrySnapshot || {}, entryIndex + 1);
+          })
+          : [];
+        const entries = shouldShowPriorityField(strategy)
+          ? rawEntries
+            .slice()
+            .sort(function compareEntries(leftEntry, rightEntry) {
+              if (leftEntry.priority !== rightEntry.priority) {
+                return leftEntry.priority - rightEntry.priority;
+              }
+              return String(leftEntry.provider || "").localeCompare(String(rightEntry.provider || ""), "en");
+            })
+          : rawEntries;
         return {
           name: collectionSnapshot.name || "",
-          strategy: collectionSnapshot.strategy || "weighted_random",
-          entries: Array.isArray(collectionSnapshot.entries)
-            ? collectionSnapshot.entries.map(function mapEntry(entrySnapshot) {
-              return {
-                provider: entrySnapshot.provider || "",
-                model: entrySnapshot.model || "",
-                weight: Math.max(1, toInteger(entrySnapshot.weight, 1)),
-                priority: Math.max(1, toInteger(entrySnapshot.priority, 1))
-              };
-            })
-            : []
+          strategy,
+          entries: normalizeEntriesForStrategy(entries, strategy)
         };
       })
       : []
@@ -90,19 +146,23 @@ export function buildGroupPayload(groupDraft) {
     cache_max_entries: Math.max(1, toInteger(nextDraft.cache_max_entries, 1000)),
     collections: Array.isArray(nextDraft.collections)
       ? nextDraft.collections.map(function mapCollection(collectionDraft) {
+        const strategy = collectionDraft?.strategy || "weighted_random";
+        const entries = Array.isArray(collectionDraft?.entries)
+          ? collectionDraft.entries.map(function mapEntry(entryDraft, entryIndex) {
+            return normalizeEntryDraft(entryDraft || {}, entryIndex + 1);
+          })
+          : [];
         return {
           name: String(collectionDraft?.name || "").trim(),
-          strategy: collectionDraft?.strategy || "weighted_random",
-          entries: Array.isArray(collectionDraft?.entries)
-            ? collectionDraft.entries.map(function mapEntry(entryDraft, entryIndex) {
-              return {
-                provider: String(entryDraft?.provider || "").trim(),
-                model: String(entryDraft?.model || "").trim(),
-                weight: Math.max(1, toInteger(entryDraft?.weight, 1)),
-                priority: Math.max(1, toInteger(entryDraft?.priority, entryIndex + 1))
-              };
-            })
-            : []
+          strategy,
+          entries: normalizeEntriesForStrategy(entries, strategy).map(function mapEntry(entryDraft) {
+            return {
+              provider: String(entryDraft.provider || "").trim(),
+              model: String(entryDraft.model || "").trim(),
+              weight: entryDraft.weight,
+              priority: entryDraft.priority
+            };
+          })
         };
       })
       : [],

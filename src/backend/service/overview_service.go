@@ -21,6 +21,7 @@ type ProviderStatusSnapshot struct {
 	ErrorTypes    map[string]int64 `json:"error_types,omitempty"`
 	AvailableKeys int64            `json:"available_keys"`
 	TotalKeys     int64            `json:"total_keys"`
+	CacheEnabled  bool             `json:"cache_enabled"`
 }
 
 type GlobalConfigSnapshot struct {
@@ -94,6 +95,7 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 	for _, provider := range providers {
 		providersByName[provider.Name] = provider
 		entry := providerStats[provider.Name]
+		entry.CacheEnabled = provider.CacheEnabled
 		entry.TotalKeys = int64(len(provider.Keys))
 		for _, key := range provider.Keys {
 			if key.DisabledUntil > now {
@@ -105,6 +107,7 @@ func (service *OverviewService) ProviderStatusSnapshots() map[string]ProviderSta
 	}
 	for _, group := range service.cfg.Groups() {
 		entry := providerStats[group.Name]
+		entry.CacheEnabled = group.CacheEnabled
 		seenProviders := make(map[string]struct{})
 		for _, collection := range group.Collections {
 			for _, item := range collection.Entries {
