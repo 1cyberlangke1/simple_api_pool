@@ -114,18 +114,18 @@ describe("status helpers", function () {
     const className = buildErrorTypeSummaryClassName();
 
     expect(className).toContain("text-white");
-    expect(className).toContain("bg-[#dc2626]");
+    expect(className).toContain("bg-[#ef4444]");
     expect(className).toContain("text-sm");
     expect(className).not.toContain("font-mono");
     expect(className).toContain("dark:text-white");
-    expect(className).toContain("dark:bg-[#b91c1c]");
+    expect(className).toContain("dark:bg-[#dc2626]");
   });
 
   it("会给状态页错误总数提供浅色模式也清晰的高对比度样式", function () {
     const className = buildStatusErrorCountClassName();
 
     expect(className).toContain("text-white");
-    expect(className).toContain("bg-[#dc2626]");
+    expect(className).toContain("bg-[#ef4444]");
     expect(className).toContain("dark:text-white");
   });
 
@@ -133,7 +133,7 @@ describe("status helpers", function () {
     const className = buildStatusErrorAlertClassName();
 
     expect(className).toContain("text-white");
-    expect(className).toContain("bg-[#7f1d1d]");
+    expect(className).toContain("bg-[#dc2626]");
     expect(className).toContain("dark:text-white");
   });
 

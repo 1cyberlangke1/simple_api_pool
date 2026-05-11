@@ -12,12 +12,12 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
-          "border-[#991b1b] bg-[#dc2626] text-white hover:bg-[#b91c1c] dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white dark:hover:bg-[#dc2626]",
+          "border-[#dc2626] bg-[#ef4444] text-white hover:bg-[#dc2626] dark:border-[#f87171] dark:bg-[#dc2626] dark:text-white dark:hover:bg-[#ef4444]",
         outline: "text-foreground",
         success:
-          "border-[#166534] bg-[#16a34a] text-white hover:bg-[#15803d] dark:border-[#86efac] dark:bg-[#166534] dark:text-white dark:hover:bg-[#15803d]",
+          "border-[#16a34a] bg-[#22c55e] text-white hover:bg-[#16a34a] dark:border-[#86efac] dark:bg-[#15803d] dark:text-white dark:hover:bg-[#16a34a]",
         warning:
-          "border-[#92400e] bg-[#d97706] text-white hover:bg-[#b45309] dark:border-[#fcd34d] dark:bg-[#92400e] dark:text-white dark:hover:bg-[#b45309]",
+          "border-[#d97706] bg-[#f59e0b] text-white hover:bg-[#d97706] dark:border-[#fcd34d] dark:bg-[#b45309] dark:text-white dark:hover:bg-[#d97706]",
       },
     },
     defaultVariants: {

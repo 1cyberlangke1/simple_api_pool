@@ -707,6 +707,52 @@ export function useAdminOverview(
     }
   }, [loadOverview, translate]);
 
+  const saveProviderKeyValue = useCallback(async function saveProviderKeyValue(keyRef: string, nextValue: string) {
+    const currentState = stateRef.current;
+    const providerName = currentState.selectedProviderName;
+    const providerSnapshot = getProviderByName(currentState.overview.providers || [], providerName);
+    if (!providerSnapshot || !keyRef) {
+      return false;
+    }
+
+    const trimmedValue = String(nextValue || "").trim();
+    if (!trimmedValue) {
+      setState(function markEmptyKeyError(previousState) {
+        return {
+          ...previousState,
+          flashMessage: createMessage("error", translate("admin.keyEditEmpty"))
+        };
+      });
+      return false;
+    }
+
+    try {
+      await saveProvider(buildProviderPayload({
+        ...createProviderDraftFromSnapshot(providerSnapshot),
+        keys: (providerSnapshot.keys || []).map(function mapProviderKey(keySnapshot) {
+          return keySnapshot.ref === keyRef ? trimmedValue : String(keySnapshot.value || "");
+        })
+      }));
+      setState(function markProviderKeySaved(previousState) {
+        return {
+          ...previousState,
+          activeTab: "keys",
+          flashMessage: createMessage("ok", translate("admin.keyEditSaveSuccess"))
+        };
+      });
+      await loadOverview(true, { preferredProviderName: providerName });
+      return true;
+    } catch (error) {
+      setState(function markProviderKeySaveError(previousState) {
+        return {
+          ...previousState,
+          flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.keyEditSaveFailed")))
+        };
+      });
+      return false;
+    }
+  }, [loadOverview, translate]);
+
   const deleteSelectedProvider = useCallback(async function deleteSelectedProvider() {
     const currentState = stateRef.current;
     if (!currentState.selectedProviderName) {
@@ -1017,6 +1063,7 @@ export function useAdminOverview(
       },
       saveAdminKey,
       saveGlobalSettings,
+      saveProviderKeyValue,
       saveSelectedProvider,
       selectProvider,
       setAdminKey(adminKey: string) {

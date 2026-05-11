@@ -28,6 +28,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -151,10 +152,10 @@ function ProviderStatusCapsule(props: {
 }) {
   const className =
     props.status === "error"
-      ? "border-[#991b1b] bg-[#dc2626] text-white dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white"
+      ? "border-[#dc2626] bg-[#ef4444] text-white dark:border-[#f87171] dark:bg-[#dc2626] dark:text-white"
       : props.status === "warning"
-        ? "border-[#92400e] bg-[#d97706] text-white dark:border-[#fcd34d] dark:bg-[#92400e] dark:text-white"
-        : "border-[#166534] bg-[#16a34a] text-white dark:border-[#86efac] dark:bg-[#166534] dark:text-white";
+        ? "border-[#d97706] bg-[#f59e0b] text-white dark:border-[#fcd34d] dark:bg-[#b45309] dark:text-white"
+        : "border-[#16a34a] bg-[#22c55e] text-white dark:border-[#86efac] dark:bg-[#15803d] dark:text-white";
 
   return (
     <div
@@ -166,11 +167,11 @@ function ProviderStatusCapsule(props: {
 }
 
 function buildErrorAlertClassName() {
-  return "rounded-lg border border-[#991b1b] bg-[#7f1d1d] px-4 py-3 text-sm font-medium text-white dark:border-[#f87171] dark:bg-[#991b1b] dark:text-white";
+  return "rounded-lg border border-[#dc2626] bg-[#dc2626] px-4 py-3 text-sm font-medium text-white dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white";
 }
 
 function buildSuccessAlertClassName() {
-  return "rounded-lg border border-[#166534] bg-[#166534] px-4 py-3 text-sm font-medium text-white dark:border-[#86efac] dark:bg-[#14532d] dark:text-white";
+  return "rounded-lg border border-[#16a34a] bg-[#16a34a] px-4 py-3 text-sm font-medium text-white dark:border-[#86efac] dark:bg-[#15803d] dark:text-white";
 }
 
 function buildLogLevelClassName(level: string) {
@@ -775,6 +776,10 @@ export function AdminPage() {
   const [groupModelOptions, setGroupModelOptions] = useState<Record<string, string[]>>({});
   const [groupModelLoadingKey, setGroupModelLoadingKey] = useState("");
   const [groupMessage, setGroupMessage] = useState<{ kind: "" | "error" | "ok"; text: string }>({ kind: "", text: "" });
+  const [keyEditDialogOpen, setKeyEditDialogOpen] = useState(false);
+  const [keyEditPending, setKeyEditPending] = useState(false);
+  const [keyEditRef, setKeyEditRef] = useState("");
+  const [keyEditValue, setKeyEditValue] = useState("");
   const language = useAppStore(function selectLanguage(state) {
     return state.language;
   });
@@ -785,6 +790,11 @@ export function AdminPage() {
 
   const selectedProvider = derived.selectedProvider;
   const selectedProviderKeys = selectedProvider?.keys || [];
+  const editableKeySnapshot = useMemo(function computeEditableKeySnapshot() {
+    return selectedProviderKeys.find(function matchKeySnapshot(keySnapshot) {
+      return keySnapshot.ref === keyEditRef;
+    }) || null;
+  }, [keyEditRef, selectedProviderKeys]);
   const selectedProviderName = state.selectedProviderName;
   const hasSelectedProvider = Boolean(selectedProvider);
   const providerCount = state.overview.providers.length;
@@ -842,6 +852,32 @@ export function AdminPage() {
     setGroupDialogOpen(false);
     setGroupModelPickerKey("");
     setGroupModelLoadingKey("");
+  }
+
+  function openKeyEditDialog(keySnapshot: AdminKeySnapshot) {
+    setKeyEditRef(String(keySnapshot.ref || ""));
+    setKeyEditValue(String(keySnapshot.value || ""));
+    setKeyEditPending(false);
+    setKeyEditDialogOpen(true);
+  }
+
+  function closeKeyEditDialog() {
+    setKeyEditDialogOpen(false);
+    setKeyEditPending(false);
+    setKeyEditRef("");
+    setKeyEditValue("");
+  }
+
+  async function saveEditedKey() {
+    if (!editableKeySnapshot || keyEditPending) {
+      return;
+    }
+    setKeyEditPending(true);
+    const success = await actions.saveProviderKeyValue(editableKeySnapshot.ref, keyEditValue);
+    setKeyEditPending(false);
+    if (success) {
+      closeKeyEditDialog();
+    }
   }
 
   function updateGroupField(fieldName: string, fieldValue: boolean | number | string) {
@@ -1114,17 +1150,15 @@ export function AdminPage() {
               >
                 <div className="space-y-2">
                   <Label htmlFor="adminKey">{translate("admin.adminKey")}</Label>
-                  <div className="relative">
-                    <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      autoComplete="current-password"
-                      className="pl-9"
-                      id="adminKey"
-                      name="adminKey"
-                      placeholder={translate("admin.adminKeyPlaceholder")}
-                      type="password"
-                    />
-                  </div>
+                  <SecretInput
+                    autoComplete="current-password"
+                    hiddenLabel={translate("secret.show")}
+                    id="adminKey"
+                    leadingAdornment={<KeyRound className="h-4 w-4" />}
+                    name="adminKey"
+                    placeholder={translate("admin.adminKeyPlaceholder")}
+                    visibleLabel={translate("secret.hide")}
+                  />
                   {state.loginMessage.text ? (
                     <p className="text-sm font-medium text-destructive">{state.loginMessage.text}</p>
                   ) : null}
@@ -1222,16 +1256,17 @@ export function AdminPage() {
               <div className="space-y-2">
                 <Label htmlFor="global-admin-key">{translate("admin.adminKey")}</Label>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Input
+                  <SecretInput
                     autoComplete="new-password"
                     className="sm:flex-1"
+                    hiddenLabel={translate("secret.show")}
                     id="global-admin-key"
                     onChange={function handleAdminKeyChange(event) {
                       actions.setAdminKey(event.target.value);
                     }}
                     placeholder={translate("admin.adminKeyPlaceholder")}
-                    type="password"
                     value={String(state.globalDraft.admin_key || "")}
+                    visibleLabel={translate("secret.hide")}
                   />
                   <Button
                     disabled={!canSaveAdminKey}
@@ -1300,14 +1335,16 @@ export function AdminPage() {
                       {state.globalDraft.client_keys.map(function renderClientKeyRow(clientKeyValue: string, index: number) {
                         return (
                           <div className="flex items-center gap-2" key={`client-key-${index}`}>
-                            <Input
+                            <SecretInput
                               autoComplete="off"
                               disabled={state.clientKeysPending}
+                              hiddenLabel={translate("secret.show")}
                               onChange={function handleClientKeyChange(event) {
                                 actions.updateClientKey(index, event.target.value);
                               }}
                               placeholder={translate("admin.importPlaceholder")}
                               value={clientKeyValue}
+                              visibleLabel={translate("secret.hide")}
                             />
                             <Button
                               aria-label={translate("action.delete")}
@@ -1875,7 +1912,7 @@ export function AdminPage() {
                           <th className="px-4 py-3 font-medium">{translate("provider.reference")}</th>
                           <th className="px-4 py-3 font-medium">{translate("provider.disabledUntil")}</th>
                           <th className="px-4 py-3 font-medium">{translate("provider.fails")}</th>
-                          <th className="px-4 py-3 text-right font-medium">{translate("action.delete")}</th>
+                          <th className="px-4 py-3 text-right font-medium">{translate("admin.actions")}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -1909,15 +1946,28 @@ export function AdminPage() {
                               </td>
                               <td className="px-4 py-3">{formatNumber(keySnapshot.consecutive_fails)}</td>
                               <td className="px-4 py-3 text-right">
-                                <Button
-                                  onClick={function handleDeleteSingleKey() {
-                                    void actions.deleteSingleKey(keySnapshot.ref);
-                                  }}
-                                  size="sm"
-                                  variant="ghost"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    aria-label={translate("action.edit")}
+                                    onClick={function handleEditSingleKey() {
+                                      openKeyEditDialog(keySnapshot);
+                                    }}
+                                    size="icon"
+                                    variant="ghost"
+                                  >
+                                    <Edit3 className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    aria-label={translate("action.delete")}
+                                    onClick={function handleDeleteSingleKey() {
+                                      void actions.deleteSingleKey(keySnapshot.ref);
+                                    }}
+                                    size="icon"
+                                    variant="ghost"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2078,6 +2128,67 @@ export function AdminPage() {
             <Button
               onClick={function handleSaveGroupDialogClick() {
                 void saveGroupDraftState();
+              }}
+              type="button"
+            >
+              {translate("action.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        onOpenChange={function handleKeyEditDialogChange(open) {
+          if (!open) {
+            closeKeyEditDialog();
+          }
+        }}
+        open={keyEditDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{translate("admin.keyEditTitle")}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>{translate("admin.selectProvider")}</Label>
+                <div className="rounded-md border bg-muted/20 px-3 py-2 font-mono text-sm">
+                  {selectedProviderName || "-"}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{translate("provider.reference")}</Label>
+                <div className="rounded-md border bg-muted/20 px-3 py-2 font-mono text-sm">
+                  {editableKeySnapshot?.ref || "-"}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="key-edit-value">{translate("admin.keyValue")}</Label>
+              <SecretInput
+                autoComplete="off"
+                hiddenLabel={translate("secret.show")}
+                id="key-edit-value"
+                onChange={function handleKeyEditValueChange(event) {
+                  setKeyEditValue(event.target.value);
+                }}
+                placeholder={translate("admin.keyValuePlaceholder")}
+                value={keyEditValue}
+                visibleLabel={translate("secret.hide")}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button disabled={keyEditPending} onClick={closeKeyEditDialog} type="button" variant="outline">
+              {translate("action.cancel")}
+            </Button>
+            <Button
+              disabled={keyEditPending || !String(keyEditValue || "").trim()}
+              onClick={function handleSaveEditedKey() {
+                void saveEditedKey();
               }}
               type="button"
             >
