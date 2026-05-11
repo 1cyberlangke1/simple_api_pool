@@ -19,6 +19,7 @@ import {
   buildErrorTypeSummaries,
   buildErrorTypeSummaryClassName,
   buildProviderCards,
+  buildStatusErrorAlertClassName,
   buildStatusErrorCountClassName,
   collectStatusSummary,
   computeStatusRefreshCountdownSeconds,
@@ -121,6 +122,7 @@ export function StatusPage() {
   const successRate = calculateSuccessRate(summary.successCount, summary.errorCount);
   const refreshCountdownSeconds = computeStatusRefreshCountdownSeconds(state.nextRefreshAt, nowMs);
   const refreshCountdownLabel = formatStatusRefreshCountdownLabel(refreshCountdownSeconds);
+  const errorAlertClassName = buildStatusErrorAlertClassName();
   const errorCountClassName = buildStatusErrorCountClassName();
 
   return (
@@ -199,7 +201,7 @@ export function StatusPage() {
       </motion.div>
 
       {state.error ? (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className={errorAlertClassName}>
           {state.error}
         </div>
       ) : null}

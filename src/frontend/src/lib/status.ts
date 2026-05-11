@@ -115,11 +115,15 @@ export function buildErrorTypeSummaries(snapshot: ProviderStatusSnapshot, limit 
 }
 
 export function buildErrorTypeSummaryClassName() {
-  return "inline-flex min-h-7 items-center rounded-full border border-destructive/25 bg-destructive/10 px-2.5 py-1 font-mono text-xs text-destructive dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+  return "inline-flex min-h-7 items-center rounded-full border border-red-200 bg-red-100 px-2.5 py-1 font-mono text-xs font-semibold text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
 }
 
 export function buildStatusErrorCountClassName() {
   return "inline-flex min-h-11 items-center rounded-xl border border-red-200 bg-red-100 px-3 py-1.5 font-mono text-2xl font-bold text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
+}
+
+export function buildStatusErrorAlertClassName() {
+  return "rounded-lg border border-red-200 bg-red-100 px-4 py-3 text-sm font-medium text-red-700 shadow-sm dark:border-red-400/35 dark:bg-red-500/20 dark:text-red-200";
 }
 
 export function computeStatusRefreshCountdownSeconds(nextRefreshAt: number, nowMs = Date.now()) {

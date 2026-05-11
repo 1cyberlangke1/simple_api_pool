@@ -23,6 +23,7 @@ import {
   buildErrorTypeSummaries,
   buildErrorTypeSummaryClassName,
   buildProviderCards,
+  buildStatusErrorAlertClassName,
   buildStatusErrorCountClassName,
   collectStatusSummary,
   computeStatusRefreshCountdownSeconds,
@@ -111,13 +112,22 @@ describe("status helpers", function () {
   it("会给错误类型计数提供更适合深色模式的高对比度样式", function () {
     const className = buildErrorTypeSummaryClassName();
 
-    expect(className).toContain("text-destructive");
+    expect(className).toContain("text-red-700");
+    expect(className).toContain("bg-red-100");
     expect(className).toContain("dark:text-red-200");
     expect(className).toContain("dark:bg-red-500/20");
   });
 
   it("会给状态页错误总数提供浅色模式也清晰的高对比度样式", function () {
     const className = buildStatusErrorCountClassName();
+
+    expect(className).toContain("text-red-700");
+    expect(className).toContain("bg-red-100");
+    expect(className).toContain("dark:text-red-200");
+  });
+
+  it("会给状态页错误提示提供和错误统计一致的高对比度样式", function () {
+    const className = buildStatusErrorAlertClassName();
 
     expect(className).toContain("text-red-700");
     expect(className).toContain("bg-red-100");
