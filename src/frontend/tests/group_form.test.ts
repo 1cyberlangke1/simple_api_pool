@@ -18,7 +18,6 @@ describe("group form helpers", function () {
       cache_max_entries: 120,
       collections: [{
         entries: [{
-          base_url: "https://api.openai.com",
           model: "gpt-4.1",
           priority: 2,
           provider: "openai-a",
@@ -42,7 +41,6 @@ describe("group form helpers", function () {
       cache_max_entries: 0,
       collections: [{
         entries: [{
-          base_url: "https://api.openai.com",
           model: "gpt-4.1",
           priority: 0,
           provider: "openai-a",
@@ -58,6 +56,7 @@ describe("group form helpers", function () {
     expect(payload.cache_max_entries).toBe(1);
     expect(payload.collections[0].entries[0].weight).toBe(1);
     expect(payload.collections[0].entries[0].priority).toBe(1);
+    expect("base_url" in payload.collections[0].entries[0]).toBe(false);
   });
 });
 

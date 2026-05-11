@@ -91,7 +91,7 @@
 3. `entry`
    - 指向一个已有 provider
    - 定义真正写到上游的 `model`
-   - 定义真正访问的 `base_url`
+   - 复用目标 provider 自己的 `base_url`
    - 对 `weighted_random` 使用 `weight`
    - 对 `failover` 使用 `priority`
 
@@ -102,7 +102,7 @@
 3. 如果是普通推理请求，则继续从请求体里取逻辑模型名
 4. 按逻辑模型名匹配到某个 collection
 5. 按 collection 策略选择一个或多个 entry
-6. 用 entry 的 `model` 和 `base_url` 覆写上游请求后透传
+6. 用 entry 的 `model` 覆写上游请求，并复用目标 provider 的 `base_url` 继续透传
 7. key 仍然复用 entry 指向 provider 的轮询、填充、禁用和恢复规则
 
 当前支持两种调度策略：

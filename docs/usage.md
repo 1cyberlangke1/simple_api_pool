@@ -97,9 +97,9 @@ sk-a, sk-b, sk-c
 
 - `group`：对外路由名，例如 `router`
 - `collection`：逻辑模型名，例如 `chat-router`
-- `entry`：真正访问的 provider、model 和 base URL
+- `entry`：真正访问的 provider 和真实模型名
 
-下游请求里填写的 `model` 不是上游真实模型名，而是 `collection.name`。命中 collection 后，系统会用 entry 配置的真实 `model` 和 `base_url` 覆写上游请求。
+下游请求里填写的 `model` 不是上游真实模型名，而是 `collection.name`。命中 collection 后，系统会用 entry 配置的真实 `model` 覆写上游请求，并复用目标 provider 自己的 `base_url`。
 
 常见用法：
 
@@ -264,14 +264,12 @@ curl -X POST http://127.0.0.1:18080/api/admin/groups \
           {
             "provider": "openai-a",
             "model": "gpt-4.1",
-            "base_url": "https://api.openai.com",
             "weight": 1,
             "priority": 1
           },
           {
             "provider": "openai-b",
             "model": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com",
             "weight": 1,
             "priority": 2
           }
@@ -291,7 +289,6 @@ curl -X POST http://127.0.0.1:18080/api/admin/groups \
 - `collections[].strategy`：`weighted_random` 或 `failover`
 - `entries[].provider`：要复用哪个已有 provider 的 key 池
 - `entries[].model`：真正写给上游的模型名
-- `entries[].base_url`：真正访问的上游地址；留空时默认复用 provider 自己的 `base_url`
 - `entries[].weight`：加权随机时使用的权重，必须是正整数
 - `entries[].priority`：故障转移时使用的优先级，数值越小越先尝试
 
@@ -366,7 +363,7 @@ Authorization: Bearer <CLIENT_KEY>
 - 请求体按下游官方格式原样传入
 - 多模态消息不会被改写
 - 如果命中的是 group，请求体里的 `model` 应填写逻辑模型名，也就是 collection 名
-- group 会在转发前覆写上游 `model` 和 `base_url`
+- group 会在转发前覆写上游 `model`，并复用目标 provider 的 `base_url`
 - Gemini 类型的 group 还会同步改写路径里的模型名
 - 如果命中的是 group 的模型发现端点，服务会直接返回 collection 列表，不访问上游
 

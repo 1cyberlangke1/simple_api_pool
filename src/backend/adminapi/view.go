@@ -29,7 +29,6 @@ type AdminProviderSnapshot struct {
 type AdminGroupEntrySnapshot struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
-	BaseURL  string `json:"base_url"`
 	Weight   int    `json:"weight"`
 	Priority int    `json:"priority"`
 }
@@ -92,7 +91,6 @@ func buildAdminGroupSnapshot(group config.Group) AdminGroupSnapshot {
 			entrySnapshots = append(entrySnapshots, AdminGroupEntrySnapshot{
 				Provider: entry.Provider,
 				Model:    entry.Model,
-				BaseURL:  entry.BaseURL,
 				Weight:   entry.Weight,
 				Priority: entry.Priority,
 			})

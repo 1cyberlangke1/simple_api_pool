@@ -23,13 +23,6 @@ BASE_LOG="$LOG_DIR/check-go-test-$TIMESTAMP.txt"
 RACE_LOG="$LOG_DIR/check-go-test-race-$TIMESTAMP.txt"
 GO_TEST_TIMEOUT="${CHECK_GO_TEST_TIMEOUT:-30m}"
 GO_RACE_TIMEOUT="${CHECK_GO_RACE_TIMEOUT:-45m}"
-SLOW_FRONTEND_BUILD_TESTS=(
-  TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset
-  TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder
-  TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets
-  TestFrontendBuildRemovesStaleGeneratedAssets
-  TestFrontendBuildChangesAssetVersionWhenBuildTimeChanges
-)
 SLOW_FRONTEND_BUILD_PATTERN='^(TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset|TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder|TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets|TestFrontendBuildRemovesStaleGeneratedAssets|TestFrontendBuildChangesAssetVersionWhenBuildTimeChanges)$'
 REQUIRED_FRONTEND_FILES="
 index.html
@@ -115,15 +108,14 @@ fi
 
 append_stage_line "$BASE_LOG" "阶段: 集成测试包 ./tests"
 FAST_TEST_LOG="$LOG_DIR/check-go-test-fast-$TIMESTAMP.txt"
+SLOW_FRONTEND_TEST_LOG="$LOG_DIR/check-go-test-slow-frontend-build-$TIMESTAMP.txt"
 append_stage_line "$BASE_LOG" "并行测试日志: $FAST_TEST_LOG"
 go test -timeout "$GO_TEST_TIMEOUT" -v -count=1 -skip "$SLOW_FRONTEND_BUILD_PATTERN" ./tests >"$FAST_TEST_LOG" 2>&1 &
 BASE_JOB_SPECS=("$!:$FAST_TEST_LOG")
-for test_name in "${SLOW_FRONTEND_BUILD_TESTS[@]}"; do
-    test_log="$LOG_DIR/check-go-test-$test_name-$TIMESTAMP.txt"
-    append_stage_line "$BASE_LOG" "并行测试日志: $test_log"
-    go test -timeout "$GO_TEST_TIMEOUT" -v -count=1 -run "^$test_name$" ./tests >"$test_log" 2>&1 &
-    BASE_JOB_SPECS+=("$!:$test_log")
-done
+append_stage_line "$BASE_LOG" "并行测试日志: $SLOW_FRONTEND_TEST_LOG"
+append_stage_line "$BASE_LOG" "阶段: 慢前端构建集成测试（合并批次）"
+go test -timeout "$GO_TEST_TIMEOUT" -v -count=1 -run "$SLOW_FRONTEND_BUILD_PATTERN" ./tests >"$SLOW_FRONTEND_TEST_LOG" 2>&1 &
+BASE_JOB_SPECS+=("$!:$SLOW_FRONTEND_TEST_LOG")
 # 进度片段保留: go test -v -count=1 ./tests
 wait_for_logged_jobs "${BASE_JOB_SPECS[@]}"
 

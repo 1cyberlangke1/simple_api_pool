@@ -70,7 +70,7 @@ func buildGroupModelDiscoveryResponse(group config.Group) ([]byte, error) {
 	}
 }
 
-func buildGroupCandidates(group config.Group, suffix, rawQuery, logicalModel string, requestBody []byte) ([]upstreamCandidate, error) {
+func buildGroupCandidates(cfg *config.Config, group config.Group, suffix, rawQuery, logicalModel string, requestBody []byte) ([]upstreamCandidate, error) {
 	collection := findGroupCollection(group.Collections, logicalModel)
 	if collection == nil {
 		return nil, os.ErrNotExist
@@ -80,7 +80,7 @@ func buildGroupCandidates(group config.Group, suffix, rawQuery, logicalModel str
 	case config.GroupStrategyFailover:
 		candidates := make([]upstreamCandidate, 0, len(collection.Entries))
 		for _, entry := range collection.Entries {
-			candidate, err := buildGroupCandidate(group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
+			candidate, err := buildGroupCandidate(cfg, group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
 			if err != nil {
 				return nil, err
 			}
@@ -92,7 +92,7 @@ func buildGroupCandidates(group config.Group, suffix, rawQuery, logicalModel str
 		if !ok {
 			return nil, os.ErrInvalid
 		}
-		candidate, err := buildGroupCandidate(group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
+		candidate, err := buildGroupCandidate(cfg, group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
 		if err != nil {
 			return nil, err
 		}
@@ -133,9 +133,16 @@ func chooseWeightedGroupEntry(entries []config.GroupEntry) (config.GroupEntry, b
 	return config.GroupEntry{}, false
 }
 
-func buildGroupCandidate(providerType config.ProviderType, suffix, rawQuery, logicalModel string, requestBody []byte, entry config.GroupEntry) (upstreamCandidate, error) {
+func buildGroupCandidate(cfg *config.Config, providerType config.ProviderType, suffix, rawQuery, logicalModel string, requestBody []byte, entry config.GroupEntry) (upstreamCandidate, error) {
+	if cfg == nil {
+		return upstreamCandidate{}, os.ErrInvalid
+	}
+	provider, providerIndex := cfg.Provider(entry.Provider)
+	if providerIndex < 0 || provider == nil {
+		return upstreamCandidate{}, os.ErrInvalid
+	}
 	rewrittenSuffix := rewriteGroupSuffix(providerType, suffix, logicalModel, entry.Model)
-	targetURL := buildTargetURL(providerType, entry.BaseURL, rewrittenSuffix, rawQuery)
+	targetURL := buildTargetURL(providerType, provider.BaseURL, rewrittenSuffix, rawQuery)
 	if targetURL == "" {
 		return upstreamCandidate{}, os.ErrInvalid
 	}
@@ -145,9 +152,9 @@ func buildGroupCandidate(providerType config.ProviderType, suffix, rawQuery, log
 	}
 	return upstreamCandidate{
 		provider: config.Provider{
-			Name:    entry.Provider,
-			Type:    providerType,
-			BaseURL: entry.BaseURL,
+			Name:    provider.Name,
+			Type:    provider.Type,
+			BaseURL: provider.BaseURL,
 		},
 		targetURL:   targetURL,
 		requestBody: rewrittenRequestBody,

@@ -473,7 +473,6 @@ func newOfficialProviderHarness(t *testing.T, tc officialRoundTripCase) *officia
 						{
 							Provider: upstreamProviderName,
 							Model:    tc.GroupTargetModel,
-							BaseURL:  harness.upstream.URL,
 							Weight:   1,
 							Priority: 1,
 						},
@@ -711,7 +710,6 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 		t.Fatalf("更新全局配置失败: %v", err)
 	}
 
-	upstreamBaseURLs := make(map[string]string, len(seenUpstreamProviders))
 	for providerName, providerType := range seenUpstreamProviders {
 		setupName := providerName
 		setupType := providerType
@@ -747,7 +745,6 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 			_, _ = w.Write([]byte(response.ResponseBody))
 		}))
 		harness.servers = append(harness.servers, server)
-		upstreamBaseURLs[providerName] = server.URL
 
 		if err := cfg.SaveProvider(config.Provider{
 			Name:            providerName,
@@ -790,7 +787,6 @@ func newRandomTrafficHarness(t *testing.T, traffic []randomTrafficCase) *randomT
 				{
 					Provider: upstreamProviderName,
 					Model:    tc.GroupTargetModel,
-					BaseURL:  upstreamBaseURLs[upstreamProviderName],
 					Weight:   1,
 					Priority: 1,
 				},

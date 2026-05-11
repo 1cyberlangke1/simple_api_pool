@@ -46,7 +46,6 @@ type Provider struct {
 type GroupEntry struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
-	BaseURL  string `json:"base_url"`
 	Weight   int    `json:"weight"`
 	Priority int    `json:"priority"`
 }

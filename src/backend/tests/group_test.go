@@ -43,7 +43,6 @@ func TestAdminOverviewReturnsGroups(t *testing.T) {
 					{
 						Provider: "openai-a",
 						Model:    "gpt-4.1",
-						BaseURL:  "https://api.openai.com",
 						Weight:   2,
 					},
 				},
@@ -77,7 +76,6 @@ func TestAdminOverviewReturnsGroups(t *testing.T) {
 				Entries  []struct {
 					Provider string `json:"provider"`
 					Model    string `json:"model"`
-					BaseURL  string `json:"base_url"`
 					Weight   int    `json:"weight"`
 				} `json:"entries"`
 			} `json:"collections"`
@@ -97,6 +95,37 @@ func TestAdminOverviewReturnsGroups(t *testing.T) {
 	}
 	if len(payload.Groups[0].Collections[0].Entries) != 1 || payload.Groups[0].Collections[0].Entries[0].Provider != "openai-a" {
 		t.Fatalf("期望返回条目定义，实际是 %+v", payload.Groups[0].Collections[0].Entries)
+	}
+	var rawPayload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rawPayload); err != nil {
+		t.Fatalf("解析原始响应失败: %v", err)
+	}
+	rawGroups, ok := rawPayload["groups"].([]any)
+	if !ok || len(rawGroups) == 0 {
+		t.Fatalf("期望原始响应包含 groups，实际是 %+v", rawPayload)
+	}
+	firstGroup, ok := rawGroups[0].(map[string]any)
+	if !ok {
+		t.Fatalf("期望首个分组为对象，实际是 %+v", rawGroups[0])
+	}
+	rawCollections, ok := firstGroup["collections"].([]any)
+	if !ok || len(rawCollections) == 0 {
+		t.Fatalf("期望首个分组包含 collections，实际是 %+v", firstGroup)
+	}
+	firstCollection, ok := rawCollections[0].(map[string]any)
+	if !ok {
+		t.Fatalf("期望首个集合为对象，实际是 %+v", rawCollections[0])
+	}
+	rawEntries, ok := firstCollection["entries"].([]any)
+	if !ok || len(rawEntries) == 0 {
+		t.Fatalf("期望首个集合包含 entries，实际是 %+v", firstCollection)
+	}
+	firstEntry, ok := rawEntries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("期望首个条目为对象，实际是 %+v", rawEntries[0])
+	}
+	if _, exists := firstEntry["base_url"]; exists {
+		t.Fatalf("期望分组条目不再回传独立 base_url，实际是 %+v", firstEntry)
 	}
 }
 
@@ -132,7 +161,6 @@ func TestAdminGroupCrudFlow(t *testing.T) {
 					{
 						"provider":"openai-a",
 						"model":"gpt-4.1",
-						"base_url":"https://api.openai.com",
 						"weight":2,
 						"priority":1
 					}
@@ -218,7 +246,7 @@ func TestAdminGroupErrorBranches(t *testing.T) {
 				"name":"chat-router",
 				"strategy":"weighted_random",
 				"entries":[
-					{"provider":"missing","model":"gpt-4.1","base_url":"https://api.openai.com","weight":1,"priority":1}
+					{"provider":"missing","model":"gpt-4.1","weight":1,"priority":1}
 				]
 			}
 		]
@@ -241,7 +269,6 @@ func TestAdminGroupErrorBranches(t *testing.T) {
 					{
 						Provider: "openai-a",
 						Model:    "gpt-4.1",
-						BaseURL:  "https://api.openai.com",
 						Weight:   1,
 						Priority: 1,
 					},
@@ -357,7 +384,6 @@ func TestGroupModelDiscoveryRoutesReturnCollections(t *testing.T) {
 							{
 								Provider: tc.providerName,
 								Model:    "upstream-chat",
-								BaseURL:  "https://example.com",
 								Weight:   1,
 							},
 						},
@@ -369,7 +395,6 @@ func TestGroupModelDiscoveryRoutesReturnCollections(t *testing.T) {
 							{
 								Provider: tc.providerName,
 								Model:    "upstream-vision",
-								BaseURL:  "https://example.com",
 								Weight:   1,
 							},
 						},
@@ -494,7 +519,6 @@ func TestGroupCacheRouteRewritesModelAndCachesPerGroup(t *testing.T) {
 					{
 						Provider: "openai-a",
 						Model:    "gpt-4.1",
-						BaseURL:  upstream.URL,
 						Weight:   1,
 					},
 				},
@@ -606,13 +630,11 @@ func TestGroupFailoverRetriesNextEntry(t *testing.T) {
 					{
 						Provider: "openai-a",
 						Model:    "gpt-4.1",
-						BaseURL:  firstUpstream.URL,
 						Priority: 1,
 					},
 					{
 						Provider: "openai-b",
 						Model:    "gpt-4.1-mini",
-						BaseURL:  secondUpstream.URL,
 						Priority: 2,
 					},
 				},

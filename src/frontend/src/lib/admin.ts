@@ -24,7 +24,6 @@ export interface AdminProviderSnapshot {
 export interface AdminGroupEntrySnapshot {
   provider: string;
   model: string;
-  base_url: string;
   weight: number;
   priority: number;
 }

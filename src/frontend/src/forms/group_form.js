@@ -6,7 +6,6 @@ export const groupTypeValues = ["openai_chat", "openai_responses", "claude", "ge
 export const groupStrategyValues = ["weighted_random", "failover"];
 
 const groupEntrySchema = v.object({
-  base_url: v.pipe(v.string(), v.trim(), v.minLength(1)),
   model: v.pipe(v.string(), v.trim(), v.minLength(1)),
   priority: v.pipe(v.number(), v.integer(), v.minValue(1)),
   provider: v.pipe(v.string(), v.trim(), v.minLength(1)),
@@ -49,7 +48,6 @@ export function createDefaultGroupEntryDraft() {
   return {
     provider: "",
     model: "",
-    base_url: "",
     weight: 1,
     priority: 1
   };
@@ -74,7 +72,6 @@ export function createGroupDraftFromSnapshot(groupSnapshot) {
               return {
                 provider: entrySnapshot.provider || "",
                 model: entrySnapshot.model || "",
-                base_url: entrySnapshot.base_url || "",
                 weight: Math.max(1, toInteger(entrySnapshot.weight, 1)),
                 priority: Math.max(1, toInteger(entrySnapshot.priority, 1))
               };
@@ -101,7 +98,6 @@ export function buildGroupPayload(groupDraft) {
               return {
                 provider: String(entryDraft?.provider || "").trim(),
                 model: String(entryDraft?.model || "").trim(),
-                base_url: String(entryDraft?.base_url || "").trim(),
                 weight: Math.max(1, toInteger(entryDraft?.weight, 1)),
                 priority: Math.max(1, toInteger(entryDraft?.priority, entryIndex + 1))
               };

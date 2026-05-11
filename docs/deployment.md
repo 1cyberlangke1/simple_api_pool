@@ -23,7 +23,7 @@
 - 首次启动前必须先配置 `ADMIN_KEY`
 - 代理接口默认要求客户端密钥；如果 `CLIENT_KEYS` 为空，所有代理请求都会返回 `401`
 - 只要配置了 `ADMIN_KEY` 或 `CLIENT_KEYS`，程序默认要求你通过 HTTPS 暴露服务；如果只是本地临时调试，才显式设置 `ALLOW_INSECURE_HTTP=true`
-- provider 和 group entry 的 `base_url` 默认不允许写成 `127.0.0.1`、`localhost`、私网或链路本地地址；如果只是本地联调上游，才显式设置 `ALLOW_PRIVATE_UPSTREAMS=true`
+- provider 的 `base_url` 默认不允许写成 `127.0.0.1`、`localhost`、私网或链路本地地址；如果只是本地联调上游，才显式设置 `ALLOW_PRIVATE_UPSTREAMS=true`
 - 所有运行时数据都会写入 `/app/data`
 - 如果你不挂载卷，容器删除后配置、统计和缓存也会一起丢失
 - 状态数据位于 `/app/data/simple-api-pool.db`
@@ -44,7 +44,7 @@
 | `UPSTREAM_RESPONSE_LIMIT_BYTES` | 否 | `8388608` | 非流式上游响应的本地可缓存体上限；超过后直接透传且不缓存 |
 | `ADMIN_COOKIE_SECURE` | 否 | 自动判断 | 管理员会话 Cookie 是否仅通过 HTTPS 发送 |
 | `ALLOW_INSECURE_HTTP` | 否 | `false` | 仅本地开发时使用；为 `true` 时允许在已配置管理员密钥或客户端密钥的情况下继续用明文 HTTP 启动 |
-| `ALLOW_PRIVATE_UPSTREAMS` | 否 | `false` | 仅本地开发时使用；为 `true` 时允许 provider 或 group entry 指向回环、私网或链路本地上游 |
+| `ALLOW_PRIVATE_UPSTREAMS` | 否 | `false` | 仅本地开发时使用；为 `true` 时允许 provider 指向回环、私网或链路本地上游 |
 
 最小可用配置通常只需要：
 

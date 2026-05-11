@@ -222,7 +222,7 @@ func (h *ProxyHandler) prepareGroupRequestForUpstream(w http.ResponseWriter, r *
 		}
 	}
 
-	candidates, err := buildGroupCandidates(*proxyReq.group, proxyReq.parts.suffix, r.URL.RawQuery, preparation.analysis.model, requestBody)
+	candidates, err := buildGroupCandidates(h.cfg, *proxyReq.group, proxyReq.parts.suffix, r.URL.RawQuery, preparation.analysis.model, requestBody)
 	if err != nil {
 		statusCode := http.StatusBadRequest
 		message := "分组请求无效"

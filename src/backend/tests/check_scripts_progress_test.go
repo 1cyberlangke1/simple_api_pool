@@ -57,3 +57,24 @@ func TestCheckScriptsExposeProgressStages(t *testing.T) {
 		})
 	}
 }
+
+func TestShellCheckScriptBatchesSlowFrontendBuildTests(t *testing.T) {
+	repoRoot := repoRootFromTestFile(t)
+	scriptPath := filepath.Join(repoRoot, "scripts", "check.sh")
+	scriptBody, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("读取脚本失败: %v", err)
+	}
+
+	content := string(scriptBody)
+	for _, fragment := range []string{
+		`SLOW_FRONTEND_BUILD_PATTERN='^(TestFrontendBuildFailsWhenTemplateReferencesMissingGeneratedAsset|TestFrontendBuildFailsWhenGeneratedOutputRetainsBuildPlaceholder|TestFrontendBuildWritesManifestWithDetectedLayoutAndAssets|TestFrontendBuildRemovesStaleGeneratedAssets|TestFrontendBuildChangesAssetVersionWhenBuildTimeChanges)$'`,
+		`阶段: 慢前端构建集成测试（合并批次）`,
+		`go test -timeout "$GO_TEST_TIMEOUT" -v -count=1 -run "$SLOW_FRONTEND_BUILD_PATTERN" ./tests`,
+		`go test -timeout "$GO_RACE_TIMEOUT" -race -v -count=1 -skip "$SLOW_FRONTEND_BUILD_PATTERN" ./tests`,
+	} {
+		if !strings.Contains(content, fragment) {
+			t.Fatalf("期望 shell 检查脚本包含慢前端测试批处理片段 %q", fragment)
+		}
+	}
+}

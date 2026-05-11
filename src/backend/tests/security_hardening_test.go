@@ -42,9 +42,7 @@ func TestSaveProviderAllowsLoopbackBaseURLWhenOverrideEnabled(t *testing.T) {
 	}
 }
 
-func TestSaveGroupRejectsLoopbackEntryBaseURLByDefault(t *testing.T) {
-	t.Setenv("ALLOW_PRIVATE_UPSTREAMS", "false")
-
+func TestSaveGroupUsesReferencedProviderBaseURL(t *testing.T) {
 	cfg := config.New(store.New(t.TempDir()))
 	if err := cfg.SaveProvider(config.Provider{
 		Name:    "openai-a",
@@ -65,14 +63,13 @@ func TestSaveGroupRejectsLoopbackEntryBaseURLByDefault(t *testing.T) {
 					{
 						Provider: "openai-a",
 						Model:    "gpt-4.1",
-						BaseURL:  "http://127.0.0.1:8080",
 					},
 				},
 			},
 		},
 	})
-	if err == nil {
-		t.Fatal("期望默认拒绝分组条目的回环上游地址")
+	if err != nil {
+		t.Fatalf("期望分组条目直接复用目标提供商的上游地址，实际失败: %v", err)
 	}
 }
 

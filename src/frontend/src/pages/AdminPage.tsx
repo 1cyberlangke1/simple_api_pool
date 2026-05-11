@@ -479,7 +479,7 @@ function GroupDialogBody(props: {
 
                   {collection.entries.map(function renderEntry(entry, entryIndex) {
                     return (
-                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_88px_88px_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
+                      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_88px_88px_auto]" key={`group-entry-${collectionIndex}-${entryIndex}`}>
                         <div className="space-y-2">
                           <Label htmlFor={`group-entry-provider-${collectionIndex}-${entryIndex}`}>{props.translate("group.entryProvider")}</Label>
                           <Select
@@ -509,15 +509,6 @@ function GroupDialogBody(props: {
                             props.onEntryChange(collectionIndex, entryIndex, "model", value);
                           }}
                           value={entry.model}
-                        />
-                        <ProviderField
-                          id={`group-entry-base-url-${collectionIndex}-${entryIndex}`}
-                          label={props.translate("group.entryBaseUrl")}
-                          onChange={function handleEntryBaseUrlChange(value) {
-                            props.onEntryChange(collectionIndex, entryIndex, "base_url", value);
-                          }}
-                          placeholder={props.translate("provider.baseUrlPlaceholder")}
-                          value={entry.base_url}
                         />
                         <ProviderField
                           id={`group-entry-weight-${collectionIndex}-${entryIndex}`}
@@ -1405,12 +1396,6 @@ export function AdminPage() {
                                           {translate("group.entryPriority")}
                                         </span>
                                         <div className="text-foreground">{formatNumber(entrySnapshot.priority)}</div>
-                                      </div>
-                                      <div className="lg:col-span-4">
-                                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground">
-                                          {translate("group.entryBaseUrl")}
-                                        </span>
-                                        <code className="break-all text-foreground">{entrySnapshot.base_url}</code>
                                       </div>
                                     </div>
                                   );

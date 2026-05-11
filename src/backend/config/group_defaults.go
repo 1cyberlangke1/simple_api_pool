@@ -99,14 +99,6 @@ func normalizeGroupEntryForPersistence(entry GroupEntry, entryIndex int, groupTy
 		return GroupEntry{}, os.ErrInvalid
 	}
 
-	if strings.TrimSpace(entry.BaseURL) == "" {
-		entry.BaseURL = provider.BaseURL
-	}
-	normalizedBaseURL, err := normalizeProviderBaseURL(entry.BaseURL)
-	if err != nil {
-		return GroupEntry{}, err
-	}
-	entry.BaseURL = normalizedBaseURL
 	if entry.Weight <= 0 {
 		entry.Weight = 1
 	}
