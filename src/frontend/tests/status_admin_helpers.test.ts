@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { normalizeErrorMessage, shouldIgnoreRuntimeFailure } from "@/api.js";
+import { createMessage, resolveMessageText } from "@/hooks/useAdminOverview";
 import {
   buildBulkDisableRequest,
   countAvailableProviderKeys,
@@ -16,7 +17,15 @@ import {
 } from "@/lib/admin";
 import { formatDisabledUntil } from "@/lib/format";
 import { resolveProviderIconName } from "@/lib/provider_icons";
-import { buildErrorTypeSummaries, buildErrorTypeSummaryClassName, buildProviderCards, collectStatusSummary } from "@/lib/status";
+import {
+  buildErrorTypeSummaries,
+  buildErrorTypeSummaryClassName,
+  buildProviderCards,
+  buildStatusErrorCountClassName,
+  collectStatusSummary,
+  computeStatusRefreshCountdownSeconds,
+  formatStatusRefreshCountdownLabel
+} from "@/lib/status";
 
 describe("status helpers", function () {
   it("会累计所有提供商的请求和 token 统计", function () {
@@ -103,6 +112,26 @@ describe("status helpers", function () {
     expect(className).toContain("dark:text-red-200");
     expect(className).toContain("dark:bg-red-500/20");
   });
+
+  it("会给状态页错误总数提供浅色模式也清晰的高对比度样式", function () {
+    const className = buildStatusErrorCountClassName();
+
+    expect(className).toContain("text-red-700");
+    expect(className).toContain("bg-red-100");
+    expect(className).toContain("dark:text-red-200");
+  });
+
+  it("会把下次更新时间换算成向上取整的秒级倒计时", function () {
+    expect(computeStatusRefreshCountdownSeconds(15_000, 10_001)).toBe(5);
+    expect(computeStatusRefreshCountdownSeconds(15_000, 15_000)).toBe(0);
+    expect(computeStatusRefreshCountdownSeconds(15_000, 15_001)).toBe(0);
+  });
+
+  it("会把倒计时格式化成语言无关的 Xs 文案", function () {
+    expect(formatStatusRefreshCountdownLabel(5)).toBe("5s");
+    expect(formatStatusRefreshCountdownLabel(0)).toBe("0s");
+    expect(formatStatusRefreshCountdownLabel(-3)).toBe("0s");
+  });
 });
 
 describe("error helpers", function () {
@@ -125,6 +154,15 @@ describe("error helpers", function () {
 });
 
 describe("admin helpers", function () {
+  it("会优先用翻译 key 解析未登录提示，并保留普通错误原文", function () {
+    const translate = function translate(key: string) {
+      return key === "admin.unauthorized" ? "当前未登录，请先输入管理员密钥。" : key;
+    };
+
+    expect(resolveMessageText(createMessage("error", "", "admin.unauthorized"), translate)).toBe("当前未登录，请先输入管理员密钥。");
+    expect(resolveMessageText(createMessage("error", "管理员登录失败"), translate)).toBe("管理员登录失败");
+  });
+
   it("会优先保留仍然存在的选中 provider", function () {
     const providerName = chooseSelectedProviderName("beta", [
       { keys: [], name: "alpha" },

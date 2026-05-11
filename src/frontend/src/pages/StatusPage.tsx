@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -14,7 +15,15 @@ import { ProviderBadgeIcon } from "@/components/provider/ProviderBadgeIcon";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatLocaleTime, formatNumber } from "@/lib/format";
-import { buildErrorTypeSummaries, buildErrorTypeSummaryClassName, buildProviderCards, collectStatusSummary } from "@/lib/status";
+import {
+  buildErrorTypeSummaries,
+  buildErrorTypeSummaryClassName,
+  buildProviderCards,
+  buildStatusErrorCountClassName,
+  collectStatusSummary,
+  computeStatusRefreshCountdownSeconds,
+  formatStatusRefreshCountdownLabel
+} from "@/lib/status";
 import { useStatusOverview } from "@/hooks/useStatusOverview";
 import { useAppStore } from "@/store/appStore";
 
@@ -80,6 +89,16 @@ export function StatusPage() {
     return state.translate;
   });
   const { state } = useStatusOverview(translate);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(function startRefreshCountdownClock() {
+    const timerId = window.setInterval(function updateRefreshClock() {
+      setNowMs(Date.now());
+    }, 1000);
+    return function stopRefreshCountdownClock() {
+      window.clearInterval(timerId);
+    };
+  }, []);
 
   const summary = collectStatusSummary(state.overview);
   const providerCards = buildProviderCards(state.overview).map(function toReferenceCard(card) {
@@ -107,6 +126,9 @@ export function StatusPage() {
   const healthPresentation = readStatusPresentation(healthStatus);
   const HealthIcon = healthPresentation.icon;
   const successRate = calculateSuccessRate(summary.successCount, summary.errorCount);
+  const refreshCountdownSeconds = computeStatusRefreshCountdownSeconds(state.nextRefreshAt, nowMs);
+  const refreshCountdownLabel = formatStatusRefreshCountdownLabel(refreshCountdownSeconds);
+  const errorCountClassName = buildStatusErrorCountClassName();
 
   return (
     <div className="space-y-8">
@@ -116,7 +138,7 @@ export function StatusPage() {
           <div className="mt-2 flex flex-wrap items-center gap-2 text-muted-foreground">
             <span className="inline-flex items-center rounded-full border bg-muted px-2.5 py-1 text-xs">
               <RotateCw className="mr-1 h-3 w-3 animate-spin-slow" />
-              {translate("status.autoRefresh")}
+              {refreshCountdownLabel}
             </span>
           </div>
         </div>
@@ -175,7 +197,9 @@ export function StatusPage() {
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-destructive">{formatNumber(summary.errorCount)}</div>
+              <div>
+                <span className={errorCountClassName}>{formatNumber(summary.errorCount)}</span>
+              </div>
             </CardContent>
           </Card>
         </motion.div>

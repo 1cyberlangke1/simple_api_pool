@@ -50,9 +50,10 @@ import { buildStreamURL, openLiveStream } from "@/services/live_service.js";
 export type AdminTab = "global" | "providers" | "groups" | "keys" | "logs";
 export type BulkMode = "disable_until" | "disable_forever";
 
-interface MessageState {
+export interface MessageState {
   kind: "" | "ok" | "error" | "warning";
   text: string;
+  translationKey?: string;
 }
 
 interface AdminState {
@@ -121,8 +122,22 @@ function mergeGlobalDraft(
   };
 }
 
-function createMessage(kind: MessageState["kind"], text = ""): MessageState {
-  return { kind, text };
+export function createMessage(kind: MessageState["kind"], text = "", translationKey = ""): MessageState {
+  return {
+    kind,
+    text,
+    translationKey: String(translationKey || "")
+  };
+}
+
+export function resolveMessageText(
+  message: MessageState,
+  translate: (key: string, params?: Record<string, unknown>) => string
+) {
+  if (message.translationKey) {
+    return translate(message.translationKey);
+  }
+  return String(message.text || "");
 }
 
 function readKeySnapshotList(rawValue: unknown) {
@@ -190,7 +205,7 @@ function createUnauthorizedState(
     loadedAt: 0,
     logCache: createEmptyAdminLogCache(),
     logModalOpen: false,
-    loginMessage: createMessage("error", translate("admin.unauthorized")),
+    loginMessage: createMessage("error", translate("admin.unauthorized"), "admin.unauthorized"),
     loginPending: false,
     overview: createEmptyAdminOverview(),
     pending: false,
@@ -213,6 +228,25 @@ export function useAdminOverview(
   useEffect(function syncStateRef() {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(function syncLocalizedLoginMessage() {
+    setState(function updateLocalizedLoginMessage(previousState) {
+      if (!previousState.loginMessage.translationKey) {
+        return previousState;
+      }
+      const nextText = resolveMessageText(previousState.loginMessage, translate);
+      if (previousState.loginMessage.text === nextText) {
+        return previousState;
+      }
+      return {
+        ...previousState,
+        loginMessage: {
+          ...previousState.loginMessage,
+          text: nextText
+        }
+      };
+    });
+  }, [translate]);
 
   const selectedProvider = useMemo(function computeSelectedProvider() {
     return getProviderByName(state.overview.providers || [], state.selectedProviderName);
