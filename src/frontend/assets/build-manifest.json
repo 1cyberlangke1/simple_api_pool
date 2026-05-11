@@ -1,8 +1,4 @@
 {
-  "version": "v0.1.51-dirty",
-  "revision": "be080ff",
-  "build_time": "2026-05-11T13:53:58Z",
-  "asset_version": "be080ff-2026-05-11T13-53-58Z",
   "frontend_root": "src/frontend",
   "source_dir": "src/frontend/src",
   "assets": [

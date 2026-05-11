@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Cpu,
+  DatabaseZap,
   Key,
   RotateCw,
   ServerCrash,
@@ -250,15 +251,21 @@ export function StatusPage() {
                                 {providerCard.totalKeys}
                               </span>
                             </span>
+                            {providerCard.cacheEnabled ? (
+                              <span
+                                aria-label={translate("status.cacheOn")}
+                                className="inline-flex items-center rounded-full border border-[#29e154]/40 bg-[#29e154]/14 p-1 text-[#29e154] shadow-sm shadow-[#29e154]/10 dark:border-[#29e154]/40 dark:bg-[#29e154]/14 dark:text-[#29e154]"
+                                title={translate("status.cacheOn")}
+                              >
+                                <DatabaseZap className="h-3 w-3" />
+                              </span>
+                            ) : null}
                           </CardDescription>
                         </div>
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
                         <Badge variant={providerStatusPresentation.badgeVariant} className="uppercase tracking-wider text-[10px]">
                           {providerCard.status}
-                        </Badge>
-                        <Badge variant={providerCard.cacheEnabled ? "success" : "secondary"} className="uppercase tracking-wider text-[10px]">
-                          {providerCard.cacheEnabled ? translate("status.cacheOn") : translate("status.cacheOff")}
                         </Badge>
                       </div>
                     </div>

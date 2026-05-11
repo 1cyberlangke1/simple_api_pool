@@ -38,6 +38,37 @@ $requiredFrontendFiles = @(
     "assets\\styles.css",
     "assets\\build-manifest.json"
 )
+function Get-CleanFrontendOutputs {
+    param(
+        [string]$RepoRoot,
+        [string[]]$RelativePaths
+    )
+
+    $cleanPaths = @()
+    foreach ($relativePath in $RelativePaths) {
+        & git -C $RepoRoot diff --quiet -- $relativePath
+        if ($LASTEXITCODE -eq 0) {
+            $cleanPaths += $relativePath
+        }
+    }
+    return $cleanPaths
+}
+
+function Restore-FrontendOutputs {
+    param(
+        [string]$RepoRoot,
+        [string[]]$RelativePaths
+    )
+
+    if (!$RelativePaths -or $RelativePaths.Count -eq 0) {
+        return
+    }
+
+    & git -C $RepoRoot restore --source=HEAD --worktree -- @RelativePaths
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning ("还原前端产物失败: " + ($RelativePaths -join ", "))
+    }
+}
 
 function Start-LoggedProcessJob {
     param(
@@ -87,6 +118,14 @@ function Wait-LoggedProcessJobs {
 
 Push-Location $repoRoot
 try {
+    $frontendRelativeRoot = [System.IO.Path]::GetRelativePath($repoRoot, $frontendDir).Replace('\', '/')
+    $trackedFrontendOutputs = @(
+        ($frontendRelativeRoot + "/index.html"),
+        ($frontendRelativeRoot + "/assets/app.js"),
+        ($frontendRelativeRoot + "/assets/styles.css"),
+        ($frontendRelativeRoot + "/assets/build-manifest.json")
+    )
+    $frontendOutputsToRestore = Get-CleanFrontendOutputs -RepoRoot $repoRoot -RelativePaths $trackedFrontendOutputs
     Write-Host "重建前端资源"
     go run .\scripts\build_frontend.go -root . *>&1 | Tee-Object -FilePath $frontendBuildLog
     if ($LASTEXITCODE -ne 0) {
@@ -208,5 +247,6 @@ try {
     }
 }
 finally {
+    Restore-FrontendOutputs -RepoRoot $repoRoot -RelativePaths $frontendOutputsToRestore
     Pop-Location
 }

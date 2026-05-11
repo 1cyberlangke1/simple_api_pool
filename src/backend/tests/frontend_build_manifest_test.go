@@ -151,6 +151,35 @@ func TestFrontendBuildRemovesStaleGeneratedAssets(t *testing.T) {
 	}
 }
 
+func TestFrontendBuildKeepsManifestStableWhenOnlyBuildMetadataChanges(t *testing.T) {
+	repoRoot := repoRootFromTestFile(t)
+	fixtureRoot := prepareFrontendBuildFixture(t, repoRoot)
+	seedGeneratedFrontendAssets(t, fixtureRoot, "console.log('ok');", "body{color:#111;}")
+	frontendRoot := frontendRootFromRepoRoot(fixtureRoot)
+	manifestPath := filepath.Join(frontendRoot, "assets", "build-manifest.json")
+
+	runFrontendBuildWithoutBundle(t, fixtureRoot, "v-test", "abc1234", "2026-05-09T01:02:03Z")
+	firstManifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("读取首次构建清单失败: %v", err)
+	}
+
+	runFrontendBuildWithoutBundle(t, fixtureRoot, "v-next", "def5678", "2026-05-10T04:05:06Z")
+	secondManifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("读取再次构建清单失败: %v", err)
+	}
+
+	if string(firstManifestBytes) != string(secondManifestBytes) {
+		t.Fatalf("期望仅构建元信息变化时 build-manifest.json 内容保持稳定")
+	}
+	for _, forbiddenField := range []string{`"version"`, `"revision"`, `"build_time"`, `"asset_version"`} {
+		if strings.Contains(string(secondManifestBytes), forbiddenField) {
+			t.Fatalf("期望构建清单不再包含易抖动字段 %s", forbiddenField)
+		}
+	}
+}
+
 func sliceContains(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
@@ -158,4 +187,19 @@ func sliceContains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func runFrontendBuildWithoutBundle(t *testing.T, fixtureRoot string, version string, revision string, buildTime string) {
+	t.Helper()
+
+	command := exec.Command("go", "run", filepath.Join(fixtureRoot, "scripts", "build_frontend.go"), "-root", fixtureRoot, "-skip-bundle")
+	command.Env = append(os.Environ(),
+		"APP_VERSION="+version,
+		"APP_REVISION="+revision,
+		"APP_BUILD_TIME="+buildTime,
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("运行前端构建失败: %v\n%s", err, string(output))
+	}
 }

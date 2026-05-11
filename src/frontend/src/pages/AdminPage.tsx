@@ -152,10 +152,10 @@ function ProviderStatusCapsule(props: {
 }) {
   const className =
     props.status === "error"
-      ? "border-[#dc2626] bg-[#ef4444] text-white dark:border-[#f87171] dark:bg-[#dc2626] dark:text-white"
+      ? "border-[#EF4444] bg-[#EF4444] text-white dark:border-[#EF4444] dark:bg-[#EF4444] dark:text-white"
       : props.status === "warning"
         ? "border-[#d97706] bg-[#f59e0b] text-white dark:border-[#fcd34d] dark:bg-[#b45309] dark:text-white"
-        : "border-[#16a34a] bg-[#22c55e] text-white dark:border-[#86efac] dark:bg-[#15803d] dark:text-white";
+        : "border-[#29e154] bg-[#29e154] text-white dark:border-[#29e154] dark:bg-[#29e154] dark:text-white";
 
   return (
     <div
@@ -167,11 +167,11 @@ function ProviderStatusCapsule(props: {
 }
 
 function buildErrorAlertClassName() {
-  return "rounded-lg border border-[#dc2626] bg-[#dc2626] px-4 py-3 text-sm font-medium text-white dark:border-[#f87171] dark:bg-[#b91c1c] dark:text-white";
+  return "rounded-lg border border-[#EF4444] bg-[#EF4444] px-4 py-3 text-sm font-medium text-white dark:border-[#EF4444] dark:bg-[#EF4444] dark:text-white";
 }
 
 function buildSuccessAlertClassName() {
-  return "rounded-lg border border-[#16a34a] bg-[#16a34a] px-4 py-3 text-sm font-medium text-white dark:border-[#86efac] dark:bg-[#15803d] dark:text-white";
+  return "rounded-lg border border-[#29e154] bg-[#29e154] px-4 py-3 text-sm font-medium text-white dark:border-[#29e154] dark:bg-[#29e154] dark:text-white";
 }
 
 function buildLogLevelClassName(level: string) {

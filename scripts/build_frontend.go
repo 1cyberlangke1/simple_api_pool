@@ -79,10 +79,6 @@ type frontendLayout struct {
 }
 
 type buildManifest struct {
-	Version      string   `json:"version"`
-	Revision     string   `json:"revision"`
-	BuildTime    string   `json:"build_time"`
-	AssetVersion string   `json:"asset_version"`
 	FrontendRoot string   `json:"frontend_root"`
 	SourceDir    string   `json:"source_dir"`
 	Assets       []string `json:"assets"`
@@ -144,10 +140,6 @@ func writeBuildManifest(layout frontendLayout, metadata buildMetadata) error {
 	sort.Strings(assets)
 
 	manifestBytes, err := json.MarshalIndent(buildManifest{
-		Version:      metadata.version,
-		Revision:     metadata.revision,
-		BuildTime:    metadata.buildTime,
-		AssetVersion: metadata.assetVersion,
 		FrontendRoot: layout.RelativeRoot,
 		SourceDir:    filepath.ToSlash(filepath.Join(layout.RelativeRoot, "src")),
 		Assets:       assets,

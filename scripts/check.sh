@@ -34,6 +34,13 @@ assets/app.js
 assets/styles.css
 assets/build-manifest.json
 "
+FRONTEND_RELATIVE_ROOT=${FRONTEND_DIR#"$REPO_ROOT"/}
+TRACKED_FRONTEND_OUTPUTS=(
+    "$FRONTEND_RELATIVE_ROOT/index.html"
+    "$FRONTEND_RELATIVE_ROOT/assets/app.js"
+    "$FRONTEND_RELATIVE_ROOT/assets/styles.css"
+    "$FRONTEND_RELATIVE_ROOT/assets/build-manifest.json"
+)
 
 cd "$REPO_ROOT"
 
@@ -63,6 +70,27 @@ wait_for_logged_jobs() {
     done
     return "$failed"
 }
+
+capture_clean_frontend_outputs() {
+    CLEAN_FRONTEND_OUTPUTS=()
+    local relative_path
+    for relative_path in "${TRACKED_FRONTEND_OUTPUTS[@]}"; do
+        if git -C "$REPO_ROOT" diff --quiet -- "$relative_path"; then
+            CLEAN_FRONTEND_OUTPUTS+=("$relative_path")
+        fi
+    done
+}
+
+restore_frontend_outputs() {
+    if [ "${#CLEAN_FRONTEND_OUTPUTS[@]}" -eq 0 ]; then
+        return
+    fi
+    git -C "$REPO_ROOT" restore --source=HEAD --worktree -- "${CLEAN_FRONTEND_OUTPUTS[@]}" || \
+        echo "警告: 还原前端产物失败: ${CLEAN_FRONTEND_OUTPUTS[*]}"
+}
+
+capture_clean_frontend_outputs
+trap restore_frontend_outputs EXIT
 
 echo "重建前端资源"
 if ! go run ./scripts/build_frontend.go -root . >"$FRONTEND_BUILD_LOG" 2>&1; then
