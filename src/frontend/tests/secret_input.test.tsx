@@ -53,6 +53,7 @@ describe("SecretInput", function () {
     const view = renderSecretInput();
 
     expect(view.input?.getAttribute("type")).toBe("password");
+    expect(view.input?.parentElement?.className).toContain("w-full");
 
     act(function clickToReveal() {
       view.toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

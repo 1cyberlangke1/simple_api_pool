@@ -7,11 +7,13 @@ import {
   deleteProvider,
   deleteProviderKey,
   fetchAdminBootstrap,
+  fetchProviderKeySecret,
   importProviderKeys,
   loginAdmin,
   logoutAdmin,
   saveGlobalConfig,
-  saveProvider
+  saveProvider,
+  updateProviderKeySecret
 } from "@/services/admin_service.js";
 import {
   buildAdminKeyPayload,
@@ -707,11 +709,30 @@ export function useAdminOverview(
     }
   }, [loadOverview, translate]);
 
+  const fetchProviderKeyValue = useCallback(async function fetchProviderKeyValue(keyRef: string) {
+    const currentState = stateRef.current;
+    const providerName = currentState.selectedProviderName;
+    if (!providerName || !keyRef) {
+      return "";
+    }
+    try {
+      const response = await fetchProviderKeySecret(providerName, keyRef);
+      return String((response.data && response.data.raw_value) || "");
+    } catch (error) {
+      setState(function markProviderKeyLoadError(previousState) {
+        return {
+          ...previousState,
+          flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.keyEditLoadFailed")))
+        };
+      });
+      return "";
+    }
+  }, [translate]);
+
   const saveProviderKeyValue = useCallback(async function saveProviderKeyValue(keyRef: string, nextValue: string) {
     const currentState = stateRef.current;
     const providerName = currentState.selectedProviderName;
-    const providerSnapshot = getProviderByName(currentState.overview.providers || [], providerName);
-    if (!providerSnapshot || !keyRef) {
+    if (!providerName || !keyRef) {
       return false;
     }
 
@@ -725,14 +746,8 @@ export function useAdminOverview(
       });
       return false;
     }
-
     try {
-      await saveProvider(buildProviderPayload({
-        ...createProviderDraftFromSnapshot(providerSnapshot),
-        keys: (providerSnapshot.keys || []).map(function mapProviderKey(keySnapshot) {
-          return keySnapshot.ref === keyRef ? trimmedValue : String(keySnapshot.value || "");
-        })
-      }));
+      await updateProviderKeySecret(providerName, keyRef, trimmedValue);
       setState(function markProviderKeySaved(previousState) {
         return {
           ...previousState,
@@ -988,6 +1003,7 @@ export function useAdminOverview(
       deleteProviderByName,
       deleteSelectedProvider,
       deleteSingleKey,
+      fetchProviderKeyValue,
       importKeys,
       loadGlobalConfig,
       loadOverview,

@@ -776,6 +776,7 @@ export function AdminPage() {
   const [groupModelOptions, setGroupModelOptions] = useState<Record<string, string[]>>({});
   const [groupModelLoadingKey, setGroupModelLoadingKey] = useState("");
   const [groupMessage, setGroupMessage] = useState<{ kind: "" | "error" | "ok"; text: string }>({ kind: "", text: "" });
+  const [keyEditLoading, setKeyEditLoading] = useState(false);
   const [keyEditDialogOpen, setKeyEditDialogOpen] = useState(false);
   const [keyEditPending, setKeyEditPending] = useState(false);
   const [keyEditRef, setKeyEditRef] = useState("");
@@ -854,15 +855,20 @@ export function AdminPage() {
     setGroupModelLoadingKey("");
   }
 
-  function openKeyEditDialog(keySnapshot: AdminKeySnapshot) {
+  async function openKeyEditDialog(keySnapshot: AdminKeySnapshot) {
     setKeyEditRef(String(keySnapshot.ref || ""));
-    setKeyEditValue(String(keySnapshot.value || ""));
+    setKeyEditValue("");
+    setKeyEditLoading(true);
     setKeyEditPending(false);
     setKeyEditDialogOpen(true);
+    const rawValue = await actions.fetchProviderKeyValue(String(keySnapshot.ref || ""));
+    setKeyEditValue(rawValue);
+    setKeyEditLoading(false);
   }
 
   function closeKeyEditDialog() {
     setKeyEditDialogOpen(false);
+    setKeyEditLoading(false);
     setKeyEditPending(false);
     setKeyEditRef("");
     setKeyEditValue("");
@@ -1258,7 +1264,6 @@ export function AdminPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <SecretInput
                     autoComplete="new-password"
-                    className="sm:flex-1"
                     hiddenLabel={translate("secret.show")}
                     id="global-admin-key"
                     onChange={function handleAdminKeyChange(event) {
@@ -1267,6 +1272,7 @@ export function AdminPage() {
                     placeholder={translate("admin.adminKeyPlaceholder")}
                     value={String(state.globalDraft.admin_key || "")}
                     visibleLabel={translate("secret.hide")}
+                    wrapperClassName="sm:flex-1"
                   />
                   <Button
                     disabled={!canSaveAdminKey}
@@ -1345,6 +1351,7 @@ export function AdminPage() {
                               placeholder={translate("admin.importPlaceholder")}
                               value={clientKeyValue}
                               visibleLabel={translate("secret.hide")}
+                              wrapperClassName="flex-1"
                             />
                             <Button
                               aria-label={translate("action.delete")}
@@ -1950,7 +1957,7 @@ export function AdminPage() {
                                   <Button
                                     aria-label={translate("action.edit")}
                                     onClick={function handleEditSingleKey() {
-                                      openKeyEditDialog(keySnapshot);
+                                      void openKeyEditDialog(keySnapshot);
                                     }}
                                     size="icon"
                                     variant="ghost"
@@ -2169,6 +2176,7 @@ export function AdminPage() {
               <Label htmlFor="key-edit-value">{translate("admin.keyValue")}</Label>
               <SecretInput
                 autoComplete="off"
+                disabled={keyEditLoading || keyEditPending}
                 hiddenLabel={translate("secret.show")}
                 id="key-edit-value"
                 onChange={function handleKeyEditValueChange(event) {
@@ -2178,6 +2186,9 @@ export function AdminPage() {
                 value={keyEditValue}
                 visibleLabel={translate("secret.hide")}
               />
+              {keyEditLoading ? (
+                <p className="text-sm text-muted-foreground">{translate("message.loading")}</p>
+              ) : null}
             </div>
           </div>
 
@@ -2186,7 +2197,7 @@ export function AdminPage() {
               {translate("action.cancel")}
             </Button>
             <Button
-              disabled={keyEditPending || !String(keyEditValue || "").trim()}
+              disabled={keyEditLoading || keyEditPending || !String(keyEditValue || "").trim()}
               onClick={function handleSaveEditedKey() {
                 void saveEditedKey();
               }}

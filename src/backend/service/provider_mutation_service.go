@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
@@ -65,6 +66,59 @@ func (service *ProviderMutationService) DeleteKey(providerName, identifier strin
 		return os.ErrNotExist
 	}
 	return service.cfg.DeleteKey(providerName, keyValue)
+}
+
+func (service *ProviderMutationService) GetKeyValue(providerName, identifier string) (string, error) {
+	provider, _ := service.cfg.Provider(providerName)
+	if provider == nil {
+		return "", os.ErrNotExist
+	}
+	keyValue := domain.ResolveKeyIdentifier(extractKeyValues(provider.Keys), identifier)
+	if keyValue == "" {
+		return "", os.ErrNotExist
+	}
+	return keyValue, nil
+}
+
+func (service *ProviderMutationService) UpdateKeyValue(providerName, identifier, nextValue string) error {
+	provider, _ := service.cfg.Provider(providerName)
+	if provider == nil {
+		return os.ErrNotExist
+	}
+
+	trimmedValue := strings.TrimSpace(nextValue)
+	if trimmedValue == "" {
+		return os.ErrInvalid
+	}
+
+	currentValue := domain.ResolveKeyIdentifier(extractKeyValues(provider.Keys), identifier)
+	if currentValue == "" {
+		return os.ErrNotExist
+	}
+
+	replaced := false
+	for index := range provider.Keys {
+		if provider.Keys[index].Value == currentValue {
+			continue
+		}
+		if provider.Keys[index].Value == trimmedValue {
+			return os.ErrInvalid
+		}
+	}
+
+	for index := range provider.Keys {
+		if provider.Keys[index].Value != currentValue {
+			continue
+		}
+		provider.Keys[index].Value = trimmedValue
+		replaced = true
+		break
+	}
+	if !replaced {
+		return os.ErrNotExist
+	}
+
+	return service.cfg.SaveProvider(*provider)
 }
 
 func (service *ProviderMutationService) ClearProviderCache(providerName string) error {

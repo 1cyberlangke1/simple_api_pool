@@ -13,6 +13,7 @@ import (
 	"simple-api-pool/applog"
 	"simple-api-pool/cache"
 	"simple-api-pool/config"
+	"simple-api-pool/domain"
 	"simple-api-pool/stats"
 	"simple-api-pool/statusapi"
 	"simple-api-pool/store"
@@ -185,6 +186,85 @@ func TestAdminDeleteSingleKey(t *testing.T) {
 	}
 	if len(provider.Keys) != 1 || provider.Keys[0].Value != "key-2" {
 		t.Fatalf("期望只剩 key-2，实际是 %+v", provider.Keys)
+	}
+}
+
+func TestAdminGetSingleKeyRawValueByRef(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "sk-live-raw-1"},
+			{Value: "sk-live-raw-2"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	keyRef := domain.BuildSecretRef("sk-live-raw-2")
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/providers/openai/keys/"+keyRef, nil)
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Ref      string `json:"ref"`
+		RawValue string `json:"raw_value"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if payload.Ref != keyRef {
+		t.Fatalf("期望返回 ref=%q，实际是 %q", keyRef, payload.Ref)
+	}
+	if payload.RawValue != "sk-live-raw-2" {
+		t.Fatalf("期望返回原始密钥 sk-live-raw-2，实际是 %q", payload.RawValue)
+	}
+}
+
+func TestAdminUpdateSingleKeyRawValueByRef(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "sk-live-old-1"},
+			{Value: "sk-live-old-2"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	h := adminapi.NewHandler(cfg, stats.NewManager(store.New(t.TempDir())), newTestCacheStore(t))
+	keyRef := domain.BuildSecretRef("sk-live-old-2")
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/providers/openai/keys/"+keyRef, bytes.NewReader([]byte(`{"raw_value":"sk-live-new-2"}`)))
+	req.Header.Set("Authorization", "Bearer secret-admin")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望状态码 %d，实际是 %d，响应体: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望提供商存在")
+	}
+	if len(provider.Keys) != 2 {
+		t.Fatalf("期望仍保留两个密钥，实际是 %+v", provider.Keys)
+	}
+	if provider.Keys[0].Value != "sk-live-old-1" || provider.Keys[1].Value != "sk-live-new-2" {
+		t.Fatalf("期望仅替换第二个密钥原文，实际是 %+v", provider.Keys)
 	}
 }
 

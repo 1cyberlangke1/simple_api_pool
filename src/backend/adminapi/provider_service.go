@@ -70,6 +70,21 @@ func (service *ProviderService) DeleteKey(providerName string, identifier string
 	return service.service.DeleteKey(providerName, identifier)
 }
 
+func (service *ProviderService) GetKeyValue(providerName string, identifier string) (string, error) {
+	return service.service.GetKeyValue(providerName, identifier)
+}
+
+func (service *ProviderService) UpdateKeyValue(providerName string, identifier string, nextValue string) error {
+	if err := service.service.UpdateKeyValue(providerName, identifier, nextValue); err != nil {
+		return err
+	}
+	logAdminAudit("provider_key_update",
+		"provider", providerName,
+		"key_ref", identifier,
+	)
+	return nil
+}
+
 func (service *ProviderService) ClearProviderCache(providerName string) error {
 	if err := service.service.ClearProviderCache(providerName); err != nil {
 		return err

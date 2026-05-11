@@ -9,6 +9,7 @@ export interface SecretInputProps extends Omit<InputProps, "type"> {
   hiddenLabel?: string;
   visibleLabel?: string;
   leadingAdornment?: React.ReactNode;
+  wrapperClassName?: string;
 }
 
 export function SecretInput(props: SecretInputProps) {
@@ -17,12 +18,13 @@ export function SecretInput(props: SecretInputProps) {
     hiddenLabel = "Show secret",
     leadingAdornment,
     visibleLabel = "Hide secret",
+    wrapperClassName,
     ...inputProps
   } = props;
   const [revealed, setRevealed] = React.useState(false);
 
   return (
-    <div className="relative">
+    <div className={cn("relative w-full", wrapperClassName)}>
       {leadingAdornment ? (
         <div className="pointer-events-none absolute left-3 top-2.5 text-muted-foreground">
           {leadingAdornment}

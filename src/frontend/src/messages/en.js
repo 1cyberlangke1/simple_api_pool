@@ -124,6 +124,7 @@ export const enMessages = {
   "admin.keyEditTitle": "Edit Key",
   "admin.keyValue": "Raw key",
   "admin.keyValuePlaceholder": "Enter the raw key",
+  "admin.keyEditLoadFailed": "Failed to load the raw key",
   "admin.keyEditEmpty": "The raw key cannot be empty",
   "admin.keyEditSaveSuccess": "Key updated",
   "admin.keyEditSaveFailed": "Failed to update key",

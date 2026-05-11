@@ -102,6 +102,17 @@ export async function deleteProviderKey(providerName, keyRef) {
   });
 }
 
+export async function fetchProviderKeySecret(providerName, keyRef) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/keys/" + encodeURIComponent(keyRef));
+}
+
+export async function updateProviderKeySecret(providerName, keyRef, rawValue) {
+  return requestJSON("/api/admin/providers/" + encodeURIComponent(providerName) + "/keys/" + encodeURIComponent(keyRef), {
+    body: { raw_value: rawValue },
+    method: "PUT"
+  });
+}
+
 export async function fetchProviderModelDiscovery(providerName, providerType, clientKey) {
   return requestJSON(buildProviderModelDiscoveryPath(providerName, providerType), {
     headers: {

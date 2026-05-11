@@ -124,6 +124,7 @@ export const zhMessages = {
   "admin.keyEditTitle": "编辑密钥",
   "admin.keyValue": "原始密钥",
   "admin.keyValuePlaceholder": "请输入原始密钥",
+  "admin.keyEditLoadFailed": "读取原始密钥失败",
   "admin.keyEditEmpty": "原始密钥不能为空",
   "admin.keyEditSaveSuccess": "密钥已更新",
   "admin.keyEditSaveFailed": "更新密钥失败",

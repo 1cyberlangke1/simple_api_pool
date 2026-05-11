@@ -42,6 +42,10 @@ type importKeysInput struct {
 	Keys json.RawMessage `json:"keys" validate:"required"`
 }
 
+type providerKeyValueInput struct {
+	RawValue string `json:"raw_value" validate:"required"`
+}
+
 func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler {
 	limiter := auth.NewFailureLimiter(10, time.Minute, 10*time.Minute)
 	handler := &Handler{
@@ -90,6 +94,8 @@ func (ah *Handler) newRouter() chi.Router {
 		r.Delete("/api/admin/providers/{provider}", ah.handleSingleProvider)
 		r.Post("/api/admin/providers/{provider}/keys", ah.handleProviderKeys)
 		r.Post("/api/admin/providers/{provider}/keys/bulk", ah.handleProviderKeyBulkAction)
+		r.Get("/api/admin/providers/{provider}/keys/{key}", ah.handleSingleProviderKey)
+		r.Put("/api/admin/providers/{provider}/keys/{key}", ah.handleSingleProviderKey)
 		r.Delete("/api/admin/providers/{provider}/cache", ah.handleProviderCache)
 		r.Delete("/api/admin/providers/{provider}/{key}", ah.handleProviderKeys)
 
@@ -293,6 +299,57 @@ func (ah *Handler) handleProviderKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		realtime.PublishProvidersChanged()
 		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+	default:
+		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
+	}
+}
+
+func (ah *Handler) handleSingleProviderKey(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "provider")
+	keyName := chi.URLParam(r, "key")
+	if strings.TrimSpace(keyName) == "" {
+		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "缺少密钥标识")
+		return
+	}
+
+	keyIdentifier, err := url.PathUnescape(keyName)
+	if err != nil {
+		httpapi.WriteErrorResponse(w, http.StatusBadRequest, "密钥标识无效")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		rawValue, err := ah.providerSvc.GetKeyValue(providerName, keyIdentifier)
+		if err != nil {
+			httpapi.WriteErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
+			return
+		}
+		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{
+			"ref":       keyIdentifier,
+			"raw_value": rawValue,
+		})
+	case http.MethodPut:
+		var body providerKeyValueInput
+		if !ah.decodeAndValidateJSON(w, r, &body) {
+			return
+		}
+		if err := ah.providerSvc.UpdateKeyValue(providerName, keyIdentifier, body.RawValue); err != nil {
+			switch {
+			case errors.Is(err, os.ErrNotExist):
+				httpapi.WriteErrorResponse(w, http.StatusNotFound, "指定密钥不存在")
+			case errors.Is(err, os.ErrInvalid):
+				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "原始密钥无效或与现有密钥重复")
+			default:
+				httpapi.WriteErrorResponse(w, http.StatusInternalServerError, "更新密钥失败")
+			}
+			return
+		}
+		realtime.PublishProvidersChanged()
+		httpapi.WriteJSONResponse(w, http.StatusOK, map[string]string{
+			"ref":       keyIdentifier,
+			"raw_value": strings.TrimSpace(body.RawValue),
+		})
 	default:
 		httpapi.WriteErrorResponse(w, http.StatusMethodNotAllowed, "不支持的请求方法")
 	}
