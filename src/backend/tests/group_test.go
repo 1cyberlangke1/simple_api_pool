@@ -322,6 +322,69 @@ func TestAdminGroupErrorBranches(t *testing.T) {
 	}
 }
 
+func TestAdminGroupPartialUpdatePreservesUnspecifiedFields(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name:    "openai-a",
+		Type:    config.OpenAIChat,
+		BaseURL: "https://api.openai.com",
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+	if err := cfg.SaveGroup(config.Group{
+		Name:            "router",
+		Type:            config.OpenAIChat,
+		CacheEnabled:    true,
+		CacheMaxEntries: 64,
+		Collections: []config.GroupCollection{
+			{
+				Name:     "chat-router",
+				Strategy: config.GroupStrategyWeightedRandom,
+				Entries: []config.GroupEntry{
+					{
+						Provider: "openai-a",
+						Model:    "gpt-4.1",
+						Weight:   2,
+						Priority: 1,
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("保存分组失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	handler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	updateRequest := httptest.NewRequest(http.MethodPost, "/api/admin/groups", bytes.NewReader([]byte(`{"name":"router","cache_enabled":false}`)))
+	updateRequest.Header.Set("Authorization", "Bearer secret-admin")
+	updateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(updateRecorder, updateRequest)
+	if updateRecorder.Code != http.StatusCreated {
+		t.Fatalf("局部更新分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusCreated, updateRecorder.Code, updateRecorder.Body.String())
+	}
+
+	group, _ := cfg.Group("router")
+	if group == nil {
+		t.Fatal("期望局部更新后仍能读取到分组")
+	}
+	if group.CacheEnabled {
+		t.Fatalf("期望 cache_enabled 被更新为 false，实际是 %+v", group)
+	}
+	if group.CacheMaxEntries != 64 {
+		t.Fatalf("期望未传 cache_max_entries 时保留原值 64，实际是 %d", group.CacheMaxEntries)
+	}
+	if group.Type != config.OpenAIChat {
+		t.Fatalf("期望未传 type 时保留原值，实际是 %q", group.Type)
+	}
+	if len(group.Collections) != 1 || group.Collections[0].Name != "chat-router" {
+		t.Fatalf("期望未传 collections 时保留原集合，实际是 %+v", group.Collections)
+	}
+}
+
 func TestGroupModelDiscoveryRoutesReturnCollections(t *testing.T) {
 	testCases := []struct {
 		name              string

@@ -58,6 +58,14 @@ type providerSaveInput struct {
 	MaxDisableSecs  *int                  `json:"max_disable_secs"`
 }
 
+type groupSaveInput struct {
+	Name            string                    `json:"name"`
+	Type            *config.ProviderType      `json:"type"`
+	CacheEnabled    *bool                     `json:"cache_enabled"`
+	CacheMaxEntries *int                      `json:"cache_max_entries"`
+	Collections     *[]config.GroupCollection `json:"collections"`
+}
+
 func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler {
 	limiter := auth.NewFailureLimiter(10, time.Minute, 10*time.Minute)
 	handler := &Handler{
@@ -211,8 +219,13 @@ func (ah *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		httpapi.WriteJSONResponse(w, http.StatusOK, ah.groupSvc.ListSnapshots())
 	case http.MethodPost:
-		var group config.Group
-		if !ah.decodeJSON(w, r, &group) {
+		var input groupSaveInput
+		if !ah.decodeJSON(w, r, &input) {
+			return
+		}
+		group, ok := ah.buildGroupForSave(input)
+		if !ok {
+			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "分组名称非法、为保留名称或与提供商重名")
 			return
 		}
 		snapshot, _, err := ah.groupSvc.SaveGroup(group)
@@ -557,6 +570,49 @@ func (ah *Handler) buildProviderForSave(input providerSaveInput) (config.Provide
 		provider.MaxDisableSecs = *input.MaxDisableSecs
 	}
 	return provider, true
+}
+
+func (ah *Handler) buildGroupForSave(input groupSaveInput) (config.Group, bool) {
+	trimmedName := strings.TrimSpace(input.Name)
+	if trimmedName == "" {
+		return config.Group{}, false
+	}
+
+	existingGroup, _ := ah.cfg.Group(trimmedName)
+	if existingGroup != nil {
+		group := *existingGroup
+		group.Name = trimmedName
+		if input.Type != nil {
+			group.Type = *input.Type
+		}
+		if input.CacheEnabled != nil {
+			group.CacheEnabled = *input.CacheEnabled
+		}
+		if input.CacheMaxEntries != nil {
+			group.CacheMaxEntries = *input.CacheMaxEntries
+		}
+		if input.Collections != nil {
+			group.Collections = append([]config.GroupCollection(nil), (*input.Collections)...)
+		}
+		return group, true
+	}
+
+	group := config.Group{
+		Name: trimmedName,
+	}
+	if input.Type != nil {
+		group.Type = *input.Type
+	}
+	if input.CacheEnabled != nil {
+		group.CacheEnabled = *input.CacheEnabled
+	}
+	if input.CacheMaxEntries != nil {
+		group.CacheMaxEntries = *input.CacheMaxEntries
+	}
+	if input.Collections != nil {
+		group.Collections = append([]config.GroupCollection(nil), (*input.Collections)...)
+	}
+	return group, true
 }
 
 func (ah *Handler) decodeAndValidateJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
