@@ -21,7 +21,12 @@ import {
   buildTokenEstimationPayload,
   createGlobalDraft
 } from "@/forms/global_config_form.js";
-import { buildProviderPayload, createDefaultProviderDraft, createProviderDraftFromSnapshot } from "@/forms/provider_form.js";
+import {
+  buildProviderPayload,
+  createDefaultProviderDraft,
+  createProviderDraftFromSnapshot,
+  normalizeProviderSaveErrorMessage
+} from "@/forms/provider_form.js";
 import {
   adminLogCacheMaxEntries,
   chooseSelectedProviderName,
@@ -85,6 +90,7 @@ interface AdminState {
   overview: AdminOverview;
   pending: boolean;
   providerDialogMode: "create" | "edit";
+  providerDialogMessage: MessageState;
   providerDialogOpen: boolean;
   providerDirty: boolean;
   providerDraft: ReturnType<typeof createDefaultProviderDraft> | null;
@@ -177,6 +183,7 @@ function createInitialAdminState(): AdminState {
     overview: createEmptyAdminOverview(),
     pending: false,
     providerDialogMode: "create",
+    providerDialogMessage: createMessage(""),
     providerDialogOpen: false,
     providerDirty: false,
     providerDraft: null,
@@ -211,6 +218,7 @@ function createUnauthorizedState(
     loginPending: false,
     overview: createEmptyAdminOverview(),
     pending: false,
+    providerDialogMessage: createMessage(""),
     providerDialogOpen: false,
     providerDirty: false,
     providerDraft: null,
@@ -668,15 +676,23 @@ export function useAdminOverview(
           createProviderDraft: createDefaultProviderDraft(),
           flashMessage: createMessage("ok", translate("admin.providerCreateSuccess")),
           providerDialogOpen: false,
+          providerDialogMessage: createMessage(""),
           providerDialogMode: "create"
         };
       });
       await loadOverview(true, { preferredProviderName: nextProviderName });
     } catch (error) {
+      const messageText = normalizeProviderSaveErrorMessage(
+        error,
+        translate("admin.providerCreateFailed"),
+        currentState.createProviderDraft,
+        translate
+      );
       setState(function markProviderCreateError(previousState) {
         return {
           ...previousState,
-          flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.providerCreateFailed")))
+          flashMessage: createMessage("error", messageText),
+          providerDialogMessage: createMessage("error", messageText)
         };
       });
     }
@@ -695,15 +711,23 @@ export function useAdminOverview(
           activeTab: "providers",
           flashMessage: createMessage("ok", translate("admin.providerSaveSuccess")),
           providerDialogOpen: false,
+          providerDialogMessage: createMessage(""),
           providerDirty: false
         };
       });
       await loadOverview(true, { preferredProviderName: currentState.selectedProviderName });
     } catch (error) {
+      const messageText = normalizeProviderSaveErrorMessage(
+        error,
+        translate("admin.providerSaveFailed"),
+        currentState.providerDraft,
+        translate
+      );
       setState(function markProviderSaveError(previousState) {
         return {
           ...previousState,
-          flashMessage: createMessage("error", normalizeErrorMessage(error, translate("admin.providerSaveFailed")))
+          flashMessage: createMessage("error", messageText),
+          providerDialogMessage: createMessage("error", messageText)
         };
       });
     }
@@ -995,6 +1019,7 @@ export function useAdminOverview(
             ...previousState,
             keyImportDialogOpen: false,
             logModalOpen: false,
+            providerDialogMessage: createMessage(""),
             providerDialogOpen: false
           };
         });
@@ -1034,6 +1059,7 @@ export function useAdminOverview(
             activeTab: "providers",
             createProviderDraft: createDefaultProviderDraft(),
             providerDialogMode: "create",
+            providerDialogMessage: createMessage(""),
             providerDialogOpen: true
           };
         });
@@ -1047,6 +1073,7 @@ export function useAdminOverview(
             ...previousState,
             activeTab: "providers",
             providerDialogMode: "edit",
+            providerDialogMessage: createMessage(""),
             providerDialogOpen: true
           };
         });

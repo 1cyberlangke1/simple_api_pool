@@ -174,6 +174,16 @@ function buildSuccessAlertClassName() {
   return "rounded-lg border border-[#29e154] bg-[#29e154] px-4 py-3 text-sm font-medium text-white dark:border-[#29e154] dark:bg-[#29e154] dark:text-white";
 }
 
+function buildNotificationKind(messageKind: "" | "error" | "ok" | "warning") {
+  if (messageKind === "ok") {
+    return "ok" as const;
+  }
+  if (messageKind === "warning") {
+    return "warning" as const;
+  }
+  return "error" as const;
+}
+
 function buildLogLevelClassName(level: string) {
   if (level === "ERROR") {
     return "font-semibold tracking-[0.18em] text-[#b91c1c] dark:text-[#fecaca]";
@@ -787,6 +797,9 @@ export function AdminPage() {
   const translate = useAppStore(function selectTranslate(state) {
     return state.translate;
   });
+  const notify = useAppStore(function selectNotify(state) {
+    return state.notify;
+  });
   const { actions, derived, state } = useAdminOverview(translate, language);
 
   const selectedProvider = derived.selectedProvider;
@@ -824,6 +837,27 @@ export function AdminPage() {
     setBulkDisableSeconds(nextSeconds);
     setBulkDisableUntil(toDateTimeLocalValue(Date.now() + nextSeconds * 1000));
   }, [derived.disableBounds.max, derived.disableBounds.min, selectedProviderName]);
+
+  useEffect(function relayFlashMessageToNotifications() {
+    if (!state.flashMessage.text) {
+      return;
+    }
+    notify(buildNotificationKind(state.flashMessage.kind), state.flashMessage.text);
+  }, [notify, state.flashMessage]);
+
+  useEffect(function relayLoginMessageToNotifications() {
+    if (!state.loginMessage.text) {
+      return;
+    }
+    notify(buildNotificationKind(state.loginMessage.kind), state.loginMessage.text);
+  }, [notify, state.loginMessage]);
+
+  useEffect(function relayGroupMessageToNotifications() {
+    if (!groupMessage.text) {
+      return;
+    }
+    notify(buildNotificationKind(groupMessage.kind), groupMessage.text);
+  }, [groupMessage, notify]);
 
   function getGroupEntryKey(collectionIndex: number, entryIndex: number) {
     return `${collectionIndex}:${entryIndex}`;
@@ -1165,9 +1199,6 @@ export function AdminPage() {
                     placeholder={translate("admin.adminKeyPlaceholder")}
                     visibleLabel={translate("secret.hide")}
                   />
-                  {state.loginMessage.text ? (
-                    <p className="text-sm font-medium text-destructive">{state.loginMessage.text}</p>
-                  ) : null}
                 </div>
                 <Button className="w-full" disabled={state.loginPending} type="submit">
                   <ShieldCheck className="mr-2 h-4 w-4" />
@@ -1202,26 +1233,6 @@ export function AdminPage() {
           {translate("action.logout")}
         </Button>
       </div>
-
-      {state.flashMessage.text ? (
-        <div
-          className={
-            state.flashMessage.kind === "error"
-              ? buildErrorAlertClassName()
-              : state.flashMessage.kind === "warning"
-                ? "rounded-lg border border-[#fde68a] bg-[#fef3c7] px-4 py-3 text-sm font-medium text-[#92400e] dark:border-[rgba(251,191,36,0.35)] dark:bg-[rgba(245,158,11,0.2)] dark:text-[#fde68a]"
-                : buildSuccessAlertClassName()
-          }
-        >
-          {state.flashMessage.text}
-        </div>
-      ) : null}
-
-      {groupMessage.text ? (
-        <div className={groupMessage.kind === "error" ? buildErrorAlertClassName() : buildSuccessAlertClassName()}>
-          {groupMessage.text}
-        </div>
-      ) : null}
 
       <Tabs
         className="w-full"
@@ -2071,6 +2082,12 @@ export function AdminPage() {
             />
           )}
 
+          {state.providerDialogMessage.text ? (
+            <div className={state.providerDialogMessage.kind === "error" ? buildErrorAlertClassName() : buildSuccessAlertClassName()}>
+              {state.providerDialogMessage.text}
+            </div>
+          ) : null}
+
           <DialogFooter>
             <Button onClick={actions.closeDialogs} type="button" variant="outline">
               {translate("action.cancel")}
@@ -2127,6 +2144,12 @@ export function AdminPage() {
             readOnlyName={groupDialogMode === "edit"}
             translate={translate}
           />
+
+          {groupMessage.text ? (
+            <div className={groupMessage.kind === "error" ? buildErrorAlertClassName() : buildSuccessAlertClassName()}>
+              {groupMessage.text}
+            </div>
+          ) : null}
 
           <DialogFooter>
             <Button onClick={closeGroupDialog} type="button" variant="outline">

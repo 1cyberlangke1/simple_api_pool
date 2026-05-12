@@ -20,7 +20,6 @@ import {
   buildErrorTypeSummaries,
   buildErrorTypeSummaryClassName,
   buildProviderCards,
-  buildStatusErrorAlertClassName,
   buildStatusErrorCountClassName,
   collectStatusSummary,
   computeStatusRefreshCountdownSeconds,
@@ -82,6 +81,9 @@ export function StatusPage() {
   const translate = useAppStore(function selectTranslate(state) {
     return state.translate;
   });
+  const notify = useAppStore(function selectNotify(state) {
+    return state.notify;
+  });
   const { state } = useStatusOverview(translate);
   const [nowMs, setNowMs] = useState(Date.now());
 
@@ -93,6 +95,13 @@ export function StatusPage() {
       window.clearInterval(timerId);
     };
   }, []);
+
+  useEffect(function relayStatusErrorToNotifications() {
+    if (!state.error) {
+      return;
+    }
+    notify("error", state.error);
+  }, [notify, state.error]);
 
   const summary = collectStatusSummary(state.overview);
   const providerCards = buildProviderCards(state.overview).map(function toReferenceCard(card) {
@@ -123,7 +132,6 @@ export function StatusPage() {
   const successRate = calculateSuccessRate(summary.successCount, summary.errorCount);
   const refreshCountdownSeconds = computeStatusRefreshCountdownSeconds(state.nextRefreshAt, nowMs);
   const refreshCountdownLabel = formatStatusRefreshCountdownLabel(refreshCountdownSeconds);
-  const errorAlertClassName = buildStatusErrorAlertClassName();
   const errorCountClassName = buildStatusErrorCountClassName();
 
   return (
@@ -200,12 +208,6 @@ export function StatusPage() {
           </Card>
         </motion.div>
       </motion.div>
-
-      {state.error ? (
-        <div className={errorAlertClassName}>
-          {state.error}
-        </div>
-      ) : null}
 
       <div className="space-y-4">
         <div className="space-y-3">

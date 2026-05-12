@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Activity, Globe, Moon, Shield, Sun, SunMoon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { NotificationCenter } from "@/components/ui/notification-center";
 import { buildVersionLabel, useAppStore } from "@/store/appStore";
 
 interface AppLayoutProps {
@@ -18,6 +19,9 @@ export function AppLayout(props: AppLayoutProps) {
   const runtimeError = useAppStore(function selectRuntimeError(state) {
     return state.runtimeError;
   });
+  const clearRuntimeError = useAppStore(function selectClearRuntimeError(state) {
+    return state.clearRuntimeError;
+  });
   const theme = useAppStore(function selectTheme(state) {
     return state.theme;
   });
@@ -29,6 +33,9 @@ export function AppLayout(props: AppLayoutProps) {
   });
   const setThemeMode = useAppStore(function selectSetThemeMode(state) {
     return state.setThemeMode;
+  });
+  const notify = useAppStore(function selectNotify(state) {
+    return state.notify;
   });
   const translate = useAppStore(function selectTranslate(state) {
     return state.translate;
@@ -42,6 +49,14 @@ export function AppLayout(props: AppLayoutProps) {
       ? "Simple API Pool - " + translate("app.adminTitle")
       : "Simple API Pool - " + translate("app.statusTitle");
   }, [language, location.pathname, theme, translate]);
+
+  useEffect(function relayRuntimeErrorToNotifications() {
+    if (!runtimeError) {
+      return;
+    }
+    notify("error", runtimeError, { durationMs: 7000 });
+    clearRuntimeError();
+  }, [clearRuntimeError, notify, runtimeError]);
 
   function cycleThemeMode() {
     if (themeMode === "auto") {
@@ -103,14 +118,7 @@ export function AppLayout(props: AppLayoutProps) {
           </div>
         </div>
       </header>
-
-      {runtimeError ? (
-        <div className="container max-w-7xl mx-auto w-full px-4 pt-4 sm:px-6">
-          <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {runtimeError}
-          </div>
-        </div>
-      ) : null}
+      <NotificationCenter />
 
       <main className="flex-1 container max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {props.children}

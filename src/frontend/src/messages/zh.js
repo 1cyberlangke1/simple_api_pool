@@ -208,6 +208,7 @@ export const zhMessages = {
   "provider.selectedCount": "已选择 {count} 个密钥",
   "provider.availableKeys": "可用 {available}/{total}",
   "provider.clearSelectionOnRefresh": "已根据最新总览同步选择结果",
+  "provider.privateUpstreamBlocked": "本地或私网提供商默认被拒绝；如果这是本机开发环境，请在服务端设置 ALLOW_PRIVATE_UPSTREAMS=true 后重试。",
   "provider.type.openai_chat": "OpenAI Chat",
   "provider.type.openai_responses": "OpenAI Responses",
   "provider.type.claude": "Claude",

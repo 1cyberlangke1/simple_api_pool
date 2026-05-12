@@ -1,5 +1,6 @@
 import * as v from "valibot";
 
+import { normalizeErrorMessage } from "../api.js";
 import { toInteger } from "../api.js";
 
 export const providerTypeValues = ["openai_chat", "openai_responses", "claude", "gemini"];
@@ -17,6 +18,86 @@ const providerPayloadSchema = v.object({
   name: v.pipe(v.string(), v.trim(), v.minLength(1)),
   type: v.picklist(providerTypeValues)
 });
+
+const knownLocalHostNames = new Set(["localhost", "ip6-localhost"]);
+
+function normalizeHostnameFromInput(rawValue) {
+  const trimmedValue = String(rawValue || "").trim();
+  if (!trimmedValue) {
+    return "";
+  }
+
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmedValue) ? trimmedValue : `http://${trimmedValue}`;
+  try {
+    return new URL(withScheme).hostname.toLowerCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function isIPv4InRange(hostname, firstOctet, secondOctetMin, secondOctetMax) {
+  const parts = hostname.split(".");
+  if (parts.length !== 4) {
+    return false;
+  }
+  const octets = parts.map(function toOctet(value) {
+    return Number(value);
+  });
+  if (octets.some(function hasInvalidOctet(value) {
+    return !Number.isInteger(value) || value < 0 || value > 255;
+  })) {
+    return false;
+  }
+  if (octets[0] !== firstOctet) {
+    return false;
+  }
+  return octets[1] >= secondOctetMin && octets[1] <= secondOctetMax;
+}
+
+export function isPrivateOrLoopbackBaseURL(rawValue) {
+  const hostname = normalizeHostnameFromInput(rawValue);
+  if (!hostname) {
+    return false;
+  }
+  if (knownLocalHostNames.has(hostname) || hostname === "::1" || hostname === "[::1]") {
+    return true;
+  }
+  if (hostname.startsWith("127.")) {
+    return true;
+  }
+  if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) {
+    return true;
+  }
+  if (isIPv4InRange(hostname, 172, 16, 31)) {
+    return true;
+  }
+  return false;
+}
+
+export function normalizeProviderBaseURLInput(rawValue) {
+  const trimmedValue = String(rawValue || "").trim();
+  if (!trimmedValue) {
+    return "";
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+  if (isPrivateOrLoopbackBaseURL(trimmedValue)) {
+    return `http://${trimmedValue}`;
+  }
+  return trimmedValue;
+}
+
+export function normalizeProviderSaveErrorMessage(error, fallbackText, providerDraft, translate) {
+  const normalizedMessage = normalizeErrorMessage(error, fallbackText);
+  if (normalizedMessage !== "提供商配置无效") {
+    return normalizedMessage;
+  }
+  if (!isPrivateOrLoopbackBaseURL(providerDraft?.base_url || "")) {
+    return normalizedMessage;
+  }
+  return translate("provider.privateUpstreamBlocked");
+}
 
 export function createDefaultProviderDraft() {
   return {
@@ -59,7 +140,7 @@ export function buildProviderPayload(providerDraft) {
     })
     : undefined;
   return v.parse(providerPayloadSchema, {
-    base_url: String(nextDraft.base_url || "").trim(),
+    base_url: normalizeProviderBaseURLInput(nextDraft.base_url),
     cache_enabled: Boolean(nextDraft.cache_enabled),
     cache_max_entries: Math.max(1, toInteger(nextDraft.cache_max_entries, 1000)),
     fail_threshold: Math.max(1, toInteger(nextDraft.fail_threshold, 3)),

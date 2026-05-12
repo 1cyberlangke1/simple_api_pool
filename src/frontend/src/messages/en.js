@@ -208,6 +208,7 @@ export const enMessages = {
   "provider.selectedCount": "{count} keys selected",
   "provider.availableKeys": "{available}/{total} available",
   "provider.clearSelectionOnRefresh": "Selection was synchronized with the latest overview",
+  "provider.privateUpstreamBlocked": "Local and private upstreams are blocked by default. If this is a local development setup, enable ALLOW_PRIVATE_UPSTREAMS=true on the server and try again.",
   "provider.type.openai_chat": "OpenAI Chat",
   "provider.type.openai_responses": "OpenAI Responses",
   "provider.type.claude": "Claude",
