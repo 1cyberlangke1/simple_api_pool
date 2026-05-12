@@ -201,6 +201,123 @@ func TestAdminErrorBranchesForProviderAndConfigOperations(t *testing.T) {
 	}
 }
 
+func TestAdminUpdateExistingProviderAcceptsSameName(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+	}); err != nil {
+		t.Fatalf("准备提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	updateRequest := httptest.NewRequest(http.MethodPost, "/api/admin/providers", bytes.NewReader([]byte(`{"name":"openai","type":"openai_chat","base_url":"https://api.example.com/v1","cache_enabled":true,"key_strategy":"fill","fail_threshold":4,"min_disable_secs":60,"max_disable_secs":3600,"cache_max_entries":123}`)))
+	updateRequest.Header.Set("Authorization", "Bearer secret-admin")
+	updateRecorder := httptest.NewRecorder()
+	adminHandler.ServeHTTP(updateRecorder, updateRequest)
+	if updateRecorder.Code != http.StatusCreated {
+		t.Fatalf("更新已有提供商期望状态码 %d，实际是 %d，响应体: %s", http.StatusCreated, updateRecorder.Code, updateRecorder.Body.String())
+	}
+	if !bytes.Contains(updateRecorder.Body.Bytes(), []byte(`"name":"openai"`)) {
+		t.Fatalf("期望响应仍返回同名提供商，实际是 %s", updateRecorder.Body.String())
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望更新后仍能读取到提供商")
+	}
+	if provider.BaseURL != "https://api.example.com/v1" {
+		t.Fatalf("期望提供商 BaseURL 被更新，实际是 %q", provider.BaseURL)
+	}
+	if provider.KeyStrategy != "fill" {
+		t.Fatalf("期望提供商 key 策略被更新为 fill，实际是 %q", provider.KeyStrategy)
+	}
+}
+
+func TestAdminProviderInvalidConfigReturnsConfigErrorMessage(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+	}); err != nil {
+		t.Fatalf("准备提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	updateRequest := httptest.NewRequest(http.MethodPost, "/api/admin/providers", bytes.NewReader([]byte(`{"name":"openai","type":"openai_chat","base_url":"javascript:alert(1)"}`)))
+	updateRequest.Header.Set("Authorization", "Bearer secret-admin")
+	updateRecorder := httptest.NewRecorder()
+	adminHandler.ServeHTTP(updateRecorder, updateRequest)
+	if updateRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("非法提供商配置期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, updateRecorder.Code, updateRecorder.Body.String())
+	}
+	if !bytes.Contains(updateRecorder.Body.Bytes(), []byte("提供商配置无效")) {
+		t.Fatalf("期望返回提供商配置无效提示，实际是 %s", updateRecorder.Body.String())
+	}
+}
+
+func TestAdminProviderPartialUpdatePreservesUnspecifiedFields(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.UpdateGlobalConfig("secret-admin", false, nil)
+	if err := cfg.SaveProvider(config.Provider{
+		Name:            "openai",
+		Type:            config.OpenAIChat,
+		BaseURL:         "https://api.example.com/v1",
+		CacheEnabled:    true,
+		CacheMaxEntries: 321,
+		KeyStrategy:     "fill",
+		FailThreshold:   7,
+		MinDisableSecs:  90,
+		MaxDisableSecs:  9000,
+		Keys:            []config.Key{{Value: "key-1"}},
+	}); err != nil {
+		t.Fatalf("准备提供商失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+
+	adminHandler := adminapi.NewHandler(cfg, statsManager, newTestCacheStore(t))
+
+	updateRequest := httptest.NewRequest(http.MethodPost, "/api/admin/providers", bytes.NewReader([]byte(`{"name":"openai","cache_enabled":false}`)))
+	updateRequest.Header.Set("Authorization", "Bearer secret-admin")
+	updateRecorder := httptest.NewRecorder()
+	adminHandler.ServeHTTP(updateRecorder, updateRequest)
+	if updateRecorder.Code != http.StatusCreated {
+		t.Fatalf("局部更新提供商期望状态码 %d，实际是 %d，响应体: %s", http.StatusCreated, updateRecorder.Code, updateRecorder.Body.String())
+	}
+
+	provider, _ := cfg.Provider("openai")
+	if provider == nil {
+		t.Fatal("期望局部更新后仍能读取到提供商")
+	}
+	if provider.CacheEnabled {
+		t.Fatalf("期望 cache_enabled 被更新为 false，实际是 %+v", provider)
+	}
+	if provider.BaseURL != "https://api.example.com/v1" {
+		t.Fatalf("期望未传 base_url 时保留原值，实际是 %q", provider.BaseURL)
+	}
+	if provider.CacheMaxEntries != 321 {
+		t.Fatalf("期望未传 cache_max_entries 时保留原值 321，实际是 %d", provider.CacheMaxEntries)
+	}
+	if provider.KeyStrategy != "fill" || provider.FailThreshold != 7 || provider.MinDisableSecs != 90 || provider.MaxDisableSecs != 9000 {
+		t.Fatalf("期望未传其它字段时保留原值，实际是 %+v", provider)
+	}
+	if len(provider.Keys) != 1 || provider.Keys[0].Value != "key-1" {
+		t.Fatalf("期望局部更新时保留已有密钥，实际是 %+v", provider.Keys)
+	}
+}
+
 func TestPatchGlobalConfigOnlyTouchesProvidedFields(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.UpdateGlobalConfig("secret-admin", false, []string{"client-a"})

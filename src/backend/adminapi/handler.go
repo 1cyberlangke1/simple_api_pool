@@ -46,6 +46,18 @@ type providerKeyValueInput struct {
 	RawValue string `json:"raw_value" validate:"required"`
 }
 
+type providerSaveInput struct {
+	Name            string                `json:"name"`
+	Type            *config.ProviderType  `json:"type"`
+	BaseURL         *string               `json:"base_url"`
+	CacheEnabled    *bool                 `json:"cache_enabled"`
+	CacheMaxEntries *int                  `json:"cache_max_entries"`
+	KeyStrategy     *string               `json:"key_strategy"`
+	FailThreshold   *int                  `json:"fail_threshold"`
+	MinDisableSecs  *int                  `json:"min_disable_secs"`
+	MaxDisableSecs  *int                  `json:"max_disable_secs"`
+}
+
 func NewHandler(cfg *config.Config, sm *stats.Manager, cs *cache.Store) *Handler {
 	limiter := auth.NewFailureLimiter(10, time.Minute, 10*time.Minute)
 	handler := &Handler{
@@ -165,14 +177,23 @@ func (ah *Handler) handleProviders(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		httpapi.WriteJSONResponse(w, http.StatusOK, ah.providerSvc.ListSnapshots())
 	case http.MethodPost:
-		var provider config.Provider
-		if !ah.decodeJSON(w, r, &provider) {
+		var input providerSaveInput
+		if !ah.decodeJSON(w, r, &input) {
+			return
+		}
+		provider, ok := ah.buildProviderForSave(input)
+		if !ok {
+			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商名称非法、为保留名称或与分组重名")
 			return
 		}
 		snapshot, _, err := ah.providerSvc.SaveProvider(provider)
 		if err != nil {
 			if errors.Is(err, os.ErrInvalid) {
-				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商名称非法或为保留名称")
+				if ah.isProviderNameInvalidForSave(provider.Name) {
+					httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商名称非法、为保留名称或与分组重名")
+					return
+				}
+				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "提供商配置无效")
 				return
 			}
 			httpapi.WriteErrorResponse(w, http.StatusBadRequest, "保存提供商失败")
@@ -197,6 +218,10 @@ func (ah *Handler) handleGroups(w http.ResponseWriter, r *http.Request) {
 		snapshot, _, err := ah.groupSvc.SaveGroup(group)
 		if err != nil {
 			if errors.Is(err, os.ErrInvalid) {
+				if ah.isGroupNameInvalidForSave(group.Name) {
+					httpapi.WriteErrorResponse(w, http.StatusBadRequest, "分组名称非法、为保留名称或与提供商重名")
+					return
+				}
 				httpapi.WriteErrorResponse(w, http.StatusBadRequest, "分组配置无效")
 				return
 			}
@@ -447,6 +472,91 @@ func (ah *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst any) b
 		return false
 	}
 	return true
+}
+
+func (ah *Handler) isProviderNameInvalidForSave(name string) bool {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" || config.IsReservedName(trimmedName) {
+		return true
+	}
+	group, _ := ah.cfg.Group(trimmedName)
+	return group != nil
+}
+
+func (ah *Handler) isGroupNameInvalidForSave(name string) bool {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" || config.IsReservedName(trimmedName) {
+		return true
+	}
+	provider, _ := ah.cfg.Provider(trimmedName)
+	return provider != nil
+}
+
+func (ah *Handler) buildProviderForSave(input providerSaveInput) (config.Provider, bool) {
+	trimmedName := strings.TrimSpace(input.Name)
+	if trimmedName == "" {
+		return config.Provider{}, false
+	}
+
+	existingProvider, _ := ah.cfg.Provider(trimmedName)
+	if existingProvider != nil {
+		provider := *existingProvider
+		provider.Name = trimmedName
+		if input.Type != nil {
+			provider.Type = *input.Type
+		}
+		if input.BaseURL != nil {
+			provider.BaseURL = *input.BaseURL
+		}
+		if input.CacheEnabled != nil {
+			provider.CacheEnabled = *input.CacheEnabled
+		}
+		if input.CacheMaxEntries != nil {
+			provider.CacheMaxEntries = *input.CacheMaxEntries
+		}
+		if input.KeyStrategy != nil {
+			provider.KeyStrategy = *input.KeyStrategy
+		}
+		if input.FailThreshold != nil {
+			provider.FailThreshold = *input.FailThreshold
+		}
+		if input.MinDisableSecs != nil {
+			provider.MinDisableSecs = *input.MinDisableSecs
+		}
+		if input.MaxDisableSecs != nil {
+			provider.MaxDisableSecs = *input.MaxDisableSecs
+		}
+		return provider, true
+	}
+
+	provider := config.Provider{
+		Name: trimmedName,
+	}
+	if input.Type != nil {
+		provider.Type = *input.Type
+	}
+	if input.BaseURL != nil {
+		provider.BaseURL = *input.BaseURL
+	}
+	if input.CacheEnabled != nil {
+		provider.CacheEnabled = *input.CacheEnabled
+	}
+	if input.CacheMaxEntries != nil {
+		provider.CacheMaxEntries = *input.CacheMaxEntries
+	}
+	if input.KeyStrategy != nil {
+		provider.KeyStrategy = *input.KeyStrategy
+	}
+	if input.FailThreshold != nil {
+		provider.FailThreshold = *input.FailThreshold
+	}
+	if input.MinDisableSecs != nil {
+		provider.MinDisableSecs = *input.MinDisableSecs
+	}
+	if input.MaxDisableSecs != nil {
+		provider.MaxDisableSecs = *input.MaxDisableSecs
+	}
+	return provider, true
 }
 
 func (ah *Handler) decodeAndValidateJSON(w http.ResponseWriter, r *http.Request, dst any) bool {

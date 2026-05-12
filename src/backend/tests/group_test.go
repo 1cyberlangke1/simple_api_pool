@@ -257,6 +257,32 @@ func TestAdminGroupErrorBranches(t *testing.T) {
 	if missingProviderRecorder.Code != http.StatusBadRequest {
 		t.Fatalf("引用不存在提供商的分组期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, missingProviderRecorder.Code, missingProviderRecorder.Body.String())
 	}
+	if !bytes.Contains(missingProviderRecorder.Body.Bytes(), []byte("分组配置无效")) {
+		t.Fatalf("引用不存在提供商时应返回分组配置无效，实际是 %s", missingProviderRecorder.Body.String())
+	}
+
+	conflictNameRequest := httptest.NewRequest(http.MethodPost, "/api/admin/groups", bytes.NewReader([]byte(`{
+		"name":"openai-a",
+		"type":"openai_chat",
+		"collections":[
+			{
+				"name":"chat-router",
+				"strategy":"weighted_random",
+				"entries":[
+					{"provider":"openai-a","model":"gpt-4.1","weight":1,"priority":1}
+				]
+			}
+		]
+	}`)))
+	conflictNameRequest.Header.Set("Authorization", "Bearer secret-admin")
+	conflictNameRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(conflictNameRecorder, conflictNameRequest)
+	if conflictNameRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("分组名称与提供商重名时期望状态码 %d，实际是 %d，响应体: %s", http.StatusBadRequest, conflictNameRecorder.Code, conflictNameRecorder.Body.String())
+	}
+	if !bytes.Contains(conflictNameRecorder.Body.Bytes(), []byte("分组名称非法、为保留名称或与提供商重名")) {
+		t.Fatalf("期望返回分组名称冲突提示，实际是 %s", conflictNameRecorder.Body.String())
+	}
 
 	if err := cfg.SaveGroup(config.Group{
 		Name: "router",
