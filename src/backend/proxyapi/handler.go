@@ -139,12 +139,25 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	isStream := isStreamingRequestHint(r)
 	logFields.Stream = isStream
 
+	prepareStart := time.Now()
 	preparation, ok := h.prepareRequestForUpstream(w, r, &proxyReq, isStream, &logFields)
+	logFields.PrepareRequestMs = time.Since(prepareStart).Milliseconds()
 	if !ok {
 		return
 	}
 
-	for candidateIndex, candidate := range proxyReq.candidates {
+	candidateCount := proxyReq.candidateCount()
+	for candidateIndex := 0; candidateIndex < candidateCount; candidateIndex++ {
+		candidate, err := proxyReq.candidateAt(h.cfg, candidateIndex)
+		if err != nil {
+			if proxyReq.group != nil && candidateIndex+1 < candidateCount {
+				continue
+			}
+			logFields.Status = http.StatusBadRequest
+			logFields.Error = "分组配置无效"
+			writeErrorResponse(w, http.StatusBadRequest, "分组配置无效")
+			return
+		}
 		proxyReq.provider = &candidate.provider
 		proxyReq.targetURL = candidate.targetURL
 		logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(candidate.targetURL)
@@ -152,7 +165,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upstreamKey, err := h.resolveUpstreamKeyForProvider(candidate.provider.Name)
 		if err != nil {
 			statusCode, message := translateUpstreamKeyError(err)
-			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+			if proxyReq.group != nil && candidateIndex+1 < candidateCount {
 				continue
 			}
 			h.writeUpstreamKeyError(w, proxyReq, statusCode, message, &logFields)
@@ -174,7 +187,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upstreamStart := time.Now()
 		resp, err := h.client.Do(upstreamReq)
 		if err != nil {
-			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+			if proxyReq.group != nil && candidateIndex+1 < candidateCount {
 				h.keyring.RecordFailure(candidate.provider.Name, upstreamKey)
 				continue
 			}
@@ -190,7 +203,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if resp.StatusCode >= 400 {
-			if proxyReq.group != nil && candidateIndex+1 < len(proxyReq.candidates) {
+			if proxyReq.group != nil && candidateIndex+1 < candidateCount {
 				if shouldRecordUpstreamFailure(resp.StatusCode) {
 					h.keyring.RecordFailure(candidate.provider.Name, upstreamKey)
 				}
@@ -244,6 +257,8 @@ type proxyLogFields struct {
 	UpstreamStatus    int
 	RequestBytes      int
 	ResponseBytes     int
+	QueueWaitMs       int64
+	PrepareRequestMs  int64
 	UpstreamHeaderMs  int64
 	FirstByteMs       int64
 	FirstByteMeasured bool
@@ -268,6 +283,8 @@ func (h *ProxyHandler) logProxyResult(start time.Time, fields proxyLogFields) {
 		"upstream_status", fields.UpstreamStatus,
 		"request_bytes", fields.RequestBytes,
 		"response_bytes", fields.ResponseBytes,
+		"queue_wait_ms", fields.QueueWaitMs,
+		"prepare_request_ms", fields.PrepareRequestMs,
 		"upstream_header_ms", fields.UpstreamHeaderMs,
 		"duration_ms", time.Since(start).Milliseconds(),
 	}

@@ -10,6 +10,11 @@ import (
 	"simple-api-pool/providerapi"
 )
 
+type groupCandidatePlan struct {
+	candidates      []upstreamCandidate
+	failoverEntries []config.GroupEntry
+}
+
 func buildGroupModelDiscoveryResponse(group config.Group) ([]byte, error) {
 	switch group.Type {
 	case config.OpenAIChat, config.OpenAIResponses:
@@ -70,33 +75,37 @@ func buildGroupModelDiscoveryResponse(group config.Group) ([]byte, error) {
 	}
 }
 
-func buildGroupCandidates(cfg *config.Config, group config.Group, suffix, rawQuery, logicalModel string, requestBody []byte) ([]upstreamCandidate, error) {
+func buildGroupCandidatePlanForRequest(cfg *config.Config, group config.Group, suffix, rawQuery, logicalModel string, requestBody []byte) (groupCandidatePlan, error) {
 	collection := findGroupCollection(group.Collections, logicalModel)
 	if collection == nil {
-		return nil, os.ErrNotExist
+		return groupCandidatePlan{}, os.ErrNotExist
 	}
 
 	switch collection.Strategy {
 	case config.GroupStrategyFailover:
-		candidates := make([]upstreamCandidate, 0, len(collection.Entries))
-		for _, entry := range collection.Entries {
-			candidate, err := buildGroupCandidate(cfg, group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
-			if err != nil {
-				return nil, err
-			}
-			candidates = append(candidates, candidate)
+		if len(collection.Entries) == 0 {
+			return groupCandidatePlan{}, os.ErrInvalid
 		}
-		return candidates, nil
+		firstCandidate, err := buildGroupCandidate(cfg, group.Type, suffix, rawQuery, logicalModel, requestBody, collection.Entries[0])
+		if err != nil {
+			return groupCandidatePlan{}, err
+		}
+		return groupCandidatePlan{
+			candidates:      []upstreamCandidate{firstCandidate},
+			failoverEntries: append([]config.GroupEntry(nil), collection.Entries...),
+		}, nil
 	default:
 		entry, ok := chooseWeightedGroupEntry(collection.Entries)
 		if !ok {
-			return nil, os.ErrInvalid
+			return groupCandidatePlan{}, os.ErrInvalid
 		}
 		candidate, err := buildGroupCandidate(cfg, group.Type, suffix, rawQuery, logicalModel, requestBody, entry)
 		if err != nil {
-			return nil, err
+			return groupCandidatePlan{}, err
 		}
-		return []upstreamCandidate{candidate}, nil
+		return groupCandidatePlan{
+			candidates: []upstreamCandidate{candidate},
+		}, nil
 	}
 }
 

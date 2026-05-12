@@ -127,6 +127,8 @@ func TestProxyRequestWritesStructuredLogs(t *testing.T) {
 		`"upstream_path":"/v1/chat/completions"`,
 		`"status":200`,
 		`"key_ref":"****-key"`,
+		`"queue_wait_ms":`,
+		`"prepare_request_ms":`,
 		`"upstream_header_ms":`,
 	} {
 		if !strings.Contains(out, fragment) {
@@ -186,6 +188,8 @@ func TestProxyStreamRequestWritesFirstByteLatencyLog(t *testing.T) {
 		`"msg":"proxy_request"`,
 		`"model":"gpt-4.1"`,
 		`"stream":true`,
+		`"queue_wait_ms":`,
+		`"prepare_request_ms":`,
 		`"upstream_header_ms":`,
 		`"first_byte_ms":`,
 	} {

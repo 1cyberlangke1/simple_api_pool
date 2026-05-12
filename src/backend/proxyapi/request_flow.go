@@ -29,6 +29,10 @@ type resolvedProxyRequest struct {
 	cacheEligible   bool
 	cacheMaxEntries int
 	candidates      []upstreamCandidate
+	failoverEntries []config.GroupEntry
+	failoverModel   string
+	failoverBody    []byte
+	failoverQuery   string
 }
 
 type requestPreparation struct {
@@ -123,15 +127,19 @@ func (h *ProxyHandler) resolveProxyRequest(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ProxyHandler) acquireUpstreamSlot(w http.ResponseWriter, r *http.Request, logFields *proxyLogFields) bool {
+	waitStart := time.Now()
 	select {
 	case h.sema <- struct{}{}:
+		logFields.QueueWaitMs = time.Since(waitStart).Milliseconds()
 		return true
 	case <-time.After(30 * time.Second):
+		logFields.QueueWaitMs = time.Since(waitStart).Milliseconds()
 		logFields.Status = http.StatusServiceUnavailable
 		logFields.Error = "等待上游槽位超时"
 		writeErrorResponse(w, http.StatusServiceUnavailable, "上游繁忙，请稍后重试")
 		return false
 	case <-r.Context().Done():
+		logFields.QueueWaitMs = time.Since(waitStart).Milliseconds()
 		logFields.Status = http.StatusRequestTimeout
 		logFields.Error = "请求在等待上游槽位时已取消"
 		writeErrorResponse(w, http.StatusRequestTimeout, "请求已取消")
@@ -222,7 +230,7 @@ func (h *ProxyHandler) prepareGroupRequestForUpstream(w http.ResponseWriter, r *
 		}
 	}
 
-	candidates, err := buildGroupCandidates(h.cfg, *proxyReq.group, proxyReq.parts.suffix, r.URL.RawQuery, preparation.analysis.model, requestBody)
+	plan, err := buildGroupCandidatePlanForRequest(h.cfg, *proxyReq.group, proxyReq.parts.suffix, r.URL.RawQuery, preparation.analysis.model, requestBody)
 	if err != nil {
 		statusCode := http.StatusBadRequest
 		message := "分组请求无效"
@@ -237,19 +245,45 @@ func (h *ProxyHandler) prepareGroupRequestForUpstream(w http.ResponseWriter, r *
 		writeErrorResponse(w, statusCode, message)
 		return requestPreparation{}, false
 	}
-	if len(candidates) == 0 {
+	if len(plan.candidates) == 0 {
 		logFields.Status = http.StatusBadRequest
 		logFields.Error = "分组未匹配到可用上游"
 		writeErrorResponse(w, http.StatusBadRequest, "分组未匹配到可用上游")
 		return requestPreparation{}, false
 	}
 
-	proxyReq.candidates = candidates
+	proxyReq.candidates = plan.candidates
+	proxyReq.failoverEntries = plan.failoverEntries
+	proxyReq.failoverModel = preparation.analysis.model
+	proxyReq.failoverBody = append([]byte(nil), requestBody...)
+	proxyReq.failoverQuery = r.URL.RawQuery
 	proxyReq.provider = &proxyReq.candidates[0].provider
 	proxyReq.targetURL = proxyReq.candidates[0].targetURL
 	logFields.UpstreamHost, logFields.UpstreamPath = splitUpstreamURL(proxyReq.targetURL)
 	preparation.upstreamBodyReader = bytes.NewReader(proxyReq.candidates[0].requestBody)
 	return preparation, true
+}
+
+func (proxyReq *resolvedProxyRequest) candidateCount() int {
+	if len(proxyReq.failoverEntries) > 0 {
+		return len(proxyReq.failoverEntries)
+	}
+	return len(proxyReq.candidates)
+}
+
+func (proxyReq *resolvedProxyRequest) candidateAt(cfg *config.Config, index int) (upstreamCandidate, error) {
+	if index >= 0 && index < len(proxyReq.candidates) {
+		return proxyReq.candidates[index], nil
+	}
+	if len(proxyReq.failoverEntries) == 0 || index < 0 || index >= len(proxyReq.failoverEntries) {
+		return upstreamCandidate{}, os.ErrNotExist
+	}
+	candidate, err := buildGroupCandidate(cfg, proxyReq.routeType, proxyReq.parts.suffix, proxyReq.failoverQuery, proxyReq.failoverModel, proxyReq.failoverBody, proxyReq.failoverEntries[index])
+	if err != nil {
+		return upstreamCandidate{}, err
+	}
+	proxyReq.candidates = append(proxyReq.candidates, candidate)
+	return candidate, nil
 }
 
 func (h *ProxyHandler) resolveUpstreamKeyForProvider(providerName string) (string, error) {

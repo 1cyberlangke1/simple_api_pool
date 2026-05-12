@@ -80,6 +80,9 @@ func (k *KeyRing) RecordSuccess(providerName, keyValue string) {
 			if existingKey.DisabledUntil == config.KeyPermanentlyDisabled {
 				disabledUntil = config.KeyPermanentlyDisabled
 			}
+			if existingKey.DisabledUntil == disabledUntil && existingKey.ConsecutiveFails == 0 {
+				return
+			}
 			break
 		}
 	}

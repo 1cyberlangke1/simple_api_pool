@@ -758,3 +758,82 @@ func TestGroupFailoverRetriesNextEntry(t *testing.T) {
 		t.Fatalf("期望首个上游失败后记录密钥失败状态，实际是 %+v", providerA)
 	}
 }
+
+func TestGroupFailoverDoesNotPrebuildLaterInvalidEntriesWhenFirstSucceeds(t *testing.T) {
+	upstreamCalls := 0
+	validUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"ok","usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer validUpstream.Close()
+
+	cfgStore := store.New(t.TempDir())
+	if err := cfgStore.Save("config.json", config.FileConfig{
+		ClientKeys: []string{"client-key"},
+		Providers: []config.Provider{
+			{
+				Name:    "openai-a",
+				Type:    config.OpenAIChat,
+				BaseURL: validUpstream.URL,
+				Keys: []config.Key{
+					{Value: "key-a"},
+				},
+			},
+			{
+				Name:    "openai-bad",
+				Type:    config.OpenAIChat,
+				BaseURL: "://bad-upstream-url",
+				Keys: []config.Key{
+					{Value: "key-b"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("写入初始配置失败: %v", err)
+	}
+	cfg := newTestConfigWithStore(t, cfgStore)
+	if err := cfg.SaveGroup(config.Group{
+		Name: "router",
+		Type: config.OpenAIChat,
+		Collections: []config.GroupCollection{
+			{
+				Name:     "chat-router",
+				Strategy: config.GroupStrategyFailover,
+				Entries: []config.GroupEntry{
+					{
+						Provider: "openai-a",
+						Model:    "gpt-4.1",
+						Priority: 1,
+					},
+					{
+						Provider: "openai-bad",
+						Model:    "gpt-4.1-mini",
+						Priority: 2,
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("保存分组失败: %v", err)
+	}
+
+	statsManager := stats.NewManager(store.New(t.TempDir()))
+	defer statsManager.Stop()
+	proxy := proxyapi.NewProxyHandler(cfg, statsManager, keyring.New(cfg), newTestCacheStore(t), 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/router/v1/chat/completions", bytes.NewBufferString(`{"model":"chat-router","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("期望首个上游成功时直接返回 200，实际是 %d，响应体: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("期望只访问首个有效上游 1 次，实际是 %d", upstreamCalls)
+	}
+}

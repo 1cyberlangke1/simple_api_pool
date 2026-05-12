@@ -1,13 +1,17 @@
 package tests
 
 import (
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"simple-api-pool/config"
 	"simple-api-pool/keyring"
 	"simple-api-pool/store"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestRoundRobinSwitchesBetweenAvailableKeys(t *testing.T) {
@@ -121,6 +125,44 @@ func TestRecordSuccessKeepsPermanentDisableState(t *testing.T) {
 	}
 	if provider.Keys[0].ConsecutiveFails != 0 {
 		t.Fatalf("期望成功后仍清空失败次数，实际是 %+v", provider.Keys[0])
+	}
+}
+
+func TestRecordSuccessDoesNotPersistHealthyKeyStateAgain(t *testing.T) {
+	baseDir := t.TempDir()
+	cfgStore := store.New(baseDir)
+	cfg := config.New(cfgStore)
+	if err := cfg.SaveProvider(config.Provider{
+		Name: "openai",
+		Type: config.OpenAIChat,
+		Keys: []config.Key{
+			{Value: "k1"},
+		},
+	}); err != nil {
+		t.Fatalf("保存提供商失败: %v", err)
+	}
+
+	readUpdatedAt := func() int64 {
+		db, err := sql.Open("sqlite", filepath.ToSlash(store.DatabasePath(baseDir)))
+		if err != nil {
+			t.Fatalf("打开 sqlite 失败: %v", err)
+		}
+		defer db.Close()
+
+		var updatedAt int64
+		if err := db.QueryRow(`SELECT updated_at FROM documents WHERE path = ?`, "config.json").Scan(&updatedAt); err != nil {
+			t.Fatalf("读取 config.json updated_at 失败: %v", err)
+		}
+		return updatedAt
+	}
+
+	before := readUpdatedAt()
+	kr := keyring.New(cfg)
+	kr.RecordSuccess("openai", "k1")
+	after := readUpdatedAt()
+
+	if after != before {
+		t.Fatalf("期望健康 key 成功后不重复写盘，实际 updated_at 从 %d 变成 %d", before, after)
 	}
 }
 
