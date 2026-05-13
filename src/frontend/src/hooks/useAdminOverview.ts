@@ -51,6 +51,7 @@ import {
   type AdminOverview,
   type AdminProviderSnapshot
 } from "@/lib/admin";
+import { ensureDeletedEntityMissing } from "@/lib/admin_delete";
 import { createAdminLiveSnapshot, reduceAdminLiveEvent } from "@/lib/live";
 import { buildStreamURL, openLiveStream } from "@/services/live_service.js";
 
@@ -296,6 +297,7 @@ export function useAdminOverview(
 
   const streamRef = useRef<{ close: () => void } | null>(null);
   const cursorRef = useRef(0);
+  const loadOverviewRef = useRef<(forceRefresh?: boolean, options?: OverviewStateOptions) => Promise<void>>(async function noop() {});
 
   const closeStream = useCallback(function closeStream() {
     if (!streamRef.current) {
@@ -304,6 +306,92 @@ export function useAdminOverview(
     streamRef.current.close();
     streamRef.current = null;
   }, []);
+
+  const applyBootstrapSnapshot = useCallback(function applyBootstrapSnapshot(
+    bootstrapSnapshot: ReturnType<typeof createAdminLiveSnapshot>,
+    options?: OverviewStateOptions
+  ) {
+    const nextNowMs = Date.now();
+    const nextOverview = syncProviderKeyAvailability(bootstrapSnapshot.overview, Math.floor(nextNowMs / 1000));
+    cursorRef.current = bootstrapSnapshot.cursor;
+    persistAdminLogCache(bootstrapSnapshot.logCache);
+
+    setState(function mergeOverview(previousState) {
+      const providers = nextOverview.providers || [];
+      const nextSelectedProviderName = chooseSelectedProviderName(
+        previousState.selectedProviderName,
+        providers,
+        options?.preferredProviderName
+      );
+      const nextSelectedProvider = getProviderByName(providers, nextSelectedProviderName);
+      const keepProviderDraft = previousState.providerDirty && previousState.selectedProviderName === nextSelectedProviderName;
+      const replaceGlobalDraft = Boolean(options?.replaceGlobalDraft);
+
+      return {
+        ...previousState,
+        authenticated: true,
+        checkedAuth: true,
+        clockNow: nextNowMs,
+        globalConfigLoaded: true,
+        globalConfigPending: false,
+        globalDraft: mergeGlobalDraft(previousState.globalDraft, bootstrapSnapshot.overview.global_config, {
+          keepExistingClientKeys: previousState.globalConfigLoaded,
+          preserveAdminKey: replaceGlobalDraft ? false : previousState.globalAdminKeyDirty,
+          preserveClientKeys: replaceGlobalDraft ? false : (previousState.globalSettingsDirty || previousState.clientKeysPending),
+          preserveTokenEstimation: replaceGlobalDraft ? false : previousState.tokenEstimationPending
+        }),
+        loadedAt: nextNowMs,
+        logCache: bootstrapSnapshot.logCache,
+        overview: nextOverview,
+        pending: false,
+        providerDraft: keepProviderDraft ? previousState.providerDraft : createProviderDraftFromSnapshot(nextSelectedProvider),
+        providerDirty: keepProviderDraft,
+        selectedKeyRefs: filterSelectedRefs(previousState.selectedKeyRefs, nextSelectedProvider),
+        selectedProviderName: nextSelectedProviderName
+      };
+    });
+
+    closeStream();
+    if (typeof window !== "undefined" && typeof window.EventSource === "function") {
+      streamRef.current = openLiveStream(buildStreamURL("/api/admin/stream", bootstrapSnapshot.cursor), {
+        eventNames: ["stats_delta", "log_append", "providers_changed", "global_config_changed", "resync_required"],
+        onEvent(event) {
+          setState(function applyLiveEvent(previousState) {
+            const result = reduceAdminLiveEvent({
+              cursor: cursorRef.current,
+              logCache: previousState.logCache,
+              overview: previousState.overview
+            }, event, adminLogCacheMaxEntries);
+            const nextNowMs = Date.now();
+            const nextOverview = syncProviderKeyAvailability(result.snapshot.overview, Math.floor(nextNowMs / 1000));
+
+            cursorRef.current = result.snapshot.cursor;
+            if (event.type === "log_append") {
+              persistAdminLogCache(result.snapshot.logCache);
+            }
+            if (result.requiresBootstrap) {
+              closeStream();
+              window.setTimeout(function reloadBootstrap() {
+                void loadOverviewRef.current(true, {
+                  preferredProviderName: stateRef.current.selectedProviderName,
+                  replaceGlobalDraft: false
+                });
+              }, 0);
+              return previousState;
+            }
+
+            return {
+              ...previousState,
+              clockNow: nextNowMs,
+              loadedAt: nextNowMs,
+              logCache: result.snapshot.logCache,
+              overview: nextOverview
+            };
+          });
+        }
+      });
+    }
+  }, [closeStream]);
 
   const loadOverview = useCallback(async function loadOverview(_forceRefresh = false, options?: OverviewStateOptions) {
     setState(function markPending(previousState) {
@@ -316,91 +404,11 @@ export function useAdminOverview(
 
     try {
       const result = await fetchAdminBootstrap();
-      const bootstrapSnapshot = createAdminLiveSnapshot(
+      applyBootstrapSnapshot(createAdminLiveSnapshot(
         (result.data || createEmptyAdminOverview()) as Record<string, unknown>,
         stateRef.current.logCache,
         adminLogCacheMaxEntries
-      );
-      const nextNowMs = Date.now();
-      const nextOverview = syncProviderKeyAvailability(bootstrapSnapshot.overview, Math.floor(nextNowMs / 1000));
-      cursorRef.current = bootstrapSnapshot.cursor;
-      persistAdminLogCache(bootstrapSnapshot.logCache);
-
-      setState(function mergeOverview(previousState) {
-        const providers = nextOverview.providers || [];
-        const nextSelectedProviderName = chooseSelectedProviderName(
-          previousState.selectedProviderName,
-          providers,
-          options?.preferredProviderName
-        );
-        const nextSelectedProvider = getProviderByName(providers, nextSelectedProviderName);
-        const keepProviderDraft = previousState.providerDirty && previousState.selectedProviderName === nextSelectedProviderName;
-        const replaceGlobalDraft = Boolean(options?.replaceGlobalDraft);
-
-        return {
-          ...previousState,
-          authenticated: true,
-          checkedAuth: true,
-          clockNow: nextNowMs,
-          globalConfigLoaded: true,
-          globalConfigPending: false,
-          globalDraft: mergeGlobalDraft(previousState.globalDraft, bootstrapSnapshot.overview.global_config, {
-            keepExistingClientKeys: previousState.globalConfigLoaded,
-            preserveAdminKey: replaceGlobalDraft ? false : previousState.globalAdminKeyDirty,
-            preserveClientKeys: replaceGlobalDraft ? false : (previousState.globalSettingsDirty || previousState.clientKeysPending),
-            preserveTokenEstimation: replaceGlobalDraft ? false : previousState.tokenEstimationPending
-          }),
-          loadedAt: nextNowMs,
-          logCache: bootstrapSnapshot.logCache,
-          overview: nextOverview,
-          pending: false,
-          providerDraft: keepProviderDraft ? previousState.providerDraft : createProviderDraftFromSnapshot(nextSelectedProvider),
-          providerDirty: keepProviderDraft,
-          selectedKeyRefs: filterSelectedRefs(previousState.selectedKeyRefs, nextSelectedProvider),
-          selectedProviderName: nextSelectedProviderName
-        };
-      });
-
-      closeStream();
-      if (typeof window !== "undefined" && typeof window.EventSource === "function") {
-        streamRef.current = openLiveStream(buildStreamURL("/api/admin/stream", bootstrapSnapshot.cursor), {
-          eventNames: ["stats_delta", "log_append", "providers_changed", "global_config_changed", "resync_required"],
-          onEvent(event) {
-            setState(function applyLiveEvent(previousState) {
-              const result = reduceAdminLiveEvent({
-                cursor: cursorRef.current,
-                logCache: previousState.logCache,
-                overview: previousState.overview
-              }, event, adminLogCacheMaxEntries);
-              const nextNowMs = Date.now();
-              const nextOverview = syncProviderKeyAvailability(result.snapshot.overview, Math.floor(nextNowMs / 1000));
-
-              cursorRef.current = result.snapshot.cursor;
-              if (event.type === "log_append") {
-                persistAdminLogCache(result.snapshot.logCache);
-              }
-              if (result.requiresBootstrap) {
-                closeStream();
-                window.setTimeout(function reloadBootstrap() {
-                  void loadOverview(true, {
-                    preferredProviderName: stateRef.current.selectedProviderName,
-                    replaceGlobalDraft: false
-                  });
-                }, 0);
-                return previousState;
-              }
-
-              return {
-                ...previousState,
-                clockNow: nextNowMs,
-                loadedAt: nextNowMs,
-                logCache: result.snapshot.logCache,
-                overview: nextOverview
-              };
-            });
-          }
-        });
-      }
+      ), options);
     } catch (error) {
       if (error && typeof error === "object" && "status" in error && (error.status === 401 || error.status === 403)) {
         clearPersistedAdminLogCache();
@@ -420,7 +428,11 @@ export function useAdminOverview(
         };
       });
     }
-  }, [closeStream, translate]);
+  }, [applyBootstrapSnapshot, closeStream, translate]);
+
+  useEffect(function syncLoadOverviewRef() {
+    loadOverviewRef.current = loadOverview;
+  }, [loadOverview]);
 
   const loadGlobalConfig = useCallback(async function loadGlobalConfig(forceReplace = false) {
     await loadOverview(true, {
@@ -792,16 +804,22 @@ export function useAdminOverview(
     }
   }, [loadOverview, translate]);
 
-  const deleteSelectedProvider = useCallback(async function deleteSelectedProvider() {
+  const deleteSelectedProvider = useCallback(async function deleteSelectedProvider(providerNameOverride?: string) {
     const currentState = stateRef.current;
-    if (!currentState.selectedProviderName) {
+    const providerName = String(providerNameOverride || currentState.selectedProviderName || "").trim();
+    if (!providerName) {
       return;
     }
     if (!window.confirm(translate("admin.providerDeleteConfirm"))) {
       return;
     }
     try {
-      await deleteProvider(currentState.selectedProviderName);
+      await deleteProvider(providerName);
+      const bootstrapResult = await fetchAdminBootstrap();
+      const bootstrapPayload = (bootstrapResult.data || createEmptyAdminOverview()) as Record<string, unknown>;
+      if (!ensureDeletedEntityMissing(bootstrapPayload as Partial<AdminOverview>, "provider", providerName)) {
+        throw new Error(translate("admin.providerDeleteFailed"));
+      }
       setState(function markProviderDeleted(previousState) {
         return {
           ...previousState,
@@ -815,7 +833,11 @@ export function useAdminOverview(
           selectedProviderName: ""
         };
       });
-      await loadOverview(true, { preferredProviderName: "" });
+      applyBootstrapSnapshot(createAdminLiveSnapshot(
+        bootstrapPayload,
+        stateRef.current.logCache,
+        adminLogCacheMaxEntries
+      ), { preferredProviderName: "" });
     } catch (error) {
       setState(function markProviderDeleteError(previousState) {
         return {
@@ -824,14 +846,11 @@ export function useAdminOverview(
         };
       });
     }
-  }, [loadOverview, translate]);
+  }, [applyBootstrapSnapshot, translate]);
 
   const deleteProviderByName = useCallback(async function deleteProviderByName(providerName: string) {
-    if (!selectProvider(providerName)) {
-      return;
-    }
-    await deleteSelectedProvider();
-  }, [deleteSelectedProvider, selectProvider]);
+    await deleteSelectedProvider(providerName);
+  }, [deleteSelectedProvider]);
 
   const clearSelectedProviderCache = useCallback(async function clearSelectedProviderCache() {
     const currentState = stateRef.current;

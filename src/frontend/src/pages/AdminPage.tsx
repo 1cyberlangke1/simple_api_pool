@@ -51,9 +51,10 @@ import {
   filterGroupsBySearch,
   isKeyDisabledAt
 } from "@/lib/admin";
+import { ensureDeletedEntityMissing } from "@/lib/admin_delete";
 import { formatDateTime, formatDisabledUntil, formatLogSummary, formatNumber, formatPercent } from "@/lib/format";
 import { useAdminOverview, type AdminTab } from "@/hooks/useAdminOverview";
-import { deleteGroup, fetchProviderModelDiscovery, saveGroup } from "@/services/admin_service.js";
+import { deleteGroup, fetchAdminBootstrap, fetchProviderModelDiscovery, saveGroup } from "@/services/admin_service.js";
 import { useAppStore } from "@/store/appStore";
 
 const providerTypeOptions = ["openai_chat", "openai_responses", "claude", "gemini"] as const;
@@ -1146,6 +1147,10 @@ export function AdminPage() {
     }
     try {
       await deleteGroup(groupName);
+      const bootstrapResult = await fetchAdminBootstrap();
+      if (!ensureDeletedEntityMissing(bootstrapResult.data as Record<string, unknown> | null | undefined, "group", groupName)) {
+        throw new Error(translate("group.deleteFailed"));
+      }
       setGroupMessage({ kind: "ok", text: translate("group.deleteSuccess") });
       await actions.loadOverview(true);
     } catch (error) {

@@ -90,6 +90,9 @@ export async function requestJSON(url, options) {
     headers,
     method: requestOptions.method || "GET"
   };
+  if (requestOptions.cache) {
+    init.cache = requestOptions.cache;
+  }
   if (requestOptions.signal) {
     init.signal = requestOptions.signal;
   }

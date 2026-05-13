@@ -3,7 +3,9 @@ import { requestJSON } from "../api.js";
 import { buildProviderModelDiscoveryPath } from "@/lib/admin";
 
 export async function fetchAdminBootstrap() {
-  return requestJSON("/api/admin/bootstrap");
+  return requestJSON("/api/admin/bootstrap", {
+    cache: "no-store"
+  });
 }
 
 export async function fetchAdminOverview(options) {
